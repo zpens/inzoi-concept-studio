@@ -1,8 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const CHANGELOG = [
+  {
+    version: "1.3.0",
+    date: "2026-03-04",
+    changes: [
+      "완료 목록 카드에 대형 이미지 썸네일 추가",
+      "위시리스트 기능 추가 (이미지 첨부, 메모)",
+      "사이드바 탭 UI (완료 목록 / 위시리스트)",
+    ],
+  },
   {
     version: "1.2.0",
     date: "2026-03-04",
@@ -45,6 +54,7 @@ const SAMPLE_COMPLETED = [
     prompt: "화이트 오크 프레임의 로우 플랫폼 침대, 슬랫 헤드보드",
     seed: 1847293650,
     colors: ["#d4a574", "#f5f0e8", "#8b7355", "#e8d5b7", "#2c3639"],
+    gradient: "linear-gradient(135deg, #2e2a1a 0%, #1a2e2a 50%, #1a1a2e 100%)",
     completedAt: "2026-02-28T14:30:00",
     voters: 5,
     winner: "시안 3",
@@ -58,6 +68,7 @@ const SAMPLE_COMPLETED = [
     prompt: "월넛 우드 프레임 3인 소파, 머스타드 옐로우 쿠션",
     seed: 982736451,
     colors: ["#c2956b", "#d4af37", "#1a1a2e", "#f5f5f5", "#6b4423"],
+    gradient: "linear-gradient(135deg, #1c1917 0%, #44403c 50%, #1c1917 100%)",
     completedAt: "2026-03-01T10:15:00",
     voters: 3,
     winner: "시안 5",
@@ -71,6 +82,7 @@ const SAMPLE_COMPLETED = [
     prompt: "블랙 메탈 프레임에 월넛 상판, 케이블 정리 홀 포함",
     seed: 574839201,
     colors: ["#1a1a2e", "#64748b", "#a87c5a", "#e2e8f0", "#334155"],
+    gradient: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%)",
     completedAt: "2026-03-02T16:45:00",
     voters: 4,
     winner: "시안 1",
@@ -84,9 +96,30 @@ const SAMPLE_COMPLETED = [
     prompt: "라이브 엣지 아카시아 원목 6인 식탁, 블랙 철제 다리",
     seed: 1293847560,
     colors: ["#86a873", "#a87c5a", "#f0ece3", "#3f4e4f", "#dcd7c9"],
+    gradient: "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
     completedAt: "2026-03-03T09:20:00",
     voters: 6,
     winner: "시안 7",
+  },
+];
+
+// ─── Sample Wishlist Data ───
+const SAMPLE_WISHLIST = [
+  {
+    id: 101,
+    title: "둥근 라탄 의자",
+    note: "발리 리조트에서 본 행잉 체어. 베란다에 두면 좋겠다",
+    imageUrl: null,
+    gradient: "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
+    createdAt: "2026-03-01T11:00:00",
+  },
+  {
+    id: 102,
+    title: "테라조 커피 테이블",
+    note: "핑크+그레이 테라조 상판, 황동 다리 조합",
+    imageUrl: null,
+    gradient: "linear-gradient(135deg, #2e1a2a 0%, #1a2e3e 50%, #2a2e1a 100%)",
+    createdAt: "2026-03-02T15:30:00",
   },
 ];
 
@@ -732,8 +765,16 @@ export default function InZOIConceptTool() {
   // Completed list state
   const [completedList, setCompletedList] = useState(SAMPLE_COMPLETED);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState("completed"); // "completed" | "wishlist"
   const [expandedItem, setExpandedItem] = useState(null);
   const [newItemId, setNewItemId] = useState(null);
+
+  // Wishlist state
+  const [wishlist, setWishlist] = useState(SAMPLE_WISHLIST);
+  const [wishTitle, setWishTitle] = useState("");
+  const [wishNote, setWishNote] = useState("");
+  const [wishImage, setWishImage] = useState(null);
+  const wishImageRef = useRef(null);
 
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
@@ -943,7 +984,32 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
-            onClick={() => setSidebarOpen(true)}
+            onClick={() => { setSidebarTab("wishlist"); setSidebarOpen(true); }}
+            className="hover-lift"
+            style={{
+              padding: "10px 20px", borderRadius: 12,
+              background: "rgba(234,179,8,0.1)",
+              border: "1px solid rgba(234,179,8,0.3)",
+              color: "#fbbf24", fontSize: 14, fontWeight: 600, cursor: "pointer",
+              backdropFilter: "blur(8px)",
+              transition: "all 0.3s",
+              display: "flex", alignItems: "center", gap: 8,
+            }}
+            onMouseOver={e => { e.currentTarget.style.background = "rgba(234,179,8,0.2)"; e.currentTarget.style.borderColor = "rgba(234,179,8,0.5)"; }}
+            onMouseOut={e => { e.currentTarget.style.background = "rgba(234,179,8,0.1)"; e.currentTarget.style.borderColor = "rgba(234,179,8,0.3)"; }}
+          >
+            <span style={{ fontSize: 16 }}>⭐</span>
+            위시리스트
+            <span style={{
+              background: "linear-gradient(135deg, #eab308, #f59e0b)",
+              color: "#000", fontSize: 11, fontWeight: 800,
+              padding: "2px 8px", borderRadius: 10, minWidth: 20, textAlign: "center",
+            }}>
+              {wishlist.length}
+            </span>
+          </button>
+          <button
+            onClick={() => { setSidebarTab("completed"); setSidebarOpen(true); }}
             className="hover-lift"
             style={{
               padding: "10px 20px", borderRadius: 12,
@@ -953,7 +1019,6 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               backdropFilter: "blur(8px)",
               transition: "all 0.3s",
               display: "flex", alignItems: "center", gap: 8,
-              position: "relative",
             }}
             onMouseOver={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)"; }}
             onMouseOut={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; e.currentTarget.style.borderColor = "rgba(99,102,241,0.3)"; }}
@@ -2014,6 +2079,9 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                           prompt: prompt,
                           seed: design.seed || 0,
                           colors: design.colors || ["#666"],
+                          gradient: design.gradient || "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
+                          imageUrl: design.imageUrl || null,
+                          conceptSheetUrl: conceptSheet || null,
                           completedAt: new Date().toISOString(),
                           voters: voters.length || 1,
                           winner: `시안 ${(selectedDesign || 0) + 1}`,
@@ -2146,7 +2214,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         </>
       )}
 
-      {/* Completed List Sidebar */}
+      {/* Sidebar Panel */}
       {sidebarOpen && (
         <div
           className="sidebar-overlay"
@@ -2154,113 +2222,363 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         />
       )}
       <div className={`sidebar-panel ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <div style={{ padding: "24px 20px", borderBottom: "1px solid var(--surface-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)" }}>
-            완료된 컨셉시트
-            <span style={{
-              marginLeft: 8, background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-              color: "#fff", fontSize: 12, fontWeight: 700,
-              padding: "2px 10px", borderRadius: 10, verticalAlign: "middle",
-            }}>
-              {completedList.length}
-            </span>
-          </div>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
-              color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all 0.2s",
-            }}
-            onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
-            onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
-          >
-            ✕
-          </button>
-        </div>
-        <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
-          {completedList.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>완료된 컨셉시트가 없습니다</div>
+        {/* Sidebar Header */}
+        <div style={{ padding: "20px 20px 0", borderBottom: "1px solid var(--surface-border)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)" }}>
+              {sidebarTab === "completed" ? "완료된 컨셉시트" : "위시리스트"}
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {completedList.map((item) => (
-                <div
-                  key={item.id}
-                  className="sidebar-item"
-                  onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
-                  style={{
-                    padding: "16px", borderRadius: 16,
-                    background: expandedItem === item.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.03)",
-                    border: expandedItem === item.id ? "1px solid rgba(99,102,241,0.3)" : "1px solid var(--surface-border)",
-                    cursor: "pointer", transition: "all 0.2s",
-                    position: "relative",
-                  }}
-                >
-                  {newItemId === item.id && (
-                    <span style={{
-                      position: "absolute", top: 12, right: 12,
-                      background: "linear-gradient(135deg, #22d3ee, #6366f1)",
-                      color: "#fff", fontSize: 10, fontWeight: 800,
-                      padding: "2px 8px", borderRadius: 8, letterSpacing: "0.05em",
-                      animation: "badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                    }}>
-                      NEW
-                    </span>
-                  )}
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-                    <span style={{ fontSize: 28 }}>{item.categoryIcon}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-main)" }}>
-                        {item.categoryLabel}
-                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", marginLeft: 8 }}>
-                          {item.style}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                        {item.winner} 선정 · 투표 {item.voters}명
-                      </div>
-                    </div>
-                  </div>
-                  {/* Color palette mini */}
-                  <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                    {item.colors.map((c, ci) => (
-                      <div key={ci} style={{
-                        width: 20, height: 20, borderRadius: 6,
-                        background: c, border: "1px solid rgba(255,255,255,0.1)",
-                      }} />
-                    ))}
-                    <div style={{ flex: 1 }} />
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
-                      {new Date(item.completedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
-                    </div>
-                  </div>
-                  {/* Expanded details */}
-                  {expandedItem === item.id && (
+            <button
+              onClick={() => setSidebarOpen(false)}
+              style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.2s",
+              }}
+              onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+              onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+            >
+              ✕
+            </button>
+          </div>
+          {/* Tabs */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {[
+              { key: "completed", label: "완료 목록", icon: "📋", count: completedList.length },
+              { key: "wishlist", label: "위시리스트", icon: "⭐", count: wishlist.length },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setSidebarTab(tab.key)}
+                style={{
+                  flex: 1, padding: "10px 12px", borderRadius: "10px 10px 0 0",
+                  background: sidebarTab === tab.key ? "rgba(255,255,255,0.06)" : "transparent",
+                  border: "none", borderBottom: sidebarTab === tab.key ? "2px solid var(--primary)" : "2px solid transparent",
+                  color: sidebarTab === tab.key ? "var(--text-main)" : "var(--text-muted)",
+                  fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  transition: "all 0.2s",
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{tab.icon}</span>
+                {tab.label}
+                <span style={{
+                  fontSize: 11, fontWeight: 800, padding: "1px 7px", borderRadius: 8,
+                  background: sidebarTab === tab.key ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.06)",
+                  color: sidebarTab === tab.key ? "#a5b4fc" : "var(--text-muted)",
+                }}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sidebar Content */}
+        <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
+
+          {/* ─── Completed Tab ─── */}
+          {sidebarTab === "completed" && (
+            completedList.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>완료된 컨셉시트가 없습니다</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {completedList.map((item) => (
+                  <div
+                    key={item.id}
+                    className="sidebar-item"
+                    onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+                    style={{
+                      borderRadius: 16,
+                      background: expandedItem === item.id ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.03)",
+                      border: expandedItem === item.id ? "1px solid rgba(99,102,241,0.3)" : "1px solid var(--surface-border)",
+                      cursor: "pointer", transition: "all 0.2s",
+                      position: "relative", overflow: "hidden",
+                    }}
+                  >
+                    {newItemId === item.id && (
+                      <span style={{
+                        position: "absolute", top: 12, right: 12, zIndex: 2,
+                        background: "linear-gradient(135deg, #22d3ee, #6366f1)",
+                        color: "#fff", fontSize: 10, fontWeight: 800,
+                        padding: "2px 8px", borderRadius: 8, letterSpacing: "0.05em",
+                        animation: "badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                      }}>
+                        NEW
+                      </span>
+                    )}
+                    {/* Large Image / Gradient Thumbnail */}
                     <div style={{
-                      marginTop: 12, paddingTop: 12,
-                      borderTop: "1px solid rgba(255,255,255,0.06)",
-                      animation: "fadeIn 0.3s ease",
+                      width: "100%", height: 160, position: "relative",
+                      background: item.gradient || "linear-gradient(135deg, #1a1a2e, #2d1b4e)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
                     }}>
-                      <div style={{ fontSize: 12, color: "var(--text-lighter)", lineHeight: 1.6, marginBottom: 8 }}>
-                        {item.prompt}
+                      {item.imageUrl || item.conceptSheetUrl ? (
+                        <img
+                          src={item.conceptSheetUrl || item.imageUrl}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 56, opacity: 0.5 }}>{item.categoryIcon}</span>
+                      )}
+                      {/* Overlay info */}
+                      <div style={{
+                        position: "absolute", bottom: 0, left: 0, right: 0,
+                        padding: "24px 14px 10px",
+                        background: "linear-gradient(transparent, rgba(0,0,0,0.8))",
+                      }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>
+                          {item.categoryIcon} {item.categoryLabel}
+                          <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.6)", marginLeft: 8 }}>
+                            {item.style}
+                          </span>
+                        </div>
                       </div>
-                      <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-muted)" }}>
-                        <span>Seed: <code style={{ color: "var(--accent)", fontFamily: "monospace" }}>{item.seed}</code></span>
-                        <span>카테고리: {item.category}</span>
+                    </div>
+                    {/* Card Body */}
+                    <div style={{ padding: "12px 14px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                          {item.winner} 선정 · 투표 {item.voters}명
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          {new Date(item.completedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                        완료: {new Date(item.completedAt).toLocaleString("ko-KR")}
+                      {/* Color palette */}
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {item.colors.map((c, ci) => (
+                          <div key={ci} style={{
+                            width: 24, height: 24, borderRadius: 6,
+                            background: c, border: "1px solid rgba(255,255,255,0.1)",
+                          }} />
+                        ))}
                       </div>
+                      {/* Expanded details */}
+                      {expandedItem === item.id && (
+                        <div style={{
+                          marginTop: 12, paddingTop: 12,
+                          borderTop: "1px solid rgba(255,255,255,0.06)",
+                          animation: "fadeIn 0.3s ease",
+                        }}>
+                          <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.7, marginBottom: 10 }}>
+                            {item.prompt}
+                          </div>
+                          <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-muted)" }}>
+                            <span>Seed: <code style={{ color: "var(--accent)", fontFamily: "monospace" }}>{item.seed}</code></span>
+                            <span>카테고리: {item.category}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                            완료: {new Date(item.completedAt).toLocaleString("ko-KR")}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* ─── Wishlist Tab ─── */}
+          {sidebarTab === "wishlist" && (
+            <>
+              {/* Add Wish Form */}
+              <div style={{
+                padding: 16, borderRadius: 16, marginBottom: 16,
+                background: "rgba(234,179,8,0.05)", border: "1px solid rgba(234,179,8,0.15)",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", marginBottom: 12 }}>
+                  새 아이디어 추가
+                </div>
+                <input
+                  type="text"
+                  placeholder="제목 (예: 라탄 행잉 체어)"
+                  value={wishTitle}
+                  onChange={e => setWishTitle(e.target.value)}
+                  style={{
+                    width: "100%", padding: "10px 14px", borderRadius: 10,
+                    background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-main)", fontSize: 13, outline: "none",
+                    marginBottom: 8, transition: "border-color 0.2s",
+                  }}
+                  onFocus={e => { e.target.style.borderColor = "rgba(234,179,8,0.4)"; }}
+                  onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
+                />
+                <textarea
+                  placeholder="메모 (참고 사항, 원하는 스타일 등)"
+                  value={wishNote}
+                  onChange={e => setWishNote(e.target.value)}
+                  rows={2}
+                  style={{
+                    width: "100%", padding: "10px 14px", borderRadius: 10,
+                    background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-main)", fontSize: 13, outline: "none",
+                    marginBottom: 8, resize: "vertical", lineHeight: 1.5,
+                    transition: "border-color 0.2s",
+                  }}
+                  onFocus={e => { e.target.style.borderColor = "rgba(234,179,8,0.4)"; }}
+                  onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
+                />
+                {/* Image upload */}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                  <input
+                    ref={wishImageRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => setWishImage(ev.target.result);
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    style={{ display: "none" }}
+                  />
+                  <button
+                    onClick={() => wishImageRef.current?.click()}
+                    style={{
+                      padding: "8px 14px", borderRadius: 8,
+                      background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                      color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                  >
+                    🖼️ 이미지 첨부
+                  </button>
+                  {wishImage && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <img src={wishImage} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover" }} />
+                      <button
+                        onClick={() => { setWishImage(null); if (wishImageRef.current) wishImageRef.current.value = ""; }}
+                        style={{
+                          background: "none", border: "none", color: "var(--text-muted)",
+                          fontSize: 14, cursor: "pointer", padding: 2,
+                        }}
+                      >
+                        ✕
+                      </button>
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
+                <button
+                  onClick={() => {
+                    if (!wishTitle.trim()) return;
+                    const gradients = [
+                      "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
+                      "linear-gradient(135deg, #2e1a2a 0%, #1a2e3e 50%, #2a2e1a 100%)",
+                      "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
+                      "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
+                    ];
+                    setWishlist(prev => [{
+                      id: Date.now(),
+                      title: wishTitle.trim(),
+                      note: wishNote.trim(),
+                      imageUrl: wishImage,
+                      gradient: gradients[Math.floor(Math.random() * gradients.length)],
+                      createdAt: new Date().toISOString(),
+                    }, ...prev]);
+                    setWishTitle("");
+                    setWishNote("");
+                    setWishImage(null);
+                    if (wishImageRef.current) wishImageRef.current.value = "";
+                  }}
+                  style={{
+                    width: "100%", padding: "10px", borderRadius: 10,
+                    background: wishTitle.trim() ? "linear-gradient(135deg, #eab308, #f59e0b)" : "rgba(255,255,255,0.05)",
+                    border: "none",
+                    color: wishTitle.trim() ? "#000" : "var(--text-muted)",
+                    fontSize: 13, fontWeight: 700, cursor: wishTitle.trim() ? "pointer" : "not-allowed",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  추가하기
+                </button>
+              </div>
+
+              {/* Wishlist Items */}
+              {wishlist.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-muted)" }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>💫</div>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>만들고 싶은 가구 아이디어를 추가해보세요</div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {wishlist.map((item) => (
+                    <div
+                      key={item.id}
+                      className="sidebar-item"
+                      style={{
+                        borderRadius: 16, overflow: "hidden",
+                        background: "rgba(255,255,255,0.03)",
+                        border: "1px solid var(--surface-border)",
+                        transition: "all 0.2s", position: "relative",
+                      }}
+                    >
+                      {/* Image area */}
+                      <div style={{
+                        width: "100%", height: item.imageUrl ? 140 : 0,
+                        background: item.gradient || "linear-gradient(135deg, #1a1a2e, #2d1b4e)",
+                        overflow: "hidden",
+                      }}>
+                        {item.imageUrl && (
+                          <img
+                            src={item.imageUrl}
+                            alt=""
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        )}
+                      </div>
+                      {/* Content */}
+                      <div style={{ padding: "12px 14px" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-main)", marginBottom: 4 }}>
+                              {item.title}
+                            </div>
+                            {item.note && (
+                              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+                                {item.note}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setWishlist(prev => prev.filter(w => w.id !== item.id));
+                            }}
+                            style={{
+                              width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                              background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                              color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseOver={e => { e.currentTarget.style.background = "rgba(239,68,68,0.15)"; e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)"; }}
+                            onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--surface-border)"; }}
+                            title="삭제"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+                          {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

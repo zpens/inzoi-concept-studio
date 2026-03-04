@@ -236,8 +236,8 @@ textarea {
     position: fixed;
     top: 0;
     right: 0;
-    width: 420px;
-    max-width: 90vw;
+    width: 480px;
+    max-width: 92vw;
     height: 100vh;
     background: rgba(15, 17, 24, 0.95);
     backdrop-filter: blur(20px);
