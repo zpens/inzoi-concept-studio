@@ -629,13 +629,19 @@ export default function InZOIConceptTool() {
   const [selectedDesign, setSelectedDesign] = useState(null);
   const [feedback, setFeedback] = useState("");
 
+  // Voting state
+  const [votes, setVotes] = useState({});
+  const [voters, setVoters] = useState([]);
+  const [currentVoter, setCurrentVoter] = useState("");
+  const [currentVotes, setCurrentVotes] = useState([]);
+
   // Step 4 state
   const [conceptSheet, setConceptSheet] = useState(null);
   const [multiViewImages, setMultiViewImages] = useState({});
 
   const canvasRef = useRef(null);
 
-  const STEPS = ["입력", "시안 생성", "시안 선택", "컨셉시트 생성", "결과 전달"];
+  const STEPS = ["입력", "시안 생성", "투표", "시안 선정", "컨셉시트 생성", "결과 전달"];
 
   // ─── Step 1 → 2: Generate designs ───
   const generateDesigns = async () => {
@@ -782,7 +788,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
     setLoadingProgress(100);
     setLoadingMsg("컨셉시트 완성!");
     await new Promise((r) => setTimeout(r, 500));
-    setStep(3);
+    setStep(5);
     setLoading(false);
   };
 
@@ -831,6 +837,10 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               setSelectedDesign(null);
               setConceptSheet(null);
               setFeedback("");
+              setVotes({});
+              setVoters([]);
+              setCurrentVoter("");
+              setCurrentVotes([]);
             }}
             className="hover-lift"
             style={{
@@ -1113,7 +1123,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               <div>
                 <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>디자인 시안</h2>
                 <p style={{ color: "var(--text-muted)", fontSize: 16 }}>
-                  생성된 8개의 시안 중 마음에 드는 디자인을 선택하세요.
+                  생성된 8개의 시안을 확인하고 팀 투표를 진행하세요.
                 </p>
               </div>
               <button
@@ -1169,62 +1179,399 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               ))}
             </div>
 
-            {/* Selected design info */}
-            {selectedDesign !== null && (
-              <div style={{
-                padding: 24, borderRadius: 20,
-                background: "linear-gradient(135deg, rgba(34,211,238,0.1), rgba(99,102,241,0.05))",
-                border: "1px solid rgba(34,211,238,0.3)",
-                marginBottom: 32, backdropFilter: "blur(12px)",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-                animation: "fadeIn 0.4s ease",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)" }}>시안 {selectedDesign + 1} 선택됨 <span style={{ color: "var(--accent)" }}>✨</span></div>
-                    <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6, fontFamily: "monospace" }}>
-                      Seed: {designs[selectedDesign].seed}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    {designs[selectedDesign].colors.map((c, i) => (
-                      <div key={i} style={{
-                        width: 32, height: 32, borderRadius: "50%",
-                        background: c, border: "2px solid rgba(255,255,255,0.2)",
-                        boxShadow: "0 4px 10px rgba(0,0,0,0.4)",
-                      }} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Next button */}
             <div style={{ textAlign: "center" }}>
               <button
-                onClick={() => selectedDesign !== null && setStep(2)}
-                disabled={selectedDesign === null}
-                className={selectedDesign === null ? "" : "btn-primary"}
+                onClick={() => { setSelectedDesign(null); setStep(2); }}
+                className="btn-primary"
                 style={{
                   width: "100%", maxWidth: 600, padding: "20px 40px",
                   borderRadius: 20,
-                  background: selectedDesign === null ? "var(--surface-color)" : "",
-                  border: selectedDesign === null ? "1px solid var(--surface-border)" : "none",
-                  color: selectedDesign === null ? "var(--text-muted)" : "#fff",
+                  border: "none",
+                  color: "#fff",
                   fontSize: 18, fontWeight: 800,
-                  cursor: selectedDesign === null ? "not-allowed" : "pointer",
+                  cursor: "pointer",
                   letterSpacing: "0.05em",
-                  boxShadow: selectedDesign === null ? "none" : "0 10px 30px var(--primary-glow)",
+                  boxShadow: "0 10px 30px var(--primary-glow)",
                 }}
               >
-                선택한 시안으로 진행 🚀
+                투표 시작하기 🗳️
               </button>
             </div>
           </div>
         )}
 
-        {/* ═══ STEP 3: Refinement ═══ */}
+        {/* ═══ STEP 3: Voting ═══ */}
         {step === 2 && (
+          <div style={{ animation: "fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+            <div style={{ textAlign: "center", marginBottom: 40 }}>
+              <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 12 }}>디자인 시안 투표</h2>
+              <p style={{ color: "var(--text-muted)", fontSize: 16 }}>
+                팀원들이 선호하는 시안에 투표하세요. 복수 선택이 가능합니다.
+              </p>
+            </div>
+
+            {/* Voter name input */}
+            <div className="glass-panel" style={{ padding: 24, borderRadius: 20, marginBottom: 32 }}>
+              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                <label style={{ fontSize: 15, fontWeight: 700, color: "var(--text-lighter)", whiteSpace: "nowrap" }}>
+                  투표자 이름
+                </label>
+                <input
+                  value={currentVoter}
+                  onChange={(e) => setCurrentVoter(e.target.value)}
+                  placeholder="이름을 입력하세요"
+                  style={{
+                    flex: 1, padding: "12px 20px", borderRadius: 12,
+                    border: "2px solid var(--surface-border)", background: "rgba(0,0,0,0.3)",
+                    color: "var(--text-main)", fontSize: 15, outline: "none",
+                    fontFamily: "inherit", transition: "all 0.3s",
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = "var(--primary)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "var(--surface-border)"; }}
+                />
+              </div>
+            </div>
+
+            {/* Design Grid with vote badges */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 24, marginBottom: 32,
+            }}>
+              {designs.map((design, i) => (
+                <div
+                  key={design.id}
+                  onClick={() => {
+                    if (!currentVoter.trim()) return;
+                    setCurrentVotes(prev =>
+                      prev.includes(i) ? prev.filter(v => v !== i) : [...prev, i]
+                    );
+                  }}
+                  className={currentVotes.includes(i) ? "" : "hover-lift glass-panel"}
+                  style={{
+                    borderRadius: 20, overflow: "hidden",
+                    border: currentVotes.includes(i) ? "2px solid var(--accent)" : "1px solid var(--surface-border)",
+                    cursor: currentVoter.trim() ? "pointer" : "not-allowed",
+                    transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                    transform: currentVotes.includes(i) ? "scale(1.03)" : "scale(1)",
+                    boxShadow: currentVotes.includes(i) ? "0 0 35px rgba(34, 211, 238, 0.4)" : "0 8px 32px rgba(0,0,0,0.3)",
+                    background: currentVotes.includes(i) ? "rgba(34, 211, 238, 0.03)" : "var(--surface-color)",
+                    position: "relative",
+                    opacity: currentVoter.trim() ? 1 : 0.6,
+                  }}
+                >
+                  <div style={{ aspectRatio: "1", position: "relative", overflow: "hidden" }}>
+                    {design.imageUrl ? (
+                      <img src={design.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <div style={{
+                        width: "100%", height: "100%",
+                        background: design.gradient || `linear-gradient(${135 + i * 30}deg, #1e293b, #334155)`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <div style={{
+                          width: "60%", height: "60%", borderRadius: 16,
+                          background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 54,
+                        }}>
+                          {design.icon}
+                        </div>
+                      </div>
+                    )}
+                    {/* Vote count badge */}
+                    {(votes[i] || 0) > 0 && (
+                      <div className="vote-badge" style={{
+                        position: "absolute", top: 12, left: 12,
+                        minWidth: 32, height: 32, borderRadius: 16,
+                        background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 13, fontWeight: 800, color: "#fff",
+                        padding: "0 10px",
+                        boxShadow: "0 4px 15px var(--primary-glow)",
+                      }}>
+                        {votes[i]}표
+                      </div>
+                    )}
+                    {currentVotes.includes(i) && (
+                      <div style={{
+                        position: "absolute", top: 12, right: 12,
+                        width: 32, height: 32, borderRadius: "50%",
+                        background: "var(--accent)", display: "flex",
+                        alignItems: "center", justifyContent: "center",
+                        fontSize: 18, color: "#000", fontWeight: 800,
+                        boxShadow: "0 4px 15px rgba(34, 211, 238, 0.5)",
+                      }}>✓</div>
+                    )}
+                    <div style={{
+                      position: "absolute", bottom: 0, left: 0, right: 0,
+                      padding: "50px 20px 16px",
+                      background: "linear-gradient(transparent, rgba(0,0,0,0.9))",
+                    }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-main)" }}>시안 {i + 1}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontFamily: "monospace" }}>Seed: {design.seed}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Vote button */}
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
+              <button
+                onClick={() => {
+                  if (!currentVoter.trim() || currentVotes.length === 0) return;
+                  const newVotes = { ...votes };
+                  currentVotes.forEach(idx => {
+                    newVotes[idx] = (newVotes[idx] || 0) + 1;
+                  });
+                  setVotes(newVotes);
+                  setVoters(prev => [...prev, { name: currentVoter.trim(), votes: [...currentVotes] }]);
+                  setCurrentVoter("");
+                  setCurrentVotes([]);
+                }}
+                disabled={!currentVoter.trim() || currentVotes.length === 0}
+                className={(!currentVoter.trim() || currentVotes.length === 0) ? "" : "btn-primary"}
+                style={{
+                  padding: "16px 48px", borderRadius: 16,
+                  background: (!currentVoter.trim() || currentVotes.length === 0) ? "var(--surface-color)" : "",
+                  border: (!currentVoter.trim() || currentVotes.length === 0) ? "1px solid var(--surface-border)" : "none",
+                  color: (!currentVoter.trim() || currentVotes.length === 0) ? "var(--text-muted)" : "#fff",
+                  fontSize: 16, fontWeight: 800,
+                  cursor: (!currentVoter.trim() || currentVotes.length === 0) ? "not-allowed" : "pointer",
+                  boxShadow: (!currentVoter.trim() || currentVotes.length === 0) ? "none" : "0 8px 25px var(--primary-glow)",
+                }}
+              >
+                투표하기
+              </button>
+            </div>
+
+            {/* Voting history panel */}
+            {voters.length > 0 && (
+              <div className="glass-panel" style={{ padding: 32, borderRadius: 20, marginBottom: 32 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-lighter)", marginBottom: 20 }}>
+                  투표 현황 ({voters.length}명 참여)
+                </h3>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {voters.map((voter, i) => (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: 16,
+                      padding: "12px 16px", borderRadius: 12,
+                      background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)",
+                    }}>
+                      <div style={{
+                        width: 36, height: 36, borderRadius: "50%",
+                        background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 14, fontWeight: 800, color: "#fff",
+                      }}>
+                        {voter.name[0]}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-main)" }}>{voter.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                          선택: {voter.votes.map(v => `시안 ${v + 1}`).join(", ")}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Close voting button */}
+            {voters.length > 0 && (
+              <div style={{ textAlign: "center" }}>
+                <button
+                  onClick={() => setStep(3)}
+                  className="btn-primary"
+                  style={{
+                    width: "100%", maxWidth: 600, padding: "20px 40px",
+                    borderRadius: 20, border: "none", color: "#fff",
+                    fontSize: 18, fontWeight: 800, cursor: "pointer",
+                    letterSpacing: "0.05em",
+                    boxShadow: "0 10px 30px var(--primary-glow)",
+                  }}
+                >
+                  투표 마감하기
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ STEP 4: Vote Results & Selection ═══ */}
+        {step === 3 && (
+          <div style={{ animation: "fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+            <div style={{ textAlign: "center", marginBottom: 40 }}>
+              <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 12 }}>투표 결과</h2>
+              <p style={{ color: "var(--text-muted)", fontSize: 16 }}>
+                {voters.length}명이 참여한 투표 결과입니다.
+              </p>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 40 }}>
+              {/* Bar chart */}
+              <div className="glass-panel" style={{ padding: 32, borderRadius: 24 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-lighter)", marginBottom: 24 }}>득표 현황</h3>
+                <div style={{ display: "grid", gap: 16 }}>
+                  {designs.map((design, i) => {
+                    const maxVotes = Math.max(...designs.map((_, idx) => votes[idx] || 0), 1);
+                    const voteCount = votes[i] || 0;
+                    const maxVote = Math.max(...designs.map((_, idx) => votes[idx] || 0));
+                    const isWinner = voteCount > 0 && voteCount === maxVote;
+                    const winnerCount = designs.filter((_, idx) => (votes[idx] || 0) === maxVote && maxVote > 0).length;
+                    const isTied = winnerCount > 1 && isWinner;
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                        <div style={{ width: 80, fontSize: 14, fontWeight: 700, color: isWinner ? "var(--accent)" : "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          시안 {i + 1}
+                        </div>
+                        <div style={{ flex: 1, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.05)", overflow: "hidden", position: "relative" }}>
+                          <div className="vote-bar-fill" style={{
+                            width: `${maxVotes > 0 ? (voteCount / maxVotes) * 100 : 0}%`,
+                            height: "100%", borderRadius: 8,
+                            background: isWinner
+                              ? "linear-gradient(90deg, var(--accent), rgba(34,211,238,0.6))"
+                              : "linear-gradient(90deg, var(--primary), rgba(99,102,241,0.4))",
+                            transition: "width 1s cubic-bezier(0.4, 0, 0.2, 1)",
+                            boxShadow: isWinner ? "0 0 15px rgba(34,211,238,0.4)" : "none",
+                          }} />
+                        </div>
+                        <div style={{ width: 48, fontSize: 16, fontWeight: 800, color: isWinner ? "var(--accent)" : "var(--text-main)", textAlign: "right" }}>
+                          {voteCount}
+                        </div>
+                        {isWinner && !isTied && <span style={{ fontSize: 16 }}>🏆</span>}
+                        {isTied && <span style={{ fontSize: 14, color: "var(--accent)" }}>동점</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right panel */}
+              <div>
+                {/* Winner highlight */}
+                {(() => {
+                  const maxVote = Math.max(...designs.map((_, idx) => votes[idx] || 0));
+                  const winners = designs.map((_, idx) => idx).filter(idx => (votes[idx] || 0) === maxVote && maxVote > 0);
+                  const isTied = winners.length > 1;
+                  return (
+                    <div className="glass-panel" style={{
+                      padding: 32, borderRadius: 24, marginBottom: 24,
+                      border: "1px solid rgba(34,211,238,0.3)",
+                      background: "linear-gradient(135deg, rgba(34,211,238,0.1), rgba(99,102,241,0.05))",
+                    }}>
+                      <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-lighter)", marginBottom: 16 }}>
+                        {isTied ? "동점 — 시안을 선택하세요" : "1위 시안"}
+                      </h3>
+                      {isTied ? (
+                        <div style={{ display: "grid", gap: 12 }}>
+                          {winners.map(idx => (
+                            <button
+                              key={idx}
+                              onClick={() => setSelectedDesign(idx)}
+                              className={selectedDesign === idx ? "" : "hover-lift"}
+                              style={{
+                                padding: "16px 20px", borderRadius: 16,
+                                background: selectedDesign === idx ? "rgba(34,211,238,0.15)" : "rgba(255,255,255,0.03)",
+                                border: selectedDesign === idx ? "2px solid var(--accent)" : "1px solid var(--surface-border)",
+                                cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
+                                color: "var(--text-main)", fontSize: 15, fontWeight: 700,
+                                transition: "all 0.3s",
+                              }}
+                            >
+                              <span style={{ fontSize: 24 }}>{designs[idx]?.icon}</span>
+                              시안 {idx + 1} ({maxVote}표)
+                              {selectedDesign === idx && <span style={{ marginLeft: "auto", color: "var(--accent)" }}>✓</span>}
+                            </button>
+                          ))}
+                        </div>
+                      ) : winners.length > 0 ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                          <div style={{
+                            width: 64, height: 64, borderRadius: 16,
+                            background: designs[winners[0]]?.gradient || "#1a1a2e",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 32, border: "2px solid var(--accent)",
+                            boxShadow: "0 0 20px rgba(34,211,238,0.3)",
+                          }}>
+                            {designs[winners[0]]?.icon}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)" }}>시안 {winners[0] + 1} 🏆</div>
+                            <div style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>{maxVote}표 획득</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: "var(--text-muted)" }}>투표 결과가 없습니다.</div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Voter summary */}
+                <div className="glass-panel" style={{ padding: 32, borderRadius: 24, marginBottom: 24 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: "var(--text-lighter)", marginBottom: 16 }}>투표자별 선택 내역</h3>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {voters.map((voter, i) => (
+                      <div key={i} style={{
+                        display: "flex", alignItems: "center", gap: 12,
+                        padding: "10px 14px", borderRadius: 10,
+                        background: "rgba(255,255,255,0.03)", fontSize: 13,
+                      }}>
+                        <span style={{ fontWeight: 700, color: "var(--text-main)", minWidth: 60 }}>{voter.name}</span>
+                        <span style={{ color: "var(--text-muted)" }}>→</span>
+                        <span style={{ color: "var(--text-lighter)" }}>
+                          {voter.votes.map(v => `시안 ${v + 1}`).join(", ")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Confirm button */}
+                {(() => {
+                  const maxVote = Math.max(...designs.map((_, idx) => votes[idx] || 0));
+                  const winners = designs.map((_, idx) => idx).filter(idx => (votes[idx] || 0) === maxVote && maxVote > 0);
+                  const isTied = winners.length > 1;
+                  const isDisabled = isTied && selectedDesign === null;
+                  return (
+                    <button
+                      onClick={() => {
+                        if (winners.length === 1) {
+                          setSelectedDesign(winners[0]);
+                        }
+                        const finalSelection = winners.length === 1 ? winners[0] : selectedDesign;
+                        if (finalSelection !== null) {
+                          setSelectedDesign(finalSelection);
+                          setStep(4);
+                        }
+                      }}
+                      disabled={isDisabled}
+                      className={isDisabled ? "" : "btn-primary"}
+                      style={{
+                        width: "100%", padding: "20px 40px", borderRadius: 20,
+                        background: isDisabled ? "var(--surface-color)" : "",
+                        border: isDisabled ? "1px solid var(--surface-border)" : "none",
+                        color: isDisabled ? "var(--text-muted)" : "#fff",
+                        fontSize: 18, fontWeight: 800,
+                        cursor: isDisabled ? "not-allowed" : "pointer",
+                        letterSpacing: "0.05em",
+                        boxShadow: isDisabled ? "none" : "0 10px 30px var(--primary-glow)",
+                      }}
+                    >
+                      선정 확정
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ STEP 5: Refinement ═══ */}
+        {step === 4 && (
           <div style={{ animation: "fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
             <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 12 }}>시안 확인 및 디테일 수정</h2>
             <p style={{ color: "var(--text-muted)", marginBottom: 40, fontSize: 16 }}>
@@ -1382,14 +1729,14 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           </div>
         )}
 
-        {/* ═══ STEP 4: Concept Sheet Result ═══ */}
-        {(step === 3 || step === 4) && (
+        {/* ═══ STEP 6: Concept Sheet Result ═══ */}
+        {(step === 5 || step === 6) && (
           <div style={{ animation: "fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
             <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 12 }}>
-              {step === 3 ? "컨셉시트 생성 완료" : "에셋 파이프라인 전달 완료"}
+              {step === 5 ? "컨셉시트 생성 완료" : "에셋 파이프라인 전달 완료"}
             </h2>
             <p style={{ color: "var(--text-muted)", marginBottom: 40, fontSize: 16 }}>
-              {step === 3 ? "생성된 고해상도 컨셉시트를 확인하고 다운로드하세요." : "컨셉시트가 성공적으로 전달되었습니다."}
+              {step === 5 ? "생성된 고해상도 컨셉시트를 확인하고 다운로드하세요." : "컨셉시트가 성공적으로 전달되었습니다."}
             </p>
 
             <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr", gap: 40 }}>
@@ -1511,9 +1858,9 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     <span style={{ fontSize: 18 }}>📋</span> 에셋 메타데이터 백업 (JSON)
                   </button>
 
-                  {step === 3 && (
+                  {step === 5 && (
                     <button
-                      onClick={() => setStep(4)}
+                      onClick={() => setStep(6)}
                       className="hover-lift"
                       style={{
                         width: "100%", padding: "18px 24px", borderRadius: 16,
@@ -1529,7 +1876,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   )}
                 </div>
 
-                {step === 4 && (
+                {step === 6 && (
                   <div style={{
                     marginTop: 24, padding: 32, borderRadius: 24,
                     background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.3)",

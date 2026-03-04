@@ -170,3 +170,31 @@ input,
 textarea {
     font-family: 'Outfit', sans-serif;
 }
+
+/* Vote badge animation */
+.vote-badge {
+    animation: badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badgePop {
+    from {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Vote bar fill animation */
+.vote-bar-fill {
+    animation: barGrow 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes barGrow {
+    from {
+        width: 0% !important;
+    }
+}
