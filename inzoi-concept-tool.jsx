@@ -1,5 +1,95 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
+// ─── Version Info ───
+const APP_VERSION = "1.2.0";
+const CHANGELOG = [
+  {
+    version: "1.2.0",
+    date: "2026-03-04",
+    changes: [
+      "완료된 컨셉시트 리스트 사이드 패널 추가",
+      "파이프라인 전송 완료 시 자동 목록 추가",
+      "버전 정보 및 변경내역 팝업 추가",
+    ],
+  },
+  {
+    version: "1.1.0",
+    date: "2026-03-01",
+    changes: [
+      "투표 및 시안 선정 워크플로우 추가",
+      "다중 투표자 지원",
+      "동점 시 수동 선정 기능",
+    ],
+  },
+  {
+    version: "1.0.0",
+    date: "2026-02-28",
+    changes: [
+      "초기 릴리스",
+      "AI 기반 프롬프트 최적화 (Claude API)",
+      "카테고리별 가구 컨셉 생성",
+      "멀티뷰 컨셉시트 생성",
+      "에셋 메타데이터 JSON 내보내기",
+    ],
+  },
+];
+
+// ─── Sample Completed Data ───
+const SAMPLE_COMPLETED = [
+  {
+    id: 1,
+    category: "bed",
+    categoryLabel: "침대",
+    categoryIcon: "🛏️",
+    style: "스칸디나비안",
+    prompt: "화이트 오크 프레임의 로우 플랫폼 침대, 슬랫 헤드보드",
+    seed: 1847293650,
+    colors: ["#d4a574", "#f5f0e8", "#8b7355", "#e8d5b7", "#2c3639"],
+    completedAt: "2026-02-28T14:30:00",
+    voters: 5,
+    winner: "시안 3",
+  },
+  {
+    id: 2,
+    category: "sofa",
+    categoryLabel: "소파",
+    categoryIcon: "🛋️",
+    style: "미드센추리",
+    prompt: "월넛 우드 프레임 3인 소파, 머스타드 옐로우 쿠션",
+    seed: 982736451,
+    colors: ["#c2956b", "#d4af37", "#1a1a2e", "#f5f5f5", "#6b4423"],
+    completedAt: "2026-03-01T10:15:00",
+    voters: 3,
+    winner: "시안 5",
+  },
+  {
+    id: 3,
+    category: "desk",
+    categoryLabel: "책상",
+    categoryIcon: "🖥️",
+    style: "모던",
+    prompt: "블랙 메탈 프레임에 월넛 상판, 케이블 정리 홀 포함",
+    seed: 574839201,
+    colors: ["#1a1a2e", "#64748b", "#a87c5a", "#e2e8f0", "#334155"],
+    completedAt: "2026-03-02T16:45:00",
+    voters: 4,
+    winner: "시안 1",
+  },
+  {
+    id: 4,
+    category: "dining-table",
+    categoryLabel: "식탁",
+    categoryIcon: "🍽️",
+    style: "내추럴",
+    prompt: "라이브 엣지 아카시아 원목 6인 식탁, 블랙 철제 다리",
+    seed: 1293847560,
+    colors: ["#86a873", "#a87c5a", "#f0ece3", "#3f4e4f", "#dcd7c9"],
+    completedAt: "2026-03-03T09:20:00",
+    voters: 6,
+    winner: "시안 7",
+  },
+];
+
 // ─── Constants ───
 const FURNITURE_CATEGORIES = [
   // ── 침실 (572) ──
@@ -639,6 +729,15 @@ export default function InZOIConceptTool() {
   const [conceptSheet, setConceptSheet] = useState(null);
   const [multiViewImages, setMultiViewImages] = useState({});
 
+  // Completed list state
+  const [completedList, setCompletedList] = useState(SAMPLE_COMPLETED);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedItem, setExpandedItem] = useState(null);
+  const [newItemId, setNewItemId] = useState(null);
+
+  // Version modal state
+  const [versionOpen, setVersionOpen] = useState(false);
+
   const canvasRef = useRef(null);
 
   const STEPS = ["입력", "시안 생성", "투표", "시안 선정", "컨셉시트 생성", "결과 전달"];
@@ -818,45 +917,86 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         position: "sticky", top: 0, zIndex: 100,
         boxShadow: "0 4px 30px rgba(0, 0, 0, 0.5)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", userSelect: "none" }}
+          onClick={() => setVersionOpen(true)}
+          title="버전 정보 보기"
+        >
           <img src="/InZOI_Logo.png" alt="inZOI" style={{ height: 28, objectFit: "contain" }} />
           <div>
-            <div className="text-gradient" style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em" }}>
-              Concept Studio
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="text-gradient" style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em" }}>
+                Concept Studio
+              </span>
+              <span style={{
+                fontSize: 10, fontWeight: 700, color: "var(--accent)",
+                background: "rgba(34,211,238,0.1)", border: "1px solid rgba(34,211,238,0.25)",
+                padding: "1px 7px", borderRadius: 6, letterSpacing: "0.02em",
+              }}>
+                v{APP_VERSION}
+              </span>
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em", fontWeight: 500 }}>
               AI-Powered Furniture Asset Concept Generator
             </div>
           </div>
         </div>
-        {step > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
-            onClick={() => {
-              setStep(0);
-              setDesigns([]);
-              setSelectedDesign(null);
-              setConceptSheet(null);
-              setFeedback("");
-              setVotes({});
-              setVoters([]);
-              setCurrentVoter("");
-              setCurrentVotes([]);
-            }}
+            onClick={() => setSidebarOpen(true)}
             className="hover-lift"
             style={{
-              padding: "10px 24px", borderRadius: 12,
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid var(--surface-border)",
-              color: "var(--text-lighter)", fontSize: 14, fontWeight: 600, cursor: "pointer",
+              padding: "10px 20px", borderRadius: 12,
+              background: "rgba(99,102,241,0.1)",
+              border: "1px solid rgba(99,102,241,0.3)",
+              color: "#a5b4fc", fontSize: 14, fontWeight: 600, cursor: "pointer",
               backdropFilter: "blur(8px)",
               transition: "all 0.3s",
+              display: "flex", alignItems: "center", gap: 8,
+              position: "relative",
             }}
-            onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
-            onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
+            onMouseOver={e => { e.currentTarget.style.background = "rgba(99,102,241,0.2)"; e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)"; }}
+            onMouseOut={e => { e.currentTarget.style.background = "rgba(99,102,241,0.1)"; e.currentTarget.style.borderColor = "rgba(99,102,241,0.3)"; }}
           >
-            새로 시작
+            <span style={{ fontSize: 16 }}>📋</span>
+            완료 목록
+            <span style={{
+              background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+              color: "#fff", fontSize: 11, fontWeight: 800,
+              padding: "2px 8px", borderRadius: 10, minWidth: 20, textAlign: "center",
+            }}>
+              {completedList.length}
+            </span>
           </button>
-        )}
+          {step > 0 && (
+            <button
+              onClick={() => {
+                setStep(0);
+                setDesigns([]);
+                setSelectedDesign(null);
+                setConceptSheet(null);
+                setFeedback("");
+                setVotes({});
+                setVoters([]);
+                setCurrentVoter("");
+                setCurrentVotes([]);
+              }}
+              className="hover-lift"
+              style={{
+                padding: "10px 24px", borderRadius: 12,
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid var(--surface-border)",
+                color: "var(--text-lighter)", fontSize: 14, fontWeight: 600, cursor: "pointer",
+                backdropFilter: "blur(8px)",
+                transition: "all 0.3s",
+              }}
+              onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
+              onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
+            >
+              새로 시작
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Step Indicator */}
@@ -1860,7 +2000,28 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
 
                   {step === 5 && (
                     <button
-                      onClick={() => setStep(6)}
+                      onClick={() => {
+                        const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
+                        const styleInfo = STYLE_PRESETS.find((s) => s.id === stylePreset);
+                        const design = designs[selectedDesign] || {};
+                        const newId = Date.now();
+                        const newItem = {
+                          id: newId,
+                          category: category,
+                          categoryLabel: catInfo?.label || category,
+                          categoryIcon: catInfo?.icon || "🏠",
+                          style: styleInfo?.label || "커스텀",
+                          prompt: prompt,
+                          seed: design.seed || 0,
+                          colors: design.colors || ["#666"],
+                          completedAt: new Date().toISOString(),
+                          voters: voters.length || 1,
+                          winner: `시안 ${(selectedDesign || 0) + 1}`,
+                        };
+                        setCompletedList((prev) => [newItem, ...prev]);
+                        setNewItemId(newId);
+                        setStep(6);
+                      }}
                       className="hover-lift"
                       style={{
                         width: "100%", padding: "18px 24px", borderRadius: 16,
@@ -1895,6 +2056,214 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           </div>
         )}
       </main>
+
+      {/* Version Info Modal */}
+      {versionOpen && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setVersionOpen(false)} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 480, maxWidth: "90vw", maxHeight: "80vh",
+            background: "rgba(15, 17, 24, 0.97)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid var(--surface-border)",
+            borderRadius: 24, zIndex: 202,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+            animation: "fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
+            <div style={{
+              padding: "24px 28px 16px", borderBottom: "1px solid var(--surface-border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-main)" }}>
+                  inZOI Concept Studio
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                  버전 {APP_VERSION}
+                </div>
+              </div>
+              <button
+                onClick={() => setVersionOpen(false)}
+                style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+                onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+                onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: "20px 28px", overflowY: "auto", flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 16 }}>
+                변경내역
+              </div>
+              {CHANGELOG.map((entry, idx) => (
+                <div key={entry.version} style={{
+                  marginBottom: 20,
+                  paddingBottom: idx < CHANGELOG.length - 1 ? 20 : 0,
+                  borderBottom: idx < CHANGELOG.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <span style={{
+                      fontSize: 13, fontWeight: 800, color: idx === 0 ? "var(--accent)" : "var(--text-lighter)",
+                      background: idx === 0 ? "rgba(34,211,238,0.1)" : "rgba(255,255,255,0.05)",
+                      border: idx === 0 ? "1px solid rgba(34,211,238,0.25)" : "1px solid var(--surface-border)",
+                      padding: "3px 10px", borderRadius: 8,
+                    }}>
+                      v{entry.version}
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{entry.date}</span>
+                    {idx === 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 800, color: "#fff",
+                        background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+                        padding: "2px 8px", borderRadius: 6,
+                      }}>
+                        최신
+                      </span>
+                    )}
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                    {entry.changes.map((change, ci) => (
+                      <li key={ci} style={{
+                        fontSize: 13, color: "var(--text-muted)", lineHeight: 1.8,
+                        listStyleType: "disc",
+                      }}>
+                        {change}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Completed List Sidebar */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <div className={`sidebar-panel ${sidebarOpen ? "sidebar-open" : ""}`}>
+        <div style={{ padding: "24px 20px", borderBottom: "1px solid var(--surface-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)" }}>
+            완료된 컨셉시트
+            <span style={{
+              marginLeft: 8, background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+              color: "#fff", fontSize: 12, fontWeight: 700,
+              padding: "2px 10px", borderRadius: 10, verticalAlign: "middle",
+            }}>
+              {completedList.length}
+            </span>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+              color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.2s",
+            }}
+            onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+            onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+          >
+            ✕
+          </button>
+        </div>
+        <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
+          {completedList.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>완료된 컨셉시트가 없습니다</div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {completedList.map((item) => (
+                <div
+                  key={item.id}
+                  className="sidebar-item"
+                  onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+                  style={{
+                    padding: "16px", borderRadius: 16,
+                    background: expandedItem === item.id ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.03)",
+                    border: expandedItem === item.id ? "1px solid rgba(99,102,241,0.3)" : "1px solid var(--surface-border)",
+                    cursor: "pointer", transition: "all 0.2s",
+                    position: "relative",
+                  }}
+                >
+                  {newItemId === item.id && (
+                    <span style={{
+                      position: "absolute", top: 12, right: 12,
+                      background: "linear-gradient(135deg, #22d3ee, #6366f1)",
+                      color: "#fff", fontSize: 10, fontWeight: 800,
+                      padding: "2px 8px", borderRadius: 8, letterSpacing: "0.05em",
+                      animation: "badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    }}>
+                      NEW
+                    </span>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                    <span style={{ fontSize: 28 }}>{item.categoryIcon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-main)" }}>
+                        {item.categoryLabel}
+                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", marginLeft: 8 }}>
+                          {item.style}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                        {item.winner} 선정 · 투표 {item.voters}명
+                      </div>
+                    </div>
+                  </div>
+                  {/* Color palette mini */}
+                  <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                    {item.colors.map((c, ci) => (
+                      <div key={ci} style={{
+                        width: 20, height: 20, borderRadius: 6,
+                        background: c, border: "1px solid rgba(255,255,255,0.1)",
+                      }} />
+                    ))}
+                    <div style={{ flex: 1 }} />
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
+                      {new Date(item.completedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
+                    </div>
+                  </div>
+                  {/* Expanded details */}
+                  {expandedItem === item.id && (
+                    <div style={{
+                      marginTop: 12, paddingTop: 12,
+                      borderTop: "1px solid rgba(255,255,255,0.06)",
+                      animation: "fadeIn 0.3s ease",
+                    }}>
+                      <div style={{ fontSize: 12, color: "var(--text-lighter)", lineHeight: 1.6, marginBottom: 8 }}>
+                        {item.prompt}
+                      </div>
+                      <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-muted)" }}>
+                        <span>Seed: <code style={{ color: "var(--accent)", fontFamily: "monospace" }}>{item.seed}</code></span>
+                        <span>카테고리: {item.category}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                        완료: {new Date(item.completedAt).toLocaleString("ko-KR")}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Hidden canvas for concept sheet generation */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
