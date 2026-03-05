@@ -1,19 +1,20 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "0.4.0";
 const CHANGELOG = [
   {
-    version: "1.3.0",
-    date: "2026-03-04",
+    version: "0.4.0",
+    date: "2026-03-05",
     changes: [
       "완료 목록 카드에 대형 이미지 썸네일 추가",
       "위시리스트 기능 추가 (이미지 첨부, 메모)",
       "사이드바 탭 UI (완료 목록 / 위시리스트)",
+      "샘플 데이터 10개씩 확장",
     ],
   },
   {
-    version: "1.2.0",
+    version: "0.3.0",
     date: "2026-03-04",
     changes: [
       "완료된 컨셉시트 리스트 사이드 패널 추가",
@@ -22,7 +23,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "1.1.0",
+    version: "0.2.0",
     date: "2026-03-01",
     changes: [
       "투표 및 시안 선정 워크플로우 추가",
@@ -31,10 +32,10 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "1.0.0",
+    version: "0.1.0",
     date: "2026-02-28",
     changes: [
-      "초기 릴리스",
+      "초기 프로토타입",
       "AI 기반 프롬프트 최적화 (Claude API)",
       "카테고리별 가구 컨셉 생성",
       "멀티뷰 컨셉시트 생성",
