@@ -2,10 +2,14 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 
 :root {
-    --bg-color: #0b0c10;
-    --bg-gradient: radial-gradient(circle at 50% 0%, #1e1f29 0%, #0b0c10 70%);
-    --surface-color: rgba(22, 24, 33, 0.6);
-    --surface-border: rgba(255, 255, 255, 0.08);
+    --bg-color: #080a0f;
+    --bg-gradient:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(7, 110, 232, 0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 50%, rgba(132, 197, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse 60% 40% at 20% 80%, rgba(152, 166, 255, 0.04) 0%, transparent 50%),
+        linear-gradient(180deg, #0c0e14 0%, #080a0f 100%);
+    --surface-color: rgba(14, 17, 26, 0.7);
+    --surface-border: rgba(255, 255, 255, 0.06);
     --primary: #076ee8;
     --primary-hover: #0560cc;
     --primary-glow: rgba(7, 110, 232, 0.4);
