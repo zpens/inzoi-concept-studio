@@ -589,7 +589,7 @@ function StepIndicator({ currentStep, steps }) {
               background: i < currentStep
                 ? "linear-gradient(90deg, #22c55e, #10b981)"
                 : "var(--surface-color)",
-              borderTop: "1px solid rgba(255,255,255,0.05)",
+              borderTop: "1px solid rgba(0,0,0,0.04)",
               transition: "background 0.4s",
               boxShadow: i < currentStep ? "0 0 10px rgba(34,197,94,0.3)" : "none",
             }} />
@@ -626,7 +626,7 @@ function ImageUploader({ images, onImagesChange }) {
           <div key={i} className="hover-lift" style={{
             position: "relative", aspectRatio: "1", borderRadius: 16,
             overflow: "hidden", border: "1px solid var(--surface-border)",
-            boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            boxShadow: "0 4px 15px rgba(0,0,0,0.04)",
           }}>
             <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             <button
@@ -655,7 +655,7 @@ function ImageUploader({ images, onImagesChange }) {
               display: "flex", flexDirection: "column",
               alignItems: "center", justifyContent: "center",
               cursor: "pointer", transition: "all 0.3s",
-              background: "rgba(255,255,255,0.02)",
+              background: "rgba(0,0,0,0.02)",
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.borderColor = "var(--primary)";
@@ -664,7 +664,7 @@ function ImageUploader({ images, onImagesChange }) {
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)";
-              e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+              e.currentTarget.style.background = "rgba(0,0,0,0.02)";
               e.currentTarget.style.boxShadow = "none";
             }}
           >
@@ -696,7 +696,7 @@ function DesignCard({ design, selected, onClick, index }) {
         border: selected ? "2px solid var(--accent)" : "1px solid var(--surface-border)",
         cursor: "pointer", transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
         transform: selected ? "scale(1.03)" : "scale(1)",
-        boxShadow: selected ? "0 0 35px rgba(34, 211, 238, 0.4), inset 0 0 20px rgba(34, 211, 238, 0.1)" : "0 8px 32px rgba(0,0,0,0.3)",
+        boxShadow: selected ? "0 0 35px rgba(34, 211, 238, 0.4), inset 0 0 20px rgba(34, 211, 238, 0.1)" : "0 8px 32px rgba(0,0,0,0.06)",
         background: selected ? "rgba(34, 211, 238, 0.03)" : "var(--surface-color)",
         position: "relative",
       }}
@@ -714,12 +714,12 @@ function DesignCard({ design, selected, onClick, index }) {
           }}>
             <div style={{
               width: "60%", height: "60%", borderRadius: 16,
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgba(0,0,0,0.02)",
+              border: "1px solid rgba(0,0,0,0.08)",
               backdropFilter: "blur(8px)",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 54, filter: selected ? "none" : "grayscale(0.5)",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.04)",
               transition: "all 0.3s",
             }}>
               {design.icon}
@@ -740,7 +740,7 @@ function DesignCard({ design, selected, onClick, index }) {
         <div style={{
           position: "absolute", bottom: 0, left: 0, right: 0,
           padding: "50px 20px 16px",
-          background: "linear-gradient(transparent, rgba(0,0,0,0.9))",
+          background: "linear-gradient(transparent, rgba(0,0,0,0.7))",
         }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-main)" }}>시안 {index + 1}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontFamily: "monospace" }}>Seed: {design.seed}</div>
@@ -754,7 +754,7 @@ function LoadingOverlay({ message, progress }) {
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 1000,
-      background: "radial-gradient(circle at center, rgba(11, 12, 16, 0.8) 0%, rgba(0, 0, 0, 0.95) 100%)",
+      background: "radial-gradient(circle at center, rgba(255, 255, 255, 0.9) 0%, rgba(240, 242, 245, 0.97) 100%)",
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
       backdropFilter: "blur(12px)",
@@ -764,7 +764,7 @@ function LoadingOverlay({ message, progress }) {
       <div style={{ position: "relative", width: 100, height: 100 }}>
         <div style={{
           position: "absolute", inset: 0, borderRadius: "50%",
-          border: "3px solid rgba(255,255,255,0.05)",
+          border: "3px solid rgba(0,0,0,0.04)",
         }} />
         <div style={{
           position: "absolute", inset: 0, borderRadius: "50%",
@@ -784,7 +784,7 @@ function LoadingOverlay({ message, progress }) {
         {message}
       </div>
       {progress !== undefined && (
-        <div style={{ width: 320, height: 6, background: "rgba(0,0,0,0.5)", borderRadius: 3, marginTop: 20, overflow: "hidden", border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ width: 320, height: 6, background: "rgba(0,0,0,0.08)", borderRadius: 3, marginTop: 20, overflow: "hidden", border: "1px solid rgba(0,0,0,0.04)" }}>
           <div style={{
             width: `${progress}%`, height: "100%",
             background: "linear-gradient(90deg, var(--primary), var(--accent))",
@@ -1117,14 +1117,14 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               className="hover-lift"
               style={{
                 padding: "10px 24px", borderRadius: 12,
-                background: "rgba(255,255,255,0.05)",
+                background: "rgba(0,0,0,0.04)",
                 border: "1px solid var(--surface-border)",
                 color: "var(--text-lighter)", fontSize: 14, fontWeight: 600, cursor: "pointer",
                 backdropFilter: "blur(8px)",
                 transition: "all 0.3s",
               }}
-              onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
-              onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
+              onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "#fff"; }}
+              onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
             >
               새로 시작
             </button>
@@ -1170,7 +1170,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       padding: "14px 32px", border: "1px solid var(--surface-border)",
                       borderBottom: topTab === tab.id ? "1px solid transparent" : "1px solid var(--surface-border)",
                       borderRadius: "16px 16px 0 0",
-                      background: topTab === tab.id ? "rgba(255,255,255,0.05)" : "transparent",
+                      background: topTab === tab.id ? "rgba(0,0,0,0.04)" : "transparent",
                       color: topTab === tab.id ? "#fff" : "var(--text-muted)",
                       fontSize: 15, fontWeight: topTab === tab.id ? 700 : 500,
                       cursor: "pointer", position: "relative",
@@ -1185,9 +1185,9 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   <div style={{ flex: 1, borderBottom: "1px solid var(--surface-border)" }} />
                 </div>
                 {/* Room + Sub-category panel */}
-                <div style={{ border: "1px solid var(--surface-border)", borderTop: "none", borderRadius: "0 0 16px 16px", overflow: "hidden", background: "rgba(0,0,0,0.2)" }}>
+                <div style={{ border: "1px solid var(--surface-border)", borderTop: "none", borderRadius: "0 0 16px 16px", overflow: "hidden", background: "rgba(0,0,0,0.04)" }}>
                   {/* Room tabs — horizontal */}
-                  <div style={{ display: "flex", gap: 0, overflowX: "auto", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--surface-border)", scrollbarWidth: "none" }}>
+                  <div style={{ display: "flex", gap: 0, overflowX: "auto", background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--surface-border)", scrollbarWidth: "none" }}>
                     {(topTab === "furniture"
                       ? ["침실", "거실", "주방", "욕실", "서재", "야외공간", "취미", "소셜 이벤트", "기타"]
                       : ["벽", "바닥", "지붕", "문", "창문", "계단", "기둥", "울타리", "기타 건축"]
@@ -1196,7 +1196,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                         flexShrink: 0,
                         padding: "12px 20px", border: "none",
                         borderBottom: selectedRoom === room ? "2px solid var(--accent)" : "2px solid transparent",
-                        borderRight: "1px solid rgba(255,255,255,0.05)",
+                        borderRight: "1px solid rgba(0,0,0,0.04)",
                         background: "transparent",
                         color: selectedRoom === room ? "var(--text-main)" : "var(--text-muted)",
                         fontSize: 13, fontWeight: selectedRoom === room ? 700 : 500,
@@ -1216,7 +1216,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       <button key={cat.id} onClick={() => setCategory(cat.id)} className="hover-lift" style={{
                         padding: "9px 14px", borderRadius: 12,
                         border: category === cat.id ? "2px solid var(--accent)" : "1px solid var(--surface-border)",
-                        background: category === cat.id ? "rgba(152,166,255,0.1)" : "rgba(255,255,255,0.03)",
+                        background: category === cat.id ? "rgba(152,166,255,0.1)" : "rgba(0,0,0,0.02)",
                         cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
                         color: category === cat.id ? "#fff" : "var(--text-muted)",
                         fontSize: 13, fontWeight: category === cat.id ? 700 : 500,
@@ -1279,7 +1279,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                         {spec.hint && (
                           <div style={{
                             marginTop: 12, paddingTop: 10,
-                            borderTop: "1px solid rgba(255,255,255,0.06)",
+                            borderTop: "1px solid rgba(0,0,0,0.05)",
                             fontSize: 11, color: "var(--text-muted)",
                             display: "flex", gap: 6, alignItems: "flex-start",
                           }}>
@@ -1307,14 +1307,14 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       style={{
                         padding: "10px 24px", borderRadius: 24,
                         border: stylePreset === s.id ? "2px solid var(--accent)" : "1px solid var(--surface-border)",
-                        background: stylePreset === s.id ? "rgba(152,166,255,0.1)" : "rgba(255,255,255,0.03)",
+                        background: stylePreset === s.id ? "rgba(152,166,255,0.1)" : "rgba(0,0,0,0.02)",
                         cursor: "pointer", transition: "all 0.3s",
                         display: "flex", alignItems: "center", gap: 10,
                         color: stylePreset === s.id ? "#fff" : "var(--text-muted)", fontSize: 14, fontWeight: 600,
                         boxShadow: stylePreset === s.id ? "0 4px 15px rgba(152,166,255,0.2)" : "none",
                       }}
                     >
-                      <div style={{ width: 14, height: 14, borderRadius: "50%", background: s.color, boxShadow: "0 2px 5px rgba(0,0,0,0.5)" }} />
+                      <div style={{ width: 14, height: 14, borderRadius: "50%", background: s.color, boxShadow: "0 2px 5px rgba(0,0,0,0.08)" }} />
                       {s.label}
                     </button>
                   ))}
@@ -1333,7 +1333,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   style={{
                     width: "100%", minHeight: 140, padding: 20,
                     borderRadius: 16, border: "2px solid var(--surface-border)",
-                    background: "rgba(0,0,0,0.3)", color: "var(--text-main)",
+                    background: "rgba(0,0,0,0.06)", color: "var(--text-main)",
                     fontSize: 15, lineHeight: 1.6, resize: "vertical",
                     outline: "none", fontFamily: "inherit",
                     boxSizing: "border-box", transition: "all 0.3s",
@@ -1341,12 +1341,12 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   onFocus={(e) => {
                     e.target.style.borderColor = "var(--primary)";
                     e.target.style.boxShadow = "0 0 20px rgba(99, 102, 241, 0.2)";
-                    e.target.style.background = "rgba(0,0,0,0.5)";
+                    e.target.style.background = "rgba(0,0,0,0.08)";
                   }}
                   onBlur={(e) => {
                     e.target.style.borderColor = "var(--surface-border)";
                     e.target.style.boxShadow = "none";
-                    e.target.style.background = "rgba(0,0,0,0.3)";
+                    e.target.style.background = "rgba(0,0,0,0.06)";
                   }}
                 />
               </div>
@@ -1404,12 +1404,12 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 className="hover-lift glass-panel"
                 style={{
                   padding: "12px 24px", borderRadius: 14,
-                  background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                   color: "var(--text-lighter)", fontSize: 14, fontWeight: 600, cursor: "pointer",
                   display: "flex", alignItems: "center", gap: 8, transition: "all 0.3s",
                 }}
-                onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
-                onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
+                onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "#fff"; }}
+                onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
               >
                 <span style={{ fontSize: 16 }}>🔄</span> 재생성
               </button>
@@ -1496,7 +1496,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   placeholder="이름을 입력하세요"
                   style={{
                     flex: 1, padding: "12px 20px", borderRadius: 12,
-                    border: "2px solid var(--surface-border)", background: "rgba(0,0,0,0.3)",
+                    border: "2px solid var(--surface-border)", background: "rgba(0,0,0,0.06)",
                     color: "var(--text-main)", fontSize: 15, outline: "none",
                     fontFamily: "inherit", transition: "all 0.3s",
                   }}
@@ -1527,7 +1527,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     cursor: currentVoter.trim() ? "pointer" : "not-allowed",
                     transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
                     transform: currentVotes.includes(i) ? "scale(1.03)" : "scale(1)",
-                    boxShadow: currentVotes.includes(i) ? "0 0 35px rgba(34, 211, 238, 0.4)" : "0 8px 32px rgba(0,0,0,0.3)",
+                    boxShadow: currentVotes.includes(i) ? "0 0 35px rgba(34, 211, 238, 0.4)" : "0 8px 32px rgba(0,0,0,0.06)",
                     background: currentVotes.includes(i) ? "rgba(34, 211, 238, 0.03)" : "var(--surface-color)",
                     position: "relative",
                     opacity: currentVoter.trim() ? 1 : 0.6,
@@ -1544,7 +1544,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       }}>
                         <div style={{
                           width: "60%", height: "60%", borderRadius: 16,
-                          background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                          background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.08)",
                           display: "flex", alignItems: "center", justifyContent: "center",
                           fontSize: 54,
                         }}>
@@ -1579,7 +1579,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     <div style={{
                       position: "absolute", bottom: 0, left: 0, right: 0,
                       padding: "50px 20px 16px",
-                      background: "linear-gradient(transparent, rgba(0,0,0,0.9))",
+                      background: "linear-gradient(transparent, rgba(0,0,0,0.7))",
                     }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-main)" }}>시안 {i + 1}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontFamily: "monospace" }}>Seed: {design.seed}</div>
@@ -1630,7 +1630,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     <div key={i} style={{
                       display: "flex", alignItems: "center", gap: 16,
                       padding: "12px 16px", borderRadius: 12,
-                      background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)",
+                      background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.04)",
                     }}>
                       <div style={{
                         width: 36, height: 36, borderRadius: "50%",
@@ -1700,7 +1700,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                         <div style={{ width: 80, fontSize: 14, fontWeight: 700, color: isWinner ? "var(--accent)" : "var(--text-muted)", whiteSpace: "nowrap" }}>
                           시안 {i + 1}
                         </div>
-                        <div style={{ flex: 1, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.05)", overflow: "hidden", position: "relative" }}>
+                        <div style={{ flex: 1, height: 32, borderRadius: 8, background: "rgba(0,0,0,0.04)", overflow: "hidden", position: "relative" }}>
                           <div className="vote-bar-fill" style={{
                             width: `${maxVotes > 0 ? (voteCount / maxVotes) * 100 : 0}%`,
                             height: "100%", borderRadius: 8,
@@ -1747,7 +1747,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                               className={selectedDesign === idx ? "" : "hover-lift"}
                               style={{
                                 padding: "16px 20px", borderRadius: 16,
-                                background: selectedDesign === idx ? "rgba(152,166,255,0.15)" : "rgba(255,255,255,0.03)",
+                                background: selectedDesign === idx ? "rgba(152,166,255,0.15)" : "rgba(0,0,0,0.02)",
                                 border: selectedDesign === idx ? "2px solid var(--accent)" : "1px solid var(--surface-border)",
                                 cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
                                 color: "var(--text-main)", fontSize: 15, fontWeight: 700,
@@ -1791,7 +1791,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       <div key={i} style={{
                         display: "flex", alignItems: "center", gap: 12,
                         padding: "10px 14px", borderRadius: 10,
-                        background: "rgba(255,255,255,0.03)", fontSize: 13,
+                        background: "rgba(0,0,0,0.02)", fontSize: 13,
                       }}>
                         <span style={{ fontWeight: 700, color: "var(--text-main)", minWidth: 60 }}>{voter.name}</span>
                         <span style={{ color: "var(--text-muted)" }}>→</span>
@@ -1857,7 +1857,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 <div className="glass-panel hover-lift" style={{
                   aspectRatio: "1", borderRadius: 24, overflow: "hidden",
                   border: "1px solid var(--surface-border)", position: "relative",
-                  boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+                  boxShadow: "0 10px 40px rgba(0,0,0,0.08)",
                 }}>
                   {designs[selectedDesign]?.imageUrl ? (
                     <img src={designs[selectedDesign].imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -1869,11 +1869,11 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     }}>
                       <div style={{
                         width: "50%", height: "50%", borderRadius: 32,
-                        background: "rgba(255,255,255,0.05)",
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        background: "rgba(0,0,0,0.04)",
+                        border: "1px solid rgba(0,0,0,0.06)",
                         backdropFilter: "blur(12px)",
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 96, boxShadow: "0 10px 40px rgba(0,0,0,0.3)",
+                        fontSize: 96, boxShadow: "0 10px 40px rgba(0,0,0,0.06)",
                       }}>
                         {designs[selectedDesign]?.icon}
                       </div>
@@ -1885,7 +1885,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     background: "rgba(152,166,255,0.9)",
                     backdropFilter: "blur(4px)",
                     fontSize: 14, fontWeight: 800, color: "#000",
-                    boxShadow: "0 4px 15px rgba(0,0,0,0.3)",
+                    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
                   }}>
                     선택된 시안 {selectedDesign + 1}
                   </div>
@@ -1897,7 +1897,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     <div key={i} style={{ flex: 1, textAlign: "center" }}>
                       <div className="hover-lift glass-panel" style={{
                         height: 48, borderRadius: 12, background: c,
-                        border: "1px solid rgba(255,255,255,0.15)",
+                        border: "1px solid rgba(0,0,0,0.1)",
                         cursor: "pointer",
                       }} />
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, fontFamily: "monospace", fontWeight: 600 }}>{c}</div>
@@ -1930,7 +1930,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     </div>
                     <div>
                       <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>프롬프트</div>
-                      <div style={{ fontSize: 14, color: "var(--text-lighter)", lineHeight: 1.6, background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8 }}>{prompt}</div>
+                      <div style={{ fontSize: 14, color: "var(--text-lighter)", lineHeight: 1.6, background: "rgba(0,0,0,0.04)", padding: 12, borderRadius: 8 }}>{prompt}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>생성 시드</div>
@@ -1949,8 +1949,8 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     placeholder="멀티뷰 생성 시 반영할 추가 디테일을 입력하세요.&#10;예: 다리를 더 가늘게, 등받이 각도를 살짝 더 기울이게 등..."
                     style={{
                       width: "100%", minHeight: 120, padding: 20,
-                      borderRadius: 16, border: "2px solid rgba(255,255,255,0.1)",
-                      background: "rgba(0,0,0,0.4)", color: "var(--text-main)",
+                      borderRadius: 16, border: "2px solid rgba(0,0,0,0.06)",
+                      background: "rgba(0,0,0,0.06)", color: "var(--text-main)",
                       fontSize: 15, lineHeight: 1.6, resize: "vertical",
                       outline: "none", fontFamily: "inherit",
                       boxSizing: "border-box", transition: "all 0.3s",
@@ -1961,8 +1961,8 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       e.target.style.boxShadow = "0 0 15px rgba(7,110,232,0.2)";
                     }}
                     onBlur={(e) => {
-                      e.target.style.borderColor = "rgba(255,255,255,0.1)";
-                      e.target.style.background = "rgba(0,0,0,0.4)";
+                      e.target.style.borderColor = "rgba(0,0,0,0.06)";
+                      e.target.style.background = "rgba(0,0,0,0.06)";
                       e.target.style.boxShadow = "none";
                     }}
                   />
@@ -1974,12 +1974,12 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     className="hover-lift glass-panel"
                     style={{
                       flex: 1, padding: "16px 24px", borderRadius: 16,
-                      background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                       color: "var(--text-lighter)", fontSize: 15, fontWeight: 700, cursor: "pointer",
                       transition: "all 0.3s",
                     }}
-                    onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
-                    onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
+                    onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "#fff"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
                   >
                     ← 시안 다시 선택
                   </button>
@@ -2018,8 +2018,8 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 <div className="glass-panel" style={{
                   borderRadius: 24, overflow: "hidden",
                   border: "1px solid var(--surface-border)",
-                  background: "rgba(0,0,0,0.5)",
-                  boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+                  background: "rgba(0,0,0,0.08)",
+                  boxShadow: "0 10px 40px rgba(0,0,0,0.08)",
                 }}>
                   {conceptSheet ? (
                     <img src={conceptSheet} alt="Concept Sheet" style={{ width: "100%", display: "block" }} />
@@ -2041,19 +2041,19 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 }}>
                   <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-lighter)", marginBottom: 20 }}>📋 에셋 메타데이터</h3>
                   <div style={{ display: "grid", gap: 14, fontSize: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(0,0,0,0.04)", paddingBottom: 8 }}>
                       <span style={{ color: "var(--text-muted)" }}>해상도</span>
                       <span style={{ fontWeight: 600 }}>2400 × 3200<small>px</small></span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(0,0,0,0.04)", paddingBottom: 8 }}>
                       <span style={{ color: "var(--text-muted)" }}>포맷</span>
                       <span style={{ fontWeight: 600, color: "var(--accent)" }}>PNG</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(0,0,0,0.04)", paddingBottom: 8 }}>
                       <span style={{ color: "var(--text-muted)" }}>카테고리</span>
                       <span style={{ fontWeight: 600 }}>{FURNITURE_CATEGORIES.find((c) => c.id === category)?.label}</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(0,0,0,0.04)", paddingBottom: 8 }}>
                       <span style={{ color: "var(--text-muted)" }}>스타일</span>
                       <span style={{ fontWeight: 600 }}>{STYLE_PRESETS.find((s) => s.id === stylePreset)?.label || "-"}</span>
                     </div>
@@ -2075,9 +2075,9 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     {VIEW_ANGLES.map((v) => (
                       <div key={v.id} style={{
                         padding: "10px 14px", borderRadius: 12,
-                        background: "rgba(255,255,255,0.05)", fontSize: 13, color: "var(--text-main)",
+                        background: "rgba(0,0,0,0.04)", fontSize: 13, color: "var(--text-main)",
                         display: "flex", alignItems: "center", gap: 8, fontWeight: 500,
-                        border: "1px solid rgba(255,255,255,0.05)",
+                        border: "1px solid rgba(0,0,0,0.04)",
                       }}>
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
                         {v.label}
@@ -2120,13 +2120,13 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     className="hover-lift"
                     style={{
                       width: "100%", padding: "16px 24px", borderRadius: 16,
-                      background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                       color: "var(--text-lighter)", fontSize: 14, fontWeight: 700, cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
                       transition: "all 0.3s",
                     }}
-                    onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
-                    onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                    onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
                   >
                     <span style={{ fontSize: 18 }}>📋</span> 에셋 메타데이터 백업 (JSON)
                   </button>
@@ -2201,7 +2201,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
             position: "fixed", top: "50%", left: "50%",
             transform: "translate(-50%, -50%)",
             width: 480, maxWidth: "90vw", maxHeight: "80vh",
-            background: "rgba(15, 17, 24, 0.97)",
+            background: "rgba(255, 255, 255, 0.97)",
             backdropFilter: "blur(20px)",
             border: "1px solid var(--surface-border)",
             borderRadius: 24, zIndex: 202,
@@ -2225,12 +2225,12 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 onClick={() => setVersionOpen(false)}
                 style={{
                   width: 36, height: 36, borderRadius: 10,
-                  background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                   color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}
-                onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
-                onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
+                onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
               >
                 ✕
               </button>
@@ -2243,12 +2243,12 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 <div key={entry.version} style={{
                   marginBottom: 20,
                   paddingBottom: idx < CHANGELOG.length - 1 ? 20 : 0,
-                  borderBottom: idx < CHANGELOG.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                  borderBottom: idx < CHANGELOG.length - 1 ? "1px solid rgba(0,0,0,0.05)" : "none",
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                     <span style={{
                       fontSize: 13, fontWeight: 800, color: idx === 0 ? "var(--accent)" : "var(--text-lighter)",
-                      background: idx === 0 ? "rgba(152,166,255,0.1)" : "rgba(255,255,255,0.05)",
+                      background: idx === 0 ? "rgba(152,166,255,0.1)" : "rgba(0,0,0,0.04)",
                       border: idx === 0 ? "1px solid rgba(152,166,255,0.25)" : "1px solid var(--surface-border)",
                       padding: "3px 10px", borderRadius: 8,
                     }}>
@@ -2300,13 +2300,13 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               onClick={() => setSidebarOpen(false)}
               style={{
                 width: 36, height: 36, borderRadius: 10,
-                background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                 color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 transition: "all 0.2s",
               }}
-              onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
-              onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+              onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
+              onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
             >
               ✕
             </button>
@@ -2322,7 +2322,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 onClick={() => setSidebarTab(tab.key)}
                 style={{
                   flex: 1, padding: "10px 12px", borderRadius: "10px 10px 0 0",
-                  background: sidebarTab === tab.key ? "rgba(255,255,255,0.06)" : "transparent",
+                  background: sidebarTab === tab.key ? "rgba(0,0,0,0.05)" : "transparent",
                   border: "none", borderBottom: sidebarTab === tab.key ? "2px solid var(--primary)" : "2px solid transparent",
                   color: sidebarTab === tab.key ? "var(--text-main)" : "var(--text-muted)",
                   fontSize: 13, fontWeight: 600, cursor: "pointer",
@@ -2334,7 +2334,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 {tab.label}
                 <span style={{
                   fontSize: 11, fontWeight: 800, padding: "1px 7px", borderRadius: 8,
-                  background: sidebarTab === tab.key ? "rgba(7,110,232,0.2)" : "rgba(255,255,255,0.06)",
+                  background: sidebarTab === tab.key ? "rgba(7,110,232,0.2)" : "rgba(0,0,0,0.05)",
                   color: sidebarTab === tab.key ? "#84c5ff" : "var(--text-muted)",
                 }}>
                   {tab.count}
@@ -2363,7 +2363,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
                     style={{
                       borderRadius: 16,
-                      background: expandedItem === item.id ? "rgba(7,110,232,0.08)" : "rgba(255,255,255,0.03)",
+                      background: expandedItem === item.id ? "rgba(7,110,232,0.08)" : "rgba(0,0,0,0.02)",
                       border: expandedItem === item.id ? "1px solid rgba(7,110,232,0.3)" : "1px solid var(--surface-border)",
                       cursor: "pointer", transition: "all 0.2s",
                       position: "relative", overflow: "hidden",
@@ -2399,7 +2399,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       <div style={{
                         position: "absolute", bottom: 0, left: 0, right: 0,
                         padding: "24px 14px 10px",
-                        background: "linear-gradient(transparent, rgba(0,0,0,0.8))",
+                        background: "linear-gradient(transparent, rgba(0,0,0,0.6))",
                       }}>
                         <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>
                           {item.categoryIcon} {item.categoryLabel}
@@ -2424,7 +2424,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                         {item.colors.map((c, ci) => (
                           <div key={ci} style={{
                             width: 24, height: 24, borderRadius: 6,
-                            background: c, border: "1px solid rgba(255,255,255,0.1)",
+                            background: c, border: "1px solid rgba(0,0,0,0.06)",
                           }} />
                         ))}
                       </div>
@@ -2432,7 +2432,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       {expandedItem === item.id && (
                         <div style={{
                           marginTop: 12, paddingTop: 12,
-                          borderTop: "1px solid rgba(255,255,255,0.06)",
+                          borderTop: "1px solid rgba(0,0,0,0.05)",
                           animation: "fadeIn 0.3s ease",
                         }}>
                           <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.7, marginBottom: 10 }}>
@@ -2472,7 +2472,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   onChange={e => setWishTitle(e.target.value)}
                   style={{
                     width: "100%", padding: "10px 14px", borderRadius: 10,
-                    background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                     color: "var(--text-main)", fontSize: 13, outline: "none",
                     marginBottom: 8, transition: "border-color 0.2s",
                   }}
@@ -2486,7 +2486,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   rows={2}
                   style={{
                     width: "100%", padding: "10px 14px", borderRadius: 10,
-                    background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                     color: "var(--text-main)", fontSize: 13, outline: "none",
                     marginBottom: 8, resize: "vertical", lineHeight: 1.5,
                     transition: "border-color 0.2s",
@@ -2514,12 +2514,12 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                     onClick={() => wishImageRef.current?.click()}
                     style={{
                       padding: "8px 14px", borderRadius: 8,
-                      background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                       color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
                       display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
                     }}
-                    onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
-                    onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                    onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
                   >
                     🖼️ 이미지 첨부
                   </button>
@@ -2562,7 +2562,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   }}
                   style={{
                     width: "100%", padding: "10px", borderRadius: 10,
-                    background: wishTitle.trim() ? "linear-gradient(135deg, #eab308, #f59e0b)" : "rgba(255,255,255,0.05)",
+                    background: wishTitle.trim() ? "linear-gradient(135deg, #eab308, #f59e0b)" : "rgba(0,0,0,0.04)",
                     border: "none",
                     color: wishTitle.trim() ? "#000" : "var(--text-muted)",
                     fontSize: 13, fontWeight: 700, cursor: wishTitle.trim() ? "pointer" : "not-allowed",
@@ -2587,7 +2587,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                       className="sidebar-item"
                       style={{
                         borderRadius: 16, overflow: "hidden",
-                        background: "rgba(255,255,255,0.03)",
+                        background: "rgba(0,0,0,0.02)",
                         border: "1px solid var(--surface-border)",
                         transition: "all 0.2s", position: "relative",
                       }}
@@ -2626,13 +2626,13 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                             }}
                             style={{
                               width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                              background: "rgba(255,255,255,0.05)", border: "1px solid var(--surface-border)",
+                              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                               color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
                               display: "flex", alignItems: "center", justifyContent: "center",
                               transition: "all 0.2s",
                             }}
                             onMouseOver={e => { e.currentTarget.style.background = "rgba(239,68,68,0.15)"; e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)"; }}
-                            onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--surface-border)"; }}
+                            onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--surface-border)"; }}
                             title="삭제"
                           >
                             ✕
