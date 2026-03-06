@@ -1,15 +1,16 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 
 :root {
     --bg-color: #0b0c10;
     --bg-gradient: radial-gradient(circle at 50% 0%, #1e1f29 0%, #0b0c10 70%);
     --surface-color: rgba(22, 24, 33, 0.6);
     --surface-border: rgba(255, 255, 255, 0.08);
-    --primary: #6366f1;
-    --primary-hover: #4f46e5;
-    --primary-glow: rgba(99, 102, 241, 0.4);
-    --secondary: #8b5cf6;
-    --accent: #22d3ee;
+    --primary: #076ee8;
+    --primary-hover: #0560cc;
+    --primary-glow: rgba(7, 110, 232, 0.4);
+    --secondary: #84c5ff;
+    --accent: #98a6ff;
     --text-main: #f8fafc;
     --text-muted: #94a3b8;
     --text-lighter: #cbd5e1;
@@ -22,7 +23,7 @@
 }
 
 body {
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Pretendard Variable', 'Pretendard', 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg-color);
     background-image: var(--bg-gradient);
     background-attachment: fixed;
@@ -123,7 +124,7 @@ body {
 
 .text-gradient {
     background: auto;
-    background-image: linear-gradient(135deg, #a5b4fc 0%, #c4b5fd 100%);
+    background-image: linear-gradient(135deg, #84c5ff 0%, #98a6ff 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -163,12 +164,12 @@ body {
 }
 
 button {
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Pretendard Variable', 'Pretendard', 'Outfit', sans-serif;
 }
 
 input,
 textarea {
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Pretendard Variable', 'Pretendard', 'Outfit', sans-serif;
 }
 
 /* Vote badge animation */
