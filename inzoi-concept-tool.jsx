@@ -56,138 +56,188 @@ const CHANGELOG = [
 // ─── Sample Completed Data ───
 const SAMPLE_COMPLETED = [
   {
-    id: 1, category: "bed", categoryLabel: "침대", categoryIcon: "🛏️",
-    style: "스칸디나비안", prompt: "화이트 오크 프레임의 로우 플랫폼 침대, 슬랫 헤드보드",
-    seed: 1847293650, colors: ["#d4a574", "#f5f0e8", "#8b7355", "#e8d5b7", "#2c3639"],
-    gradient: "linear-gradient(135deg, #2e2a1a 0%, #1a2e2a 50%, #1a1a2e 100%)",
-    completedAt: "2026-02-20T14:30:00", voters: 5, winner: "시안 3",
+    id: 1, category: "sofa", categoryLabel: "소파", categoryIcon: "🛋️",
+    assetCode: "FRN-LIV-0041", designer: "박지수",
+    style: "미드센추리 모던",
+    prompt: "1960년대 덴마크 가구 디자인에서 영감을 받은 3인용 소파. 테이퍼드 월넛 원목 다리(높이 18cm), 버터스카치 컬러 풀그레인 가죽 시트, 쿠션은 덕다운 혼합 충전재로 살짝 꺼지는 느낌. 등받이 높이는 낮게 유지해 공간이 답답해 보이지 않도록. 인게임 거실 럭셔리 세트 메인 피스로 활용 예정.",
+    seed: 1847293650, colors: ["#c4874a", "#d4af6e", "#3b2a1a", "#f5e8d5", "#1a0f0a"],
+    gradient: "linear-gradient(135deg, #1c1410 0%, #3d2b18 50%, #1c1410 100%)",
+    completedAt: "2026-02-14T11:20:00", voters: 7, winner: "시안 2",
+    pipelineStatus: "텍스처링 진행중",
+    imageUrl: "/images/sofa.jpg",
   },
   {
-    id: 2, category: "sofa", categoryLabel: "소파", categoryIcon: "🛋️",
-    style: "미드센추리", prompt: "월넛 우드 프레임 3인 소파, 머스타드 옐로우 쿠션",
-    seed: 982736451, colors: ["#c2956b", "#d4af37", "#1a1a2e", "#f5f5f5", "#6b4423"],
-    gradient: "linear-gradient(135deg, #1c1917 0%, #44403c 50%, #1c1917 100%)",
-    completedAt: "2026-02-21T10:15:00", voters: 3, winner: "시안 5",
+    id: 2, category: "bed", categoryLabel: "침대", categoryIcon: "🛏️",
+    assetCode: "FRN-BED-0018", designer: "김도현",
+    style: "재패니즈 모던",
+    prompt: "일본 선(禅) 미학 기반의 로우 플랫폼 침대. 훈증 처리 아시안 참나무(Smoked Oak) 프레임, 침대 높이는 바닥에서 매트리스 상단까지 38cm로 제한. 헤드보드는 세로 그루브 음각 패턴, 탈착식 나이트스탠드 확장 모듈 포함. 침구류와 분리된 별도 mesh로 소재 커스터마이징 가능하게 구성. 시크릿 서랍 2개 hidden in frame.",
+    seed: 982736451, colors: ["#8b7355", "#c4a882", "#3d3228", "#f0e8d8", "#1e1812"],
+    gradient: "linear-gradient(135deg, #1a1410 0%, #2e2418 50%, #1a1410 100%)",
+    completedAt: "2026-02-17T15:40:00", voters: 6, winner: "시안 5",
+    pipelineStatus: "LOD 작업 대기",
+    imageUrl: "/images/bed.jpg",
   },
   {
     id: 3, category: "desk", categoryLabel: "책상", categoryIcon: "🖥️",
-    style: "모던", prompt: "블랙 메탈 프레임에 월넛 상판, 케이블 정리 홀 포함",
-    seed: 574839201, colors: ["#1a1a2e", "#64748b", "#a87c5a", "#e2e8f0", "#334155"],
-    gradient: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%)",
-    completedAt: "2026-02-22T16:45:00", voters: 4, winner: "시안 1",
+    assetCode: "FRN-STD-0029", designer: "이승민",
+    style: "테크 미니멀",
+    prompt: "홈오피스/서재 세트용 L자형 전동 스탠딩 데스크. 컬러: 매트 블랙 파우더코팅 스틸 프레임 + 화이트 오크 합판 상판(두께 28mm). 상판 후면에 케이블 정리 트레이 내장, 상판 우측에 USB-C·USB-A 빌트인 허브 소켓 표현. 높이 조절 모터 기둥 디테일 살리되 인게임 폴리 예산 내 표현. 모니터 암 홀 위치 정면 중앙 상단.",
+    seed: 574839201, colors: ["#1a1a1a", "#4a4a4a", "#c8bfa8", "#f0ede8", "#2a2a2a"],
+    gradient: "linear-gradient(135deg, #111111 0%, #2a2a2a 50%, #111111 100%)",
+    completedAt: "2026-02-19T09:15:00", voters: 8, winner: "시안 4",
+    pipelineStatus: "QA 완료",
+    imageUrl: "/images/desk.jpg",
   },
   {
     id: 4, category: "dining-table", categoryLabel: "식탁", categoryIcon: "🍽️",
-    style: "내추럴", prompt: "라이브 엣지 아카시아 원목 6인 식탁, 블랙 철제 다리",
-    seed: 1293847560, colors: ["#86a873", "#a87c5a", "#f0ece3", "#3f4e4f", "#dcd7c9"],
-    gradient: "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
-    completedAt: "2026-02-23T09:20:00", voters: 6, winner: "시안 7",
+    assetCode: "FRN-DIN-0033", designer: "박지수",
+    style: "내추럴 러스틱",
+    prompt: "라이브 엣지 슬랩 6인 식탁. 수령 80년 이상 아카시아 원목 상판, 자연스러운 결 살리고 에폭시 크랙 충전 표현(에폭시 컬러 클리어). 하부 다리는 헤어핀 스타일 블랙 파우더코팅 강철(Ø12mm 환봉 3발), 높이 73cm 준수. 상판 두께는 두껍게(60mm) 표현해야 원목의 존재감 살아남. 일부 버클 포함한 우드 결 텍스처 필수.",
+    seed: 1293847560, colors: ["#a0784a", "#c8a06a", "#2a2a2a", "#f0e4ce", "#6b4c2a"],
+    gradient: "linear-gradient(135deg, #1a1008 0%, #3a2410 50%, #1a1008 100%)",
+    completedAt: "2026-02-21T16:00:00", voters: 5, winner: "시안 7",
+    pipelineStatus: "모델링 진행중",
+    imageUrl: "/images/dining-table.jpg",
   },
   {
-    id: 5, category: "wardrobe", categoryLabel: "옷장", categoryIcon: "🚪",
-    style: "빈티지", prompt: "앤틱 마호가니 2도어 워드로브, 조각 장식 디테일",
-    seed: 738291045, colors: ["#5c3d2e", "#8b6f47", "#d4c5a9", "#3b2a1a", "#c8a882"],
-    gradient: "linear-gradient(135deg, #1e1a14 0%, #3d2a1a 50%, #1a1a1e 100%)",
-    completedAt: "2026-02-25T11:30:00", voters: 4, winner: "시안 2",
+    id: 5, category: "bathtub", categoryLabel: "욕조", categoryIcon: "🛁",
+    assetCode: "FRN-BTH-0007", designer: "최연재",
+    style: "럭셔리 스파",
+    prompt: "프리스탠딩 오벌 욕조, 페블 그레이 무광 세라믹 외관에 내부는 글로시 화이트. 클로우풋 디자인 아닌 슬림 패디스탈 베이스(높이 12cm). 황동 매트 골드 수전(캐스케이드 타입 스파우트)과 핸드샤워 홀더 세트 포함. 욕조 테두리에 티크 우드 배스 트레이 올려놓은 연출 포함. 물 채웠을 때 수면 shader를 위한 내부 rim 깊이 표현 명확히.",
+    seed: 738291045, colors: ["#c8c0b4", "#d4af6e", "#f8f4f0", "#8a8078", "#2a2418"],
+    gradient: "linear-gradient(135deg, #1e1c18 0%, #3a3628 50%, #1e1c18 100%)",
+    completedAt: "2026-02-24T13:30:00", voters: 9, winner: "시안 3",
+    pipelineStatus: "텍스처링 완료",
+    imageUrl: "/images/bathtub.jpg",
   },
   {
     id: 6, category: "bookshelf", categoryLabel: "책장", categoryIcon: "📚",
-    style: "인더스트리얼", prompt: "파이프 프레임 5단 오픈 선반, 재활용 목재 보드",
-    seed: 219384756, colors: ["#78716c", "#292524", "#d6cfc7", "#57534e", "#a8a29e"],
-    gradient: "linear-gradient(135deg, #1c1917 0%, #292524 50%, #1c1917 100%)",
-    completedAt: "2026-02-26T15:00:00", voters: 3, winner: "시안 4",
+    assetCode: "FRN-STD-0031", designer: "김도현",
+    style: "인더스트리얼 빈티지",
+    prompt: "6단 오픈형 서재 책장, 1인치 블랙 파이프 + 유니온 피팅 프레임 구조. 선반판은 재활용 전신주 소재처럼 보이는 헤비 웨더드 오크(짙은 탄화 처리). 선반 간격: 하단 2단 300mm(대형 서적용), 상단 4단 240mm. 상단 좌측 코너에 장식용 스팟라이트 클립온 포함. 벽 고정 브라켓도 디테일로 표현. 볼트·너트 디테일 클로즈업 텍스처 필수.",
+    seed: 219384756, colors: ["#3a3028", "#6a5a48", "#c8b89a", "#1e1814", "#f0e4d0"],
+    gradient: "linear-gradient(135deg, #181410 0%, #2e2418 50%, #181410 100%)",
+    completedAt: "2026-02-26T10:45:00", voters: 4, winner: "시안 6",
+    pipelineStatus: "QA 완료",
+    imageUrl: "/images/bookshelf.jpg",
   },
   {
-    id: 7, category: "bathtub", categoryLabel: "욕조", categoryIcon: "🛁",
-    style: "럭셔리", prompt: "블랙 대리석 독립형 욕조, 골드 수전 세트",
-    seed: 847562913, colors: ["#1a1a1a", "#d4af37", "#2c2c2c", "#f5f5f5", "#8b7355"],
-    gradient: "linear-gradient(135deg, #0a0a0a 0%, #2c1810 50%, #0a0a14 100%)",
-    completedAt: "2026-02-27T13:45:00", voters: 7, winner: "시안 6",
+    id: 7, category: "office-chair", categoryLabel: "사무용 의자", categoryIcon: "💺",
+    assetCode: "FRN-STD-0034", designer: "이승민",
+    style: "인체공학 모던",
+    prompt: "고급형 인체공학 메쉬 오피스 체어. 등판: 3D 에어메쉬(다크 챠콜), 좌판: 폼 쿠션 + 브레더블 패브릭. 뒷면 럼버 서포트 노브 디테일, 4방향 조절 팔걸이(높이+너비+각도+전후). 실버 알루미늄 5발 베이스(Ø65mm 듀얼 캐스터 표현). 헤드레스트는 분리 가능한 듯한 디테일. 틸트 텐션 다이얼 좌측 하단. 배색: 챠콜×실버×블랙.",
+    seed: 364718290, colors: ["#3a3a3a", "#5a5a5a", "#c0c0c8", "#1a1a1a", "#e8e8f0"],
+    gradient: "linear-gradient(135deg, #0f0f14 0%, #1e1e28 50%, #0f0f14 100%)",
+    completedAt: "2026-02-28T14:20:00", voters: 6, winner: "시안 1",
+    pipelineStatus: "모델링 진행중",
+    imageUrl: "/images/office-chair.jpg",
   },
   {
-    id: 8, category: "office-chair", categoryLabel: "사무용 의자", categoryIcon: "💺",
-    style: "모던", prompt: "메쉬 백 인체공학 의자, 알루미늄 베이스, 헤드레스트 포함",
-    seed: 364718290, colors: ["#334155", "#0f172a", "#e2e8f0", "#64748b", "#1e293b"],
-    gradient: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",
-    completedAt: "2026-02-28T10:00:00", voters: 5, winner: "시안 3",
+    id: 8, category: "wardrobe", categoryLabel: "옷장", categoryIcon: "🚪",
+    assetCode: "FRN-BED-0022", designer: "최연재",
+    style: "컨템포러리 미니멀",
+    prompt: "빌트인처럼 보이는 슬라이딩 도어 4도어 워드로브(W240×D65×H230cm). 도어 패널: 무광 화이트 래커 + 슬림 알루미늄 프레임(20mm 폭). 좌측 2도어: 상하 행거 공간, 우측 2도어: 서랍 4단 + 선반 3단. 도어 하단에 숨겨진 LED 간접조명 라인. 손잡이 없는 push-to-open 방식, 상단 코너에 통풍 슬릿 표현. 내부 구성 도어 오픈 시 보여야 함.",
+    seed: 847562913, colors: ["#f0f0ec", "#d8d8d4", "#a0a09c", "#2a2a28", "#1a1a18"],
+    gradient: "linear-gradient(135deg, #1c1c1a 0%, #2e2e2c 50%, #1c1c1a 100%)",
+    completedAt: "2026-03-03T09:00:00", voters: 7, winner: "시안 2",
+    pipelineStatus: "텍스처링 진행중",
+    imageUrl: "/images/wardrobe.jpg",
   },
   {
-    id: 9, category: "planter", categoryLabel: "화분/화단", categoryIcon: "🪴",
-    style: "미니멀", prompt: "화이트 시멘트 원형 화분, 우든 스탠드 세트 3종",
-    seed: 591028374, colors: ["#e2e8f0", "#a87c5a", "#86a873", "#f8fafc", "#64748b"],
-    gradient: "linear-gradient(135deg, #1a2e1a 0%, #2a3a2a 50%, #1a1e2a 100%)",
-    completedAt: "2026-03-01T08:30:00", voters: 2, winner: "시안 1",
+    id: 9, category: "dining-chair", categoryLabel: "식탁 의자", categoryIcon: "🪑",
+    assetCode: "FRN-DIN-0035", designer: "박지수",
+    style: "스칸디나비안 오가닉",
+    prompt: "유기적 곡선형 쉘 체어. 원피스 몰딩 너도밤나무(Beech) 베니어 쉘, 표면 자연 오일 왁스 피니시. 좌면에 얇은 폼+패브릭 쿠션패드 탈부착 가능. 4각 테이퍼드 다리 오크(높이 44cm 좌면). 다리와 쉘 연결부 금속 볼트 헤드 노출 디테일. 어두운 배경의 인게임 식당·카페 씬 모두 어울리는 뉴트럴 컬러 우선. 식탁 FRN-DIN-0033과 세트 연출.",
+    seed: 591028374, colors: ["#c8b090", "#e8d8c0", "#8a7060", "#f8f0e4", "#3a2e24"],
+    gradient: "linear-gradient(135deg, #1c1610 0%, #3028 50%, #1c1610 100%)",
+    completedAt: "2026-03-05T11:10:00", voters: 5, winner: "시안 3",
+    pipelineStatus: "컨셉 승인 완료",
+    imageUrl: "/images/dining-chair.jpg",
   },
   {
     id: 10, category: "fireplace", categoryLabel: "벽난로", categoryIcon: "🔥",
-    style: "빈티지", prompt: "빅토리안 스타일 대리석 벽난로, 아이언 그레이트 포함",
-    seed: 482917365, colors: ["#f0ece3", "#78716c", "#44403c", "#d6cfc7", "#292524"],
-    gradient: "linear-gradient(135deg, #2e2a1a 0%, #44403c 50%, #1c1917 100%)",
-    completedAt: "2026-03-02T17:15:00", voters: 8, winner: "시안 8",
+    assetCode: "FRN-LIV-0043", designer: "이승민",
+    style: "모던 클래식",
+    prompt: "빌트인 전기 벽난로(실제 불꽃 없는 LED 에뮬레이션 표현). 외부 케이스: 크림 화이트 마블 패턴 세라믹 타일 + 무광 블랙 스틸 인서트 프레임. 내부 로그 및 불꽃은 animated texture로 처리. 상부 맨틀피스 폭 160cm, 대리석 느낌 상판. 벽 매립 깊이 표현(음각 30cm). 인게임 럭셔리 거실·리조트 로비 배경에 배치 예정. 파이어 파티클 이펙트 연동 소켓 위치 명기.",
+    seed: 482917365, colors: ["#f0ece4", "#c8c0b0", "#1a1a1a", "#d0c8b8", "#4a4a48"],
+    gradient: "linear-gradient(135deg, #181814 0%, #2e2e28 50%, #181814 100%)",
+    completedAt: "2026-03-06T16:30:00", voters: 8, winner: "시안 5",
+    pipelineStatus: "최종 검토중",
+    imageUrl: "/images/fireplace.jpg",
   },
 ];
 
 // ─── Sample Wishlist Data ───
 const SAMPLE_WISHLIST = [
   {
-    id: 101, title: "둥근 라탄 의자",
-    note: "발리 리조트에서 본 행잉 체어. 베란다에 두면 좋겠다",
-    imageUrl: null, gradient: "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
-    createdAt: "2026-02-18T11:00:00",
+    id: 101,
+    title: "체스터필드 3인 소파 — 코냑 브라운",
+    note: "영국 빅토리아 시대 클럽하우스 분위기. 에이징 처리 풀그레인 가죽, 딥버튼 터프팅, 롤드 암레스트. 클래식 빌라·저택 씬에 필요. 현재 럭셔리 거실 세트에 소파가 미드센추리뿐이라 시대감 다양화 필요. 가죽 소재는 기존 FRN-LIV-0041과 공용 머티리얼 활용 가능할 듯.",
+    imageUrl: "/images/wish-sofa.jpg", gradient: "linear-gradient(135deg, #2a1a0c 0%, #4a2e14 50%, #2a1a0c 100%)",
+    createdAt: "2026-02-10T10:30:00",
   },
   {
-    id: 102, title: "테라조 커피 테이블",
-    note: "핑크+그레이 테라조 상판, 황동 다리 조합",
-    imageUrl: null, gradient: "linear-gradient(135deg, #2e1a2a 0%, #1a2e3e 50%, #2a2e1a 100%)",
-    createdAt: "2026-02-19T15:30:00",
+    id: 102,
+    title: "커브드 페이퍼 펜던트 조명",
+    note: "한국 한지 느낌의 플리츠 페이퍼 쉐이드 펜던트. 인게임 카페·티하우스 씬 분위기용. 빛 투과 shader가 관건 — 내부 광원이 종이 결을 통해 새어나오는 표현 필요. 유사 레퍼런스: 이세이 미야케 헝가마마 램프. 폴리는 낮게 유지하되 실루엣의 섬세함 살려야.",
+    imageUrl: "/images/wish-lamp.jpg", gradient: "linear-gradient(135deg, #2a2418 0%, #3e3428 50%, #2a2418 100%)",
+    createdAt: "2026-02-12T14:00:00",
   },
   {
-    id: 103, title: "일본식 좌식 테이블",
-    note: "히노키 원목 로우 테이블, 접이식 다리. 다다미방 컨셉에 맞게",
-    imageUrl: null, gradient: "linear-gradient(135deg, #1a2e1a 0%, #2e2a1a 50%, #1a1a2e 100%)",
-    createdAt: "2026-02-20T09:00:00",
+    id: 103,
+    title: "테라조 사이드 테이블 — 핑크 베이지",
+    note: "핑크×그레이×화이트 칩 혼합 테라조 원형 상판(Ø50cm), 황동 매트 3발 다리. 카페·홈오피스 액세서리 오브젝트로 활용도 높음. 텍스처 해상도가 중요 — 테라조 칩 패턴이 뭉개지지 않도록 2K 이상 디퓨즈 텍스처 필요. 기존 커피 테이블 라인업(저상형)과 높이 차별화해서 소품 연출용으로.",
+    imageUrl: "/images/wish-table.jpg", gradient: "linear-gradient(135deg, #2e2428 0%, #3e3034 50%, #2e2428 100%)",
+    createdAt: "2026-02-15T09:20:00",
   },
   {
-    id: 104, title: "네온 LED 선반",
-    note: "아크릴 선반 + 하단 RGB LED 스트립. 게이밍룸/바 인테리어용",
-    imageUrl: null, gradient: "linear-gradient(135deg, #1a0a2e 0%, #0a1a3e 50%, #2e0a1a 100%)",
-    createdAt: "2026-02-22T20:00:00",
+    id: 104,
+    title: "모듈형 큐브 수납장 — 오픈+도어 혼합",
+    note: "12칸 4×3 그리드 구성, 오픈 칸과 도어 칸 교차 배치. 도어는 루버 슬릿 스타일 또는 패브릭 패널 두 가지 바리에이션. 컬러: 화이트 + 내추럴 오크 혼합. 인게임 서재·드레스룸에 모두 쓸 수 있는 유연한 디자인 필요. IKEA KALLAX 구조 참고하되 퀄리티 레벨 올려서. 모듈 단위로 메쉬 분리해서 구성 커스텀 가능하게.",
+    imageUrl: "/images/wish-storage.jpg", gradient: "linear-gradient(135deg, #1e1e1c 0%, #3a3832 50%, #1e1e1c 100%)",
+    createdAt: "2026-02-18T16:45:00",
   },
   {
-    id: 105, title: "캣타워 겸 책장",
-    note: "고양이 동선을 고려한 벽걸이 모듈 선반. 책 수납 + 캣워크 겸용",
-    imageUrl: null, gradient: "linear-gradient(135deg, #2e2a1a 0%, #1a2e2a 50%, #2a1a2e 100%)",
-    createdAt: "2026-02-24T14:20:00",
+    id: 105,
+    title: "반려동물용 빌트인 캣워크 선반",
+    note: "벽면 부착형 플로팅 선반 3단 세트, 고양이 이동 동선 고려한 지그재그 배치. 선반 표면은 사이잘 로프 텍스처(스크래칭 방지 소재). 하단 유닛에는 가리개 있는 캣 하우스 포함. 반려동물 인터랙션 연동 소켓 위치 확정 필요. inZOI 내 펫 시스템 추가 예정과 맞물려 우선순위 높음 — 담당 PM에게 로드맵 확인 요청 중.",
+    imageUrl: "/images/wish-catshelf.jpg", gradient: "linear-gradient(135deg, #1e1c14 0%, #342e20 50%, #1e1c14 100%)",
+    createdAt: "2026-02-20T11:00:00",
   },
   {
-    id: 106, title: "플로팅 나이트스탠드",
-    note: "벽 부착형 서랍 협탁. 아래 공간 비워서 청소 편하게",
-    imageUrl: null, gradient: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",
-    createdAt: "2026-02-25T16:45:00",
+    id: 106,
+    title: "플로팅 벽부착 협탁 — 오크+블랙",
+    note: "벽 고정 브라켓 숨긴 플로팅 협탁, 서랍 1단 + 오픈 선반 1단. 화이트 오크 상판 + 블랙 하단 박스 투톤. 침대 세트 FRN-BED-0018에 맞춰 높이 기준은 침대 매트리스 상단(38cm)에서 +5cm 정도로. 벽면 설치 애니메이션 필요 여부는 UX팀 논의 중. 충전 케이블용 홀 후면에 표현 부탁.",
+    imageUrl: "/images/wish-nightstand.jpg", gradient: "linear-gradient(135deg, #1a1610 0%, #2e2820 50%, #1a1610 100%)",
+    createdAt: "2026-02-23T15:30:00",
   },
   {
-    id: 107, title: "아웃도어 파이어핏 테이블",
-    note: "가스 버너 내장 원형 테이블. 테라스에서 불멍용",
-    imageUrl: null, gradient: "linear-gradient(135deg, #2e1a0a 0%, #3e2a1a 50%, #1a0a0a 100%)",
-    createdAt: "2026-02-27T18:00:00",
+    id: 107,
+    title: "야외 라운지 데이베드",
+    note: "풀사이드·루프탑 씬용 야외 데이베드. 쿠션은 스트라이프 패턴 아웃도어 패브릭(흰색+베이지), 프레임은 내부식 알루미늄 파우더코팅 화이트. 차양 캐노피 탈부착 구성 필요(접힌 상태·펼친 상태 2종). 인게임 리조트·펜트하우스 루프탑 씬에 배치 예정. 날씨 시스템 연동해서 비올 때 캐노피 자동 펼쳐지는 인터랙션도 제안 중.",
+    imageUrl: "/images/wish-daybed.jpg", gradient: "linear-gradient(135deg, #1c2028 0%, #2c3040 50%, #1c2028 100%)",
+    createdAt: "2026-02-25T17:20:00",
   },
   {
-    id: 108, title: "투명 아크릴 의자",
-    note: "루이 고스트 체어 스타일. 좁은 공간에서 시각적 답답함 줄이기",
-    imageUrl: null, gradient: "linear-gradient(135deg, #1a1a2e 0%, #2e2e3e 50%, #1e1e2a 100%)",
-    createdAt: "2026-02-28T12:30:00",
+    id: 108,
+    title: "빈티지 바 카트 — 황동+유리",
+    note: "2단 바 카트, 상단 트레이에 유리잔·보틀 오브젝트 연출. 황동 파이프 프레임 + 강화유리 선반. 바퀴 4개(잠금 디테일 있는 스윙 캐스터). 높이 85cm, 폭 65cm 정도. 현재 주방/거실 씬에 고급 오브젝트 수량이 부족해 우선순위 높음. 보틀·유리잔은 별도 Props 팀과 협업 — 이미 스케줄 조율 중. 황동 컬러는 FRN-BTH-0007 욕조 수전 머티리얼 재활용 가능.",
+    imageUrl: "/images/wish-barcart.jpg", gradient: "linear-gradient(135deg, #1e1c10 0%, #3a3418 50%, #1e1c10 100%)",
+    createdAt: "2026-02-27T13:00:00",
   },
   {
-    id: 109, title: "빈티지 가죽 소파",
-    note: "에이징 처리된 코냑 브라운 가죽, 체스터필드 스타일 버튼 터프팅",
-    imageUrl: null, gradient: "linear-gradient(135deg, #1c1917 0%, #3d2a1a 50%, #1c1917 100%)",
-    createdAt: "2026-03-01T10:15:00",
+    id: 109,
+    title: "일본식 다도실 좌식 테이블",
+    note: "히노키 원목 로우 테이블(H33cm), 접이식 다리 구조(접힌 상태도 메쉬 필요). 상판 테두리에 옻칠 느낌의 무광 블랙 마감선. 다다미방·일본식 정원 씬용. 좌식 쿠션(자부통) 별도 Props와 세트 연출 예정. 사용자 앉기 인터랙션은 캐릭터 좌식 포즈 애니메이션팀과 연동 필요 — 담당자 김주완 팀장.",
+    imageUrl: "/images/wish-tatami.jpg", gradient: "linear-gradient(135deg, #1a1810 0%, #2e2c1c 50%, #1a1810 100%)",
+    createdAt: "2026-03-01T09:45:00",
   },
   {
-    id: 110, title: "모듈형 벽면 수납장",
-    note: "격자형 큐브 유닛 자유 조합. 화이트+내추럴 오크 MIX",
-    imageUrl: null, gradient: "linear-gradient(135deg, #1e293b 0%, #1a2e1a 50%, #2e2a1a 100%)",
-    createdAt: "2026-03-02T11:00:00",
+    id: 110,
+    title: "투명 폴리카보네이트 쉘 체어",
+    note: "루이 고스트 체어 레퍼런스. 전면 투명 소재 특성상 배경 굴절·반사 shader 처리가 핵심. 작은 공간 씬에서 시각적 개방감 확보 목적. 좌면 하단의 다리 연결부 몰드 라인 디테일 정확히 표현 필요. 투명 소재 특성상 폴리카운트 대비 퀄리티 확보 어려움 — 렌더팀에 사전 shader 테스트 요청할 것.",
+    imageUrl: "/images/wish-chair.jpg", gradient: "linear-gradient(135deg, #141428 0%, #1e1e3c 50%, #141428 100%)",
+    createdAt: "2026-03-04T14:30:00",
   },
 ];
 
@@ -832,8 +882,7 @@ export default function InZOIConceptTool() {
 
   // Completed list state
   const [completedList, setCompletedList] = useState(SAMPLE_COMPLETED);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState("completed"); // "completed" | "wishlist"
+  const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
   const [expandedItem, setExpandedItem] = useState(null);
   const [newItemId, setNewItemId] = useState(null);
 
@@ -1050,58 +1099,41 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            onClick={() => { setSidebarTab("wishlist"); setSidebarOpen(true); }}
-            className="hover-lift"
-            style={{
-              padding: "10px 20px", borderRadius: 12,
-              background: "rgba(234,179,8,0.1)",
-              border: "1px solid rgba(234,179,8,0.3)",
-              color: "#fbbf24", fontSize: 14, fontWeight: 600, cursor: "pointer",
-              backdropFilter: "blur(8px)",
-              transition: "all 0.3s",
-              display: "flex", alignItems: "center", gap: 8,
-            }}
-            onMouseOver={e => { e.currentTarget.style.background = "rgba(234,179,8,0.2)"; e.currentTarget.style.borderColor = "rgba(234,179,8,0.5)"; }}
-            onMouseOut={e => { e.currentTarget.style.background = "rgba(234,179,8,0.1)"; e.currentTarget.style.borderColor = "rgba(234,179,8,0.3)"; }}
-          >
-            <span style={{ fontSize: 16 }}>⭐</span>
-            위시리스트
-            <span style={{
-              background: "linear-gradient(135deg, #eab308, #f59e0b)",
-              color: "#000", fontSize: 11, fontWeight: 800,
-              padding: "2px 8px", borderRadius: 10, minWidth: 20, textAlign: "center",
+        {/* Tab Navigation */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: 14, border: "1px solid var(--surface-border)" }}>
+          {[
+            { id: "create", label: "시안 생성", icon: "✨" },
+            { id: "completed", label: "완료 목록", icon: "📋", count: completedList.length },
+            { id: "wishlist", label: "위시리스트", icon: "⭐", count: wishlist.length },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+              padding: "8px 18px", borderRadius: 10,
+              background: activeTab === tab.id ? "#fff" : "transparent",
+              border: "none",
+              color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
+              fontSize: 14, fontWeight: activeTab === tab.id ? 700 : 500,
+              cursor: "pointer", transition: "all 0.2s",
+              display: "flex", alignItems: "center", gap: 7,
+              boxShadow: activeTab === tab.id ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
             }}>
-              {wishlist.length}
-            </span>
-          </button>
-          <button
-            onClick={() => { setSidebarTab("completed"); setSidebarOpen(true); }}
-            className="hover-lift"
-            style={{
-              padding: "10px 20px", borderRadius: 12,
-              background: "rgba(7,110,232,0.1)",
-              border: "1px solid rgba(7,110,232,0.3)",
-              color: "#84c5ff", fontSize: 14, fontWeight: 600, cursor: "pointer",
-              backdropFilter: "blur(8px)",
-              transition: "all 0.3s",
-              display: "flex", alignItems: "center", gap: 8,
-            }}
-            onMouseOver={e => { e.currentTarget.style.background = "rgba(7,110,232,0.2)"; e.currentTarget.style.borderColor = "rgba(7,110,232,0.5)"; }}
-            onMouseOut={e => { e.currentTarget.style.background = "rgba(7,110,232,0.1)"; e.currentTarget.style.borderColor = "rgba(7,110,232,0.3)"; }}
-          >
-            <span style={{ fontSize: 16 }}>📋</span>
-            완료 목록
-            <span style={{
-              background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-              color: "#fff", fontSize: 11, fontWeight: 800,
-              padding: "2px 8px", borderRadius: 10, minWidth: 20, textAlign: "center",
-            }}>
-              {completedList.length}
-            </span>
-          </button>
-          {step > 0 && (
+              <span style={{ fontSize: 15 }}>{tab.icon}</span>
+              {tab.label}
+              {tab.count !== undefined && (
+                <span style={{
+                  fontSize: 11, fontWeight: 800, padding: "1px 7px", borderRadius: 8,
+                  background: activeTab === tab.id ? "rgba(7,110,232,0.12)" : "rgba(0,0,0,0.06)",
+                  color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
+                }}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Right: New Start button */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 120, justifyContent: "flex-end" }}>
+          {activeTab === "create" && step > 0 && (
             <button
               onClick={() => {
                 setStep(0);
@@ -1120,10 +1152,9 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 background: "rgba(0,0,0,0.04)",
                 border: "1px solid var(--surface-border)",
                 color: "var(--text-lighter)", fontSize: 14, fontWeight: 600, cursor: "pointer",
-                backdropFilter: "blur(8px)",
                 transition: "all 0.3s",
               }}
-              onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "#fff"; }}
+              onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "var(--text-main)"; }}
               onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
             >
               새로 시작
@@ -1131,6 +1162,9 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           )}
         </div>
       </header>
+
+      {/* ═══ Create Tab ═══ */}
+      {activeTab === "create" && <>
 
       {/* Step Indicator */}
       <div style={{ padding: "32px 0 0" }}>
@@ -2157,6 +2191,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                         setCompletedList((prev) => [newItem, ...prev]);
                         setNewItemId(newId);
                         setStep(6);
+                        setTimeout(() => setActiveTab("completed"), 1200);
                       }}
                       className="hover-lift"
                       style={{
@@ -2192,6 +2227,347 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           </div>
         )}
       </main>
+
+      {/* ComfyUI Note */}
+      {step === 0 && (
+        <div style={{
+          margin: "0 40px 40px", padding: 20, borderRadius: 12,
+          background: "rgba(7,110,232,0.05)", border: "1px solid rgba(7,110,232,0.2)",
+          maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#5ba3e6", marginBottom: 8 }}>
+            ℹ️ ComfyUI 연동 안내
+          </div>
+          <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
+            현재 프로토타입은 UI 플로우와 프롬프트 최적화(Claude API)를 시연합니다.
+            실제 이미지 생성을 위해서는 ComfyUI 클라우드 API(ViewComfy, RunComfy 등)를 연동해야 합니다.
+            <code style={{
+              padding: "2px 6px", borderRadius: 4, background: "rgba(0,0,0,0.06)",
+              fontSize: 11, margin: "0 4px",
+            }}>
+              workflow_api.json
+            </code>
+            파일을 클라우드에 배포하면, 이 UI에서 직접 이미지 생성이 가능합니다.
+          </div>
+        </div>
+      )}
+
+      </>} {/* end activeTab === "create" */}
+
+      {/* ═══ Completed Tab ═══ */}
+      {activeTab === "completed" && (
+        <main style={{ padding: "40px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
+            <div>
+              <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>완료된 컨셉시트</h2>
+              <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 에셋 컨셉시트가 완성됐습니다.</p>
+            </div>
+            <button
+              onClick={() => setActiveTab("create")}
+              className="btn-primary hover-lift"
+              style={{
+                padding: "12px 24px", borderRadius: 14, border: "none",
+                color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                boxShadow: "0 4px 20px var(--primary-glow)",
+                display: "flex", alignItems: "center", gap: 8,
+              }}
+            >
+              <span>✨</span> 새 시안 생성
+            </button>
+          </div>
+
+          {completedList.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "100px 20px", color: "var(--text-muted)" }}>
+              <div style={{ fontSize: 64, marginBottom: 20 }}>📭</div>
+              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>완료된 컨셉시트가 없습니다</div>
+              <button onClick={() => setActiveTab("create")} className="btn-primary" style={{
+                padding: "12px 28px", borderRadius: 14, border: "none",
+                color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+              }}>
+                첫 시안 생성하기
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 28 }}>
+              {completedList.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+                  className="hover-lift glass-panel"
+                  style={{
+                    borderRadius: 20, overflow: "hidden",
+                    border: expandedItem === item.id ? "1px solid rgba(7,110,232,0.4)" : "1px solid var(--surface-border)",
+                    cursor: "pointer", transition: "all 0.3s",
+                    background: expandedItem === item.id ? "rgba(7,110,232,0.03)" : "var(--surface-color)",
+                    position: "relative",
+                  }}
+                >
+                  {newItemId === item.id && (
+                    <span style={{
+                      position: "absolute", top: 14, right: 14, zIndex: 2,
+                      background: "linear-gradient(135deg, #98a6ff, #076ee8)",
+                      color: "#fff", fontSize: 10, fontWeight: 800,
+                      padding: "3px 10px", borderRadius: 8, letterSpacing: "0.05em",
+                      animation: "badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    }}>NEW</span>
+                  )}
+                  {/* Thumbnail */}
+                  <div style={{
+                    width: "100%", height: 200, position: "relative",
+                    background: item.gradient || "linear-gradient(135deg, #1a1a2e, #2d1b4e)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {item.imageUrl || item.conceptSheetUrl ? (
+                      <img src={item.conceptSheetUrl || item.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <span style={{ fontSize: 64, opacity: 0.5 }}>{item.categoryIcon}</span>
+                    )}
+                    <div style={{
+                      position: "absolute", bottom: 0, left: 0, right: 0,
+                      padding: "40px 16px 12px",
+                      background: "linear-gradient(transparent, rgba(0,0,0,0.65))",
+                    }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>
+                        {item.categoryIcon} {item.categoryLabel}
+                        <span style={{ fontSize: 12, fontWeight: 400, color: "rgba(255,255,255,0.6)", marginLeft: 8 }}>{item.style}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Card Body */}
+                  <div style={{ padding: "16px 18px" }}>
+                    {/* Asset code + status */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      {item.assetCode && (
+                        <code style={{ fontSize: 11, color: "var(--primary)", fontWeight: 700, letterSpacing: "0.04em", background: "rgba(7,110,232,0.07)", padding: "2px 8px", borderRadius: 6 }}>
+                          {item.assetCode}
+                        </code>
+                      )}
+                      {item.pipelineStatus && (() => {
+                        const statusColor = item.pipelineStatus.includes("완료") ? "#22c55e"
+                          : item.pipelineStatus.includes("진행") ? "#f59e0b"
+                          : item.pipelineStatus.includes("대기") ? "#94a3b8"
+                          : "var(--text-muted)";
+                        return (
+                          <span style={{ fontSize: 11, color: statusColor, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, display: "inline-block" }} />
+                            {item.pipelineStatus}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        {item.winner} 선정 · {item.voters}명 투표{item.designer && ` · ${item.designer}`}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        {new Date(item.completedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: expandedItem === item.id ? 14 : 0 }}>
+                      {item.colors.map((c, ci) => (
+                        <div key={ci} style={{ flex: 1, height: 20, borderRadius: 5, background: c, border: "1px solid rgba(0,0,0,0.06)" }} />
+                      ))}
+                    </div>
+                    {expandedItem === item.id && (
+                      <div style={{ borderTop: "1px solid var(--surface-border)", paddingTop: 14, animation: "fadeIn 0.3s ease" }}>
+                        <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.8, marginBottom: 12 }}>{item.prompt}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 14 }}>
+                          <span>Seed: <code style={{ color: "var(--accent)" }}>{item.seed}</code></span>
+                          <span>{new Date(item.completedAt).toLocaleString("ko-KR")}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* ═══ Wishlist Tab ═══ */}
+      {activeTab === "wishlist" && (
+        <main style={{ padding: "40px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 40, alignItems: "start" }}>
+
+            {/* Left: Form */}
+            <div style={{ position: "sticky", top: 100 }}>
+              <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>위시리스트</h2>
+              <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 28 }}>만들고 싶은 가구 아이디어를 기록하세요.</p>
+
+              <div className="glass-panel" style={{ padding: 28, borderRadius: 20 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 16 }}>새 아이디어 추가</div>
+                <input
+                  type="text"
+                  placeholder="제목 (예: 라탄 행잉 체어)"
+                  value={wishTitle}
+                  onChange={e => setWishTitle(e.target.value)}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 12,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-main)", fontSize: 14, outline: "none",
+                    marginBottom: 10, transition: "border-color 0.2s", boxSizing: "border-box",
+                  }}
+                  onFocus={e => { e.target.style.borderColor = "var(--primary)"; }}
+                  onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
+                />
+                <textarea
+                  placeholder="메모 (참고 사항, 원하는 스타일 등)"
+                  value={wishNote}
+                  onChange={e => setWishNote(e.target.value)}
+                  rows={3}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 12,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-main)", fontSize: 14, outline: "none",
+                    marginBottom: 10, resize: "vertical", lineHeight: 1.6,
+                    transition: "border-color 0.2s", boxSizing: "border-box",
+                  }}
+                  onFocus={e => { e.target.style.borderColor = "var(--primary)"; }}
+                  onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
+                />
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+                  <input
+                    ref={wishImageRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => setWishImage(ev.target.result);
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    style={{ display: "none" }}
+                  />
+                  <button
+                    onClick={() => wishImageRef.current?.click()}
+                    style={{
+                      padding: "9px 16px", borderRadius: 10,
+                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                      color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+                  >
+                    🖼️ 이미지 첨부
+                  </button>
+                  {wishImage && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <img src={wishImage} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover" }} />
+                      <button
+                        onClick={() => { setWishImage(null); if (wishImageRef.current) wishImageRef.current.value = ""; }}
+                        style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 16, cursor: "pointer" }}
+                      >✕</button>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    if (!wishTitle.trim()) return;
+                    const gradients = [
+                      "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
+                      "linear-gradient(135deg, #2e1a2a 0%, #1a2e3e 50%, #2a2e1a 100%)",
+                      "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
+                      "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
+                    ];
+                    setWishlist(prev => [{
+                      id: Date.now(),
+                      title: wishTitle.trim(),
+                      note: wishNote.trim(),
+                      imageUrl: wishImage,
+                      gradient: gradients[Math.floor(Math.random() * gradients.length)],
+                      createdAt: new Date().toISOString(),
+                    }, ...prev]);
+                    setWishTitle("");
+                    setWishNote("");
+                    setWishImage(null);
+                    if (wishImageRef.current) wishImageRef.current.value = "";
+                  }}
+                  style={{
+                    width: "100%", padding: "12px", borderRadius: 12,
+                    background: wishTitle.trim() ? "linear-gradient(135deg, #eab308, #f59e0b)" : "rgba(0,0,0,0.04)",
+                    border: "none",
+                    color: wishTitle.trim() ? "#000" : "var(--text-muted)",
+                    fontSize: 14, fontWeight: 700, cursor: wishTitle.trim() ? "pointer" : "not-allowed",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  추가하기
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Grid */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <div style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>
+                  {wishlist.length}개의 아이디어
+                </div>
+              </div>
+
+              {wishlist.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--text-muted)" }}>
+                  <div style={{ fontSize: 56, marginBottom: 16 }}>💫</div>
+                  <div style={{ fontSize: 16, fontWeight: 500 }}>만들고 싶은 가구 아이디어를 왼쪽 폼에서 추가해보세요</div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20 }}>
+                  {wishlist.map((item) => (
+                    <div
+                      key={item.id}
+                      className="hover-lift glass-panel"
+                      style={{
+                        borderRadius: 18, overflow: "hidden",
+                        border: "1px solid var(--surface-border)",
+                        transition: "all 0.3s",
+                      }}
+                    >
+                      {item.imageUrl && (
+                        <div style={{ width: "100%", height: 160, overflow: "hidden" }}>
+                          <img src={item.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      )}
+                      {!item.imageUrl && (
+                        <div style={{ width: "100%", height: 80, background: item.gradient }} />
+                      )}
+                      <div style={{ padding: "16px 18px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-main)", marginBottom: 6 }}>
+                              {item.title}
+                            </div>
+                            {item.note && (
+                              <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>{item.note}</div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => setWishlist(prev => prev.filter(w => w.id !== item.id))}
+                            style={{
+                              width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                              color: "var(--text-muted)", fontSize: 13, cursor: "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseOver={e => { e.currentTarget.style.background = "rgba(239,68,68,0.12)"; e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)"; }}
+                            onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--surface-border)"; }}
+                          >✕</button>
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10 }}>
+                          {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+      )}
 
       {/* Version Info Modal */}
       {versionOpen && (
@@ -2282,15 +2658,9 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         </>
       )}
 
-      {/* Sidebar Panel */}
-      {sidebarOpen && (
-        <div
-          className="sidebar-overlay"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-      <div className={`sidebar-panel ${sidebarOpen ? "sidebar-open" : ""}`}>
-        {/* Sidebar Header */}
+      {/* Legacy sidebar removed */}
+      {false && <>
+      <div style={{ display: "none" }}>
         <div style={{ padding: "20px 20px 0", borderBottom: "1px solid var(--surface-border)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)" }}>
@@ -2650,33 +3020,10 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           )}
         </div>
       </div>
+      </>}
 
       {/* Hidden canvas for concept sheet generation */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
-
-      {/* ComfyUI Integration Note */}
-      {step === 0 && (
-        <div style={{
-          margin: "0 40px 40px", padding: 20, borderRadius: 12,
-          background: "rgba(7,110,232,0.05)", border: "1px solid rgba(7,110,232,0.2)",
-          maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#5ba3e6", marginBottom: 8 }}>
-            ℹ️ ComfyUI 연동 안내
-          </div>
-          <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
-            현재 프로토타입은 UI 플로우와 프롬프트 최적화(Claude API)를 시연합니다.
-            실제 이미지 생성을 위해서는 ComfyUI 클라우드 API(ViewComfy, RunComfy 등)를 연동해야 합니다.
-            <code style={{
-              padding: "2px 6px", borderRadius: 4, background: "#1e293b",
-              fontSize: 11, margin: "0 4px",
-            }}>
-              workflow_api.json
-            </code>
-            파일을 클라우드에 배포하면, 이 UI에서 직접 이미지 생성이 가능합니다.
-          </div>
-        </div>
-      )}
     </div>
   );
 }
