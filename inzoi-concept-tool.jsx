@@ -856,10 +856,11 @@ function LoadingOverlay({ message, progress }) {
   );
 }
 
-// ─── Gemini Nano Banana 2 (Gemini 3.1 Flash Image) API Helper ───
-async function generateImageWithGemini(apiKey, prompt, aspectRatio = "1:1") {
+// ─── Gemini Image Generation API Helper ───
+async function generateImageWithGemini(apiKey, prompt, model) {
+  console.log(`Generating image with model: ${model}`);
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -874,8 +875,8 @@ async function generateImageWithGemini(apiKey, prompt, aspectRatio = "1:1") {
 
   if (!response.ok) {
     const errBody = await response.text();
-    console.error("Gemini API raw error:", errBody);
-    let msg = `Gemini API error: ${response.status}`;
+    console.error(`${model} error:`, errBody);
+    let msg = `${model}: ${response.status}`;
     try {
       const errJson = JSON.parse(errBody);
       msg = errJson.error?.message || msg;
@@ -884,9 +885,8 @@ async function generateImageWithGemini(apiKey, prompt, aspectRatio = "1:1") {
   }
 
   const data = await response.json();
-  console.log("Gemini API response keys:", Object.keys(data));
+  console.log(`${model} response:`, JSON.stringify(data).substring(0, 300));
 
-  // Extract image from generateContent response
   const parts = data.candidates?.[0]?.content?.parts || [];
   for (const part of parts) {
     if (part.inlineData) {
@@ -894,13 +894,30 @@ async function generateImageWithGemini(apiKey, prompt, aspectRatio = "1:1") {
     }
   }
 
-  // Check for safety block
   const blockReason = data.candidates?.[0]?.finishReason;
-  if (blockReason === "SAFETY") {
-    throw new Error("안전 필터에 의해 이미지가 차단되었습니다. 프롬프트를 수정해주세요.");
+  if (blockReason === "SAFETY" || blockReason === "IMAGE_SAFETY") {
+    throw new Error("안전 필터에 의해 이미지가 차단되었습니다.");
   }
 
-  throw new Error(`이미지 생성 결과가 없습니다. (finishReason: ${blockReason || "unknown"})`);
+  throw new Error(`이미지 없음 (finishReason: ${blockReason || "unknown"})`);
+}
+
+// ─── List available Gemini image models ───
+async function listGeminiImageModels(apiKey) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+  );
+  if (!response.ok) throw new Error(`ListModels failed: ${response.status}`);
+  const data = await response.json();
+  return (data.models || [])
+    .filter(m =>
+      m.supportedGenerationMethods?.includes("generateContent") &&
+      (m.name?.includes("image") || m.displayName?.toLowerCase().includes("image"))
+    )
+    .map(m => ({
+      id: m.name?.replace("models/", ""),
+      displayName: m.displayName,
+    }));
 }
 
 // ─── Main App ───
@@ -956,6 +973,9 @@ export default function InZOIConceptTool() {
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
   const [claudeApiKey, setClaudeApiKey] = useState(() => localStorage.getItem("claude_api_key") || "");
   const [showApiSettings, setShowApiSettings] = useState(false);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("gemini_model") || "gemini-3-flash-image");
 
   const canvasRef = useRef(null);
 
@@ -1017,48 +1037,29 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
       }
       setEnhancedPrompt(enhanced);
 
-      setLoadingMsg("Gemini Imagen으로 디자인 시안 생성 중...");
-      setLoadingProgress(20);
+      setLoadingMsg("나노바나나2로 디자인 시안 생성 중...");
+      setLoadingProgress(30);
 
-      // Generate 4 images with Gemini Imagen API (parallel batches of 2)
-      const designCount = 4;
-      const newDesigns = [];
-      const variations = [
-        "",
-        ", slightly different angle",
-        ", alternative color scheme",
-        ", different material variation",
-      ];
-
-      for (let i = 0; i < designCount; i++) {
-        setLoadingProgress(20 + ((i + 1) / designCount) * 70);
-        setLoadingMsg(`Gemini Imagen 생성 중... (${i + 1}/${designCount})`);
-
-        const seed = generateSeed();
-        let imageUrl = null;
-        try {
-          imageUrl = await generateImageWithGemini(
-            geminiApiKey,
-            enhanced + variations[i]
-          );
-        } catch (imgErr) {
-          console.error(`Image ${i + 1} generation failed:`, imgErr);
-          setLoadingMsg(`시안 ${i + 1} 생성 실패: ${imgErr.message}`);
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-
-        newDesigns.push({
-          id: i,
-          seed,
-          icon: catInfo.icon,
-          gradient: `linear-gradient(${135 + i * 30}deg, #1e293b, #334155)`,
-          prompt: enhanced,
-          imageUrl,
-          colors: generateColors(5),
-        });
+      // Generate 1 image with Gemini API
+      const seed = generateSeed();
+      let imageUrl = null;
+      try {
+        imageUrl = await generateImageWithGemini(geminiApiKey, enhanced, selectedModel);
+      } catch (imgErr) {
+        console.error("Image generation failed:", imgErr);
+        alert(`이미지 생성 실패: ${imgErr.message}`);
       }
 
-      setDesigns(newDesigns);
+      setLoadingProgress(90);
+      setDesigns([{
+        id: 0,
+        seed,
+        icon: catInfo.icon,
+        gradient: "linear-gradient(135deg, #1e293b, #334155)",
+        prompt: enhanced,
+        imageUrl,
+        colors: generateColors(5),
+      }]);
       setLoadingProgress(100);
       setLoadingMsg("완료!");
       await new Promise((r) => setTimeout(r, 500));
@@ -1066,16 +1067,15 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
     } catch (err) {
       console.error(err);
       alert(`이미지 생성 오류: ${err.message}`);
-      const fallbackDesigns = Array.from({ length: 4 }, (_, i) => ({
-        id: i,
+      setDesigns([{
+        id: 0,
         seed: generateSeed(),
         icon: catInfo.icon,
-        gradient: `linear-gradient(${100 + i * 25}deg, #1e293b, #334155)`,
+        gradient: "linear-gradient(135deg, #1e293b, #334155)",
         prompt: enhanced,
         imageUrl: null,
         colors: generateColors(5),
-      }));
-      setDesigns(fallbackDesigns);
+      }]);
       setStep(1);
     } finally {
       setLoading(false);
@@ -1107,7 +1107,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
 
       try {
         const viewPrompt = `${basePrompt}, ${view.angle}, clean white background`;
-        const imgDataUrl = await generateImageWithGemini(geminiApiKey, viewPrompt);
+        const imgDataUrl = await generateImageWithGemini(geminiApiKey, viewPrompt, selectedModel);
         views[view.id] = imgDataUrl;
 
         // Load as Image element for canvas drawing
@@ -2745,7 +2745,66 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   onBlur={(e) => { e.target.style.borderColor = "var(--surface-border)"; }}
                 />
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.6 }}>
-                  나노바나나2 (Gemini 3.1 Flash Image) 모델로 이미지를 생성합니다. Google AI Studio에서 발급받으세요.
+                  Google AI Studio에서 발급받으세요.
+                </div>
+
+                {/* Model selection */}
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <button
+                      onClick={async () => {
+                        if (!geminiApiKey) { alert("API 키를 먼저 입력하세요."); return; }
+                        setLoadingModels(true);
+                        try {
+                          const models = await listGeminiImageModels(geminiApiKey);
+                          setAvailableModels(models);
+                          if (models.length === 0) alert("이미지 생성 가능한 모델을 찾지 못했습니다.");
+                        } catch (err) {
+                          alert(`모델 조회 실패: ${err.message}`);
+                        } finally {
+                          setLoadingModels(false);
+                        }
+                      }}
+                      style={{
+                        padding: "8px 14px", borderRadius: 8,
+                        background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                        color: "var(--text-lighter)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {loadingModels ? "조회 중..." : "사용 가능한 모델 조회"}
+                    </button>
+                  </div>
+
+                  {availableModels.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 180, overflowY: "auto" }}>
+                      {availableModels.map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => setSelectedModel(m.id)}
+                          style={{
+                            padding: "10px 14px", borderRadius: 10, textAlign: "left",
+                            background: selectedModel === m.id ? "rgba(7,110,232,0.1)" : "rgba(0,0,0,0.03)",
+                            border: selectedModel === m.id ? "2px solid var(--primary)" : "1px solid var(--surface-border)",
+                            color: selectedModel === m.id ? "var(--primary)" : "var(--text-main)",
+                            fontSize: 13, fontWeight: selectedModel === m.id ? 700 : 500,
+                            cursor: "pointer", transition: "all 0.2s",
+                          }}
+                        >
+                          <div>{m.displayName}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", marginTop: 2 }}>{m.id}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{
+                    marginTop: 8, padding: "8px 12px", borderRadius: 8,
+                    background: "rgba(0,0,0,0.03)", fontSize: 12, color: "var(--text-muted)",
+                    fontFamily: "monospace",
+                  }}>
+                    현재 모델: <strong style={{ color: "var(--primary)" }}>{selectedModel}</strong>
+                  </div>
                 </div>
               </div>
 
@@ -2785,6 +2844,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                 onClick={() => {
                   localStorage.setItem("gemini_api_key", geminiApiKey);
                   localStorage.setItem("claude_api_key", claudeApiKey);
+                  localStorage.setItem("gemini_model", selectedModel);
                   setShowApiSettings(false);
                 }}
                 className="btn-primary"
