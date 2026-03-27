@@ -1,8 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.6.0";
 const CHANGELOG = [
+  {
+    version: "0.6.0",
+    date: "2026-03-27",
+    changes: [
+      "Gemini Imagen API 연동으로 실제 이미지 생성",
+      "API 키 설정 패널 추가 (Gemini / Claude)",
+      "멀티뷰 컨셉시트 실제 이미지 생성",
+    ],
+  },
   {
     version: "0.5.0",
     date: "2026-03-06",
@@ -847,6 +856,34 @@ function LoadingOverlay({ message, progress }) {
   );
 }
 
+// ─── Gemini Imagen API Helper ───
+async function generateImageWithGemini(apiKey, prompt, aspectRatio = "1:1") {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: {
+          sampleCount: 1,
+          aspectRatio,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.predictions?.[0]?.bytesBase64Encoded;
+  if (!b64) throw new Error("이미지 생성 결과가 없습니다.");
+  return `data:image/png;base64,${b64}`;
+}
+
 // ─── Main App ───
 export default function InZOIConceptTool() {
   const [step, setStep] = useState(0);
@@ -896,6 +933,11 @@ export default function InZOIConceptTool() {
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
 
+  // API key state
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
+  const [claudeApiKey, setClaudeApiKey] = useState(() => localStorage.getItem("claude_api_key") || "");
+  const [showApiSettings, setShowApiSettings] = useState(false);
+
   const canvasRef = useRef(null);
 
   const STEPS = ["입력", "시안 생성", "투표", "시안 선정", "컨셉시트 생성", "결과 전달"];
@@ -903,77 +945,96 @@ export default function InZOIConceptTool() {
   // ─── Step 1 → 2: Generate designs ───
   const generateDesigns = async () => {
     if (!category || !prompt) return;
+    if (!geminiApiKey) {
+      setShowApiSettings(true);
+      return;
+    }
 
     setLoading(true);
     setLoadingMsg("프롬프트 최적화 중...");
     setLoadingProgress(10);
 
-    try {
-      // Use Claude API to enhance prompt
-      const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
-      const styleInfo = STYLE_PRESETS.find((s) => s.id === stylePreset);
-      const spec = ASSET_SPECS[category] || DEFAULT_SPEC;
+    const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
+    const styleInfo = STYLE_PRESETS.find((s) => s.id === stylePreset);
+    const spec = ASSET_SPECS[category] || DEFAULT_SPEC;
 
-      const systemPrompt = `You are an expert furniture concept artist for inZOI (a life simulation game by KRAFTON).
+    let enhanced = `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${spec.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`;
+
+    try {
+      // Use Claude API to enhance prompt (if key available)
+      if (claudeApiKey) {
+        const systemPrompt = `You are an expert furniture concept artist for inZOI (a life simulation game by KRAFTON).
 Given a furniture description, generate an enhanced, detailed prompt optimized for AI image generation.
 The output should describe a single piece of furniture in detail: materials, colors, proportions, style details, lighting.
 Always include: "product design concept, white background, studio lighting, high detail, game asset reference"
 Match the inZOI aesthetic: stylized realism, slightly idealized proportions, warm and inviting feel.
 Respond ONLY with the enhanced prompt in English, nothing else.`;
 
-      const userMsg = `Furniture type: ${catInfo.label} (${catInfo.preset})
+        const userMsg = `Furniture type: ${catInfo.label} (${catInfo.preset})
 Style: ${styleInfo?.label || "modern"}
 User description: ${prompt}${spec.hint ? `\nDimension & scale reference: ${spec.hint}` : ""}
 Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userMsg }],
-        }),
-      });
+        const claudeResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": claudeApiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1000,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userMsg }],
+          }),
+        });
 
-      const data = await response.json();
-      const enhanced = data.content?.[0]?.text || `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${spec.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`;
+        if (claudeResp.ok) {
+          const claudeData = await claudeResp.json();
+          enhanced = claudeData.content?.[0]?.text || enhanced;
+        }
+      }
       setEnhancedPrompt(enhanced);
 
-      setLoadingMsg("디자인 시안 생성 중...");
-      setLoadingProgress(30);
+      setLoadingMsg("Gemini Imagen으로 디자인 시안 생성 중...");
+      setLoadingProgress(20);
 
-      // Generate multiple design variations
-      const gradients = [
-        "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
-        "linear-gradient(135deg, #1e293b 0%, #1a2e1a 50%, #2e1a1a 100%)",
-        "linear-gradient(135deg, #2e2a1a 0%, #1a2e2a 50%, #1a1a2e 100%)",
-        "linear-gradient(135deg, #1a1a1a 0%, #2e2e2e 50%, #1a1a2e 100%)",
-        "linear-gradient(135deg, #2e1a2a 0%, #1a2e3e 50%, #2a2e1a 100%)",
-        "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%)",
-        "linear-gradient(135deg, #1c1917 0%, #44403c 50%, #1c1917 100%)",
-        "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
+      // Generate 4 images with Gemini Imagen API (parallel batches of 2)
+      const designCount = 4;
+      const newDesigns = [];
+      const variations = [
+        "",
+        ", slightly different angle",
+        ", alternative color scheme",
+        ", different material variation",
       ];
 
-      const newDesigns = [];
-      for (let i = 0; i < 8; i++) {
-        setLoadingProgress(30 + (i / 8) * 60);
-        setLoadingMsg(`디자인 시안 생성 중... (${i + 1}/8)`);
+      for (let i = 0; i < designCount; i++) {
+        setLoadingProgress(20 + ((i + 1) / designCount) * 70);
+        setLoadingMsg(`Gemini Imagen 생성 중... (${i + 1}/${designCount})`);
 
         const seed = generateSeed();
+        let imageUrl = null;
+        try {
+          imageUrl = await generateImageWithGemini(
+            geminiApiKey,
+            enhanced + variations[i]
+          );
+        } catch (imgErr) {
+          console.error(`Image ${i + 1} generation failed:`, imgErr);
+        }
+
         newDesigns.push({
           id: i,
           seed,
           icon: catInfo.icon,
-          gradient: gradients[i],
+          gradient: `linear-gradient(${135 + i * 30}deg, #1e293b, #334155)`,
           prompt: enhanced,
-          imageUrl: null, // ComfyUI would provide actual images
+          imageUrl,
           colors: generateColors(5),
         });
-
-        // Simulate generation time
-        await new Promise((r) => setTimeout(r, 300));
       }
 
       setDesigns(newDesigns);
@@ -983,14 +1044,13 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
       setStep(1);
     } catch (err) {
       console.error(err);
-      // Fallback: generate without API
-      const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
-      const fallbackDesigns = Array.from({ length: 8 }, (_, i) => ({
+      alert(`이미지 생성 오류: ${err.message}`);
+      const fallbackDesigns = Array.from({ length: 4 }, (_, i) => ({
         id: i,
         seed: generateSeed(),
         icon: catInfo.icon,
-        gradient: `linear-gradient(${100 + i * 25}deg, #1a1a2e, #334155)`,
-        prompt: prompt,
+        gradient: `linear-gradient(${100 + i * 25}deg, #1e293b, #334155)`,
+        prompt: enhanced,
         imageUrl: null,
         colors: generateColors(5),
       }));
@@ -1005,34 +1065,52 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
   // ─── Step 3 → 4: Generate concept sheet ───
   const generateConceptSheet = async () => {
     if (selectedDesign === null) return;
+    if (!geminiApiKey) {
+      setShowApiSettings(true);
+      return;
+    }
 
     setLoading(true);
     setLoadingMsg("멀티뷰 이미지 생성 중...");
     setLoadingProgress(10);
 
     const design = designs[selectedDesign];
+    const basePrompt = design.prompt || enhancedPrompt || prompt;
     const views = {};
+    const viewImages = {};
 
-    // Simulate multi-view generation
     for (let i = 0; i < VIEW_ANGLES.length; i++) {
       const view = VIEW_ANGLES[i];
       setLoadingMsg(`${view.label} 뷰 생성 중... (${i + 1}/${VIEW_ANGLES.length})`);
       setLoadingProgress(10 + (i / VIEW_ANGLES.length) * 70);
-      await new Promise((r) => setTimeout(r, 400));
-      views[view.id] = null; // ComfyUI would provide actual images
+
+      try {
+        const viewPrompt = `${basePrompt}, ${view.angle}, clean white background`;
+        const imgDataUrl = await generateImageWithGemini(geminiApiKey, viewPrompt);
+        views[view.id] = imgDataUrl;
+
+        // Load as Image element for canvas drawing
+        const img = new Image();
+        img.src = imgDataUrl;
+        await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+        viewImages[view.id] = img;
+      } catch (err) {
+        console.error(`${view.label} view generation failed:`, err);
+        views[view.id] = null;
+        viewImages[view.id] = null;
+      }
     }
 
     setMultiViewImages(views);
     setLoadingMsg("컨셉시트 레이아웃 생성 중...");
     setLoadingProgress(85);
 
-    // Generate concept sheet on canvas
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 300));
 
     if (canvasRef.current) {
       const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
       const styleInfo = STYLE_PRESETS.find((s) => s.id === stylePreset);
-      generateConceptSheetCanvas(canvasRef.current, views, {
+      generateConceptSheetCanvas(canvasRef.current, viewImages, {
         category: catInfo?.label || "",
         style: styleInfo?.label || "",
         prompt: enhancedPrompt || prompt,
@@ -1131,8 +1209,24 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           ))}
         </div>
 
-        {/* Right: New Start button */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 120, justifyContent: "flex-end" }}>
+        {/* Right: Settings + New Start button */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 160, justifyContent: "flex-end" }}>
+          <button
+            onClick={() => setShowApiSettings(true)}
+            className="hover-lift"
+            style={{
+              padding: "10px 18px", borderRadius: 12,
+              background: geminiApiKey ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
+              border: `1px solid ${geminiApiKey ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+              color: geminiApiKey ? "#10b981" : "#ef4444",
+              fontSize: 13, fontWeight: 600, cursor: "pointer",
+              transition: "all 0.3s",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <span style={{ fontSize: 14 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
+            API 설정
+          </button>
           {activeTab === "create" && step > 0 && (
             <button
               onClick={() => {
@@ -1430,7 +1524,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               <div>
                 <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>디자인 시안</h2>
                 <p style={{ color: "var(--text-muted)", fontSize: 16 }}>
-                  생성된 8개의 시안을 확인하고 팀 투표를 진행하세요.
+                  생성된 {designs.length}개의 시안을 확인하고 팀 투표를 진행하세요.
                 </p>
               </div>
               <button
@@ -2228,26 +2322,22 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         )}
       </main>
 
-      {/* ComfyUI Note */}
+      {/* API Status Note */}
       {step === 0 && (
         <div style={{
           margin: "0 40px 40px", padding: 20, borderRadius: 12,
-          background: "rgba(7,110,232,0.05)", border: "1px solid rgba(7,110,232,0.2)",
+          background: geminiApiKey ? "rgba(16,185,129,0.05)" : "rgba(239,68,68,0.05)",
+          border: `1px solid ${geminiApiKey ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
           maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
         }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#5ba3e6", marginBottom: 8 }}>
-            ℹ️ ComfyUI 연동 안내
+          <div style={{ fontSize: 13, fontWeight: 600, color: geminiApiKey ? "#10b981" : "#ef4444", marginBottom: 8 }}>
+            {geminiApiKey ? "✅ Gemini Imagen API 연결됨" : "⚠️ API 키를 설정해주세요"}
           </div>
           <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
-            현재 프로토타입은 UI 플로우와 프롬프트 최적화(Claude API)를 시연합니다.
-            실제 이미지 생성을 위해서는 ComfyUI 클라우드 API(ViewComfy, RunComfy 등)를 연동해야 합니다.
-            <code style={{
-              padding: "2px 6px", borderRadius: 4, background: "rgba(0,0,0,0.06)",
-              fontSize: 11, margin: "0 4px",
-            }}>
-              workflow_api.json
-            </code>
-            파일을 클라우드에 배포하면, 이 UI에서 직접 이미지 생성이 가능합니다.
+            {geminiApiKey
+              ? "Google Gemini Imagen 3 API로 실제 이미지를 생성합니다. Claude API 키를 추가하면 프롬프트 자동 최적화도 활성화됩니다."
+              : <>상단 <strong>API 설정</strong> 버튼을 눌러 Gemini API 키를 입력하세요. Google AI Studio에서 무료로 발급받을 수 있습니다.</>
+            }
           </div>
         </div>
       )}
@@ -2567,6 +2657,131 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
             </div>
           </div>
         </main>
+      )}
+
+      {/* API Settings Modal */}
+      {showApiSettings && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setShowApiSettings(false)} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 520, maxWidth: "90vw",
+            background: "rgba(255, 255, 255, 0.97)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid var(--surface-border)",
+            borderRadius: 24, zIndex: 202,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+            animation: "fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+          }}>
+            <div style={{
+              padding: "24px 28px 16px", borderBottom: "1px solid var(--surface-border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-main)" }}>API 설정</div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                  이미지 생성에 필요한 API 키를 입력하세요
+                </div>
+              </div>
+              <button
+                onClick={() => setShowApiSettings(false)}
+                style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: "24px 28px 28px" }}>
+              {/* Gemini API Key */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, color: "#fff",
+                    background: "linear-gradient(135deg, #4285f4, #34a853)",
+                    padding: "2px 8px", borderRadius: 6,
+                  }}>필수</span>
+                  <label style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)" }}>
+                    Google Gemini API Key
+                  </label>
+                </div>
+                <input
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="AIza..."
+                  style={{
+                    width: "100%", padding: "14px 18px", borderRadius: 12,
+                    border: "2px solid var(--surface-border)", background: "rgba(0,0,0,0.04)",
+                    color: "var(--text-main)", fontSize: 14, outline: "none",
+                    fontFamily: "monospace", boxSizing: "border-box", transition: "all 0.3s",
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = "var(--primary)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "var(--surface-border)"; }}
+                />
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.6 }}>
+                  Imagen 3 모델로 이미지를 생성합니다. Google AI Studio에서 발급받으세요.
+                </div>
+              </div>
+
+              {/* Claude API Key */}
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, color: "var(--text-muted)",
+                    background: "rgba(0,0,0,0.06)",
+                    padding: "2px 8px", borderRadius: 6, border: "1px solid var(--surface-border)",
+                  }}>선택</span>
+                  <label style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)" }}>
+                    Anthropic Claude API Key
+                  </label>
+                </div>
+                <input
+                  type="password"
+                  value={claudeApiKey}
+                  onChange={(e) => setClaudeApiKey(e.target.value)}
+                  placeholder="sk-ant-..."
+                  style={{
+                    width: "100%", padding: "14px 18px", borderRadius: 12,
+                    border: "2px solid var(--surface-border)", background: "rgba(0,0,0,0.04)",
+                    color: "var(--text-main)", fontSize: 14, outline: "none",
+                    fontFamily: "monospace", boxSizing: "border-box", transition: "all 0.3s",
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = "var(--primary)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "var(--surface-border)"; }}
+                />
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.6 }}>
+                  프롬프트 최적화에 사용됩니다. 없으면 기본 프롬프트로 생성합니다.
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <button
+                onClick={() => {
+                  localStorage.setItem("gemini_api_key", geminiApiKey);
+                  localStorage.setItem("claude_api_key", claudeApiKey);
+                  setShowApiSettings(false);
+                }}
+                className="btn-primary"
+                style={{
+                  width: "100%", padding: "16px", borderRadius: 14,
+                  border: "none", color: "#fff",
+                  fontSize: 15, fontWeight: 700, cursor: "pointer",
+                  boxShadow: "0 4px 20px var(--primary-glow)",
+                }}
+              >
+                저장
+              </button>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
+                API 키는 브라우저 로컬 스토리지에만 저장되며 서버로 전송되지 않습니다.
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Version Info Modal */}
