@@ -7,7 +7,7 @@ const CHANGELOG = [
     version: "0.6.0",
     date: "2026-03-27",
     changes: [
-      "Gemini Imagen API 연동으로 실제 이미지 생성",
+      "나노바나나2 (Gemini 3.1 Flash Image) API 연동으로 실제 이미지 생성",
       "API 키 설정 패널 추가 (Gemini / Claude)",
       "멀티뷰 컨셉시트 실제 이미지 생성",
     ],
@@ -856,32 +856,51 @@ function LoadingOverlay({ message, progress }) {
   );
 }
 
-// ─── Gemini Imagen API Helper ───
+// ─── Gemini Nano Banana 2 (Gemini 3.1 Flash Image) API Helper ───
 async function generateImageWithGemini(apiKey, prompt, aspectRatio = "1:1") {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio,
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
         },
       }),
     }
   );
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Gemini API error: ${response.status}`);
+    const errBody = await response.text();
+    console.error("Gemini API raw error:", errBody);
+    let msg = `Gemini API error: ${response.status}`;
+    try {
+      const errJson = JSON.parse(errBody);
+      msg = errJson.error?.message || msg;
+    } catch (_) {}
+    throw new Error(msg);
   }
 
   const data = await response.json();
-  const b64 = data.predictions?.[0]?.bytesBase64Encoded;
-  if (!b64) throw new Error("이미지 생성 결과가 없습니다.");
-  return `data:image/png;base64,${b64}`;
+  console.log("Gemini API response keys:", Object.keys(data));
+
+  // Extract image from generateContent response
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  for (const part of parts) {
+    if (part.inlineData) {
+      return `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
+    }
+  }
+
+  // Check for safety block
+  const blockReason = data.candidates?.[0]?.finishReason;
+  if (blockReason === "SAFETY") {
+    throw new Error("안전 필터에 의해 이미지가 차단되었습니다. 프롬프트를 수정해주세요.");
+  }
+
+  throw new Error(`이미지 생성 결과가 없습니다. (finishReason: ${blockReason || "unknown"})`);
 }
 
 // ─── Main App ───
@@ -1024,6 +1043,8 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           );
         } catch (imgErr) {
           console.error(`Image ${i + 1} generation failed:`, imgErr);
+          setLoadingMsg(`시안 ${i + 1} 생성 실패: ${imgErr.message}`);
+          await new Promise((r) => setTimeout(r, 1500));
         }
 
         newDesigns.push({
@@ -2331,11 +2352,11 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
         }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: geminiApiKey ? "#10b981" : "#ef4444", marginBottom: 8 }}>
-            {geminiApiKey ? "✅ Gemini Imagen API 연결됨" : "⚠️ API 키를 설정해주세요"}
+            {geminiApiKey ? "✅ 나노바나나2 (Gemini 3.1 Flash Image) API 연결됨" : "⚠️ API 키를 설정해주세요"}
           </div>
           <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
             {geminiApiKey
-              ? "Google Gemini Imagen 3 API로 실제 이미지를 생성합니다. Claude API 키를 추가하면 프롬프트 자동 최적화도 활성화됩니다."
+              ? "나노바나나2 (Gemini 3.1 Flash Image)로 실제 이미지를 생성합니다. Claude API 키를 추가하면 프롬프트 자동 최적화도 활성화됩니다."
               : <>상단 <strong>API 설정</strong> 버튼을 눌러 Gemini API 키를 입력하세요. Google AI Studio에서 무료로 발급받을 수 있습니다.</>
             }
           </div>
@@ -2724,7 +2745,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   onBlur={(e) => { e.target.style.borderColor = "var(--surface-border)"; }}
                 />
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.6 }}>
-                  Imagen 3 모델로 이미지를 생성합니다. Google AI Studio에서 발급받으세요.
+                  나노바나나2 (Gemini 3.1 Flash Image) 모델로 이미지를 생성합니다. Google AI Studio에서 발급받으세요.
                 </div>
               </div>
 
