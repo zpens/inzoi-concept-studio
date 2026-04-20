@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inzoi-concept-studio",
+  "compatibility_date": "2024-09-01",
+  "pages_build_output_dir": "./dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "inzoi-concept-db",
+      "database_id": "60047113-20f4-4c43-b392-2b89f8f7524f"
+    }
+  ]
+}

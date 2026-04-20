@@ -2,6 +2,30 @@
 
 inZOI Concept Studio 변경 이력. 최신 버전이 위쪽에 있습니다.
 
+## [0.9.0] — 2026-04-21
+
+### 추가 — 협업 백엔드 도입
+- **Cloudflare D1 데이터베이스** — 모든 작업(`jobs`), 완료 목록(`completed_items`), 위시리스트(`wishlist_items`), 활동 로그(`activity_log`)를 서버에 저장. 더 이상 localStorage 의존 X.
+- **프로젝트 공유 URL** — 첫 접속 시 자동으로 고유 slug(`/p/{8자리}`)가 발급되고 URL 에 반영. 팀원에게 링크를 보내면 같은 프로젝트에 바로 접속.
+- **헤더 공유 URL 버튼** — 클릭 시 클립보드 복사. 저장 상태 인디케이터(`저장중` / `⚠`)도 함께 표시.
+- **5초 폴링 실시간 동기화** — 다른 사람이 추가한 시안·완료 아이템·위시리스트가 최대 5초 안에 자동 반영. 내가 편집 중인 active job 은 덮어쓰지 않음.
+- **Pages Functions API** — `/api/projects/:slug`, `/api/projects/:slug/jobs/:id`, `/api/projects/:slug/completed/:id`, `/api/projects/:slug/wishlist/:id`, `/api/projects/:slug/activity` 라우트. 단일 catchall 라우터로 구현.
+
+### 변경
+- 완료 목록·위시리스트가 **D1 이 source of truth**. 기존 localStorage 저장 로직 제거.
+- 상태 변경 시 500ms debounce 후 서버 저장 (jobs 는 diff PUT, completed/wishlist 는 POST/DELETE).
+- 이제 브라우저 캐시를 비우거나 다른 기기에서 접속해도 동일 프로젝트 데이터 유지.
+
+### 내부
+- D1 스키마 5 테이블 (projects / jobs / completed_items / wishlist_items / activity_log), 인덱스 포함.
+- `dbRowToJob` / `jobToDbPayload` 등 snake_case ↔ camelCase 변환 헬퍼.
+- `wrangler.jsonc` 에 D1 바인딩 정의, Pages Functions 에서 `env.DB` 로 접근.
+
+### 알려진 한계
+- 이미지(Gemini dataURL)가 D1 TEXT 컬럼에 그대로 저장됨. row 당 수 MB. 향후 R2 로 분리 예정(R2 활성화 필요).
+- Gemini API 키는 여전히 브라우저 localStorage. 팀 공유 키로 전환할 경우 서버 측 시크릿으로 이전 필요.
+- 동시 편집 충돌은 last-write-wins (진짜 실시간 아님).
+
 ## [0.8.0] — 2026-04-21
 
 ### 추가

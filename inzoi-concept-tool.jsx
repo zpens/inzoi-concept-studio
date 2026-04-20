@@ -1,8 +1,19 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.8.0";
+const APP_VERSION = "0.9.0";
 const CHANGELOG = [
+  {
+    version: "0.9.0",
+    date: "2026-04-21",
+    changes: [
+      "Cloudflare D1 백엔드 연동 — 모든 작업/완료목록/위시리스트가 서버에 저장",
+      "프로젝트 URL 공유 기능 — /p/{slug} URL 로 팀원과 동일 프로젝트 공유",
+      "5초 간격 자동 동기화 — 다른 사람 변경사항이 자동 반영",
+      "헤더 우측에 프로젝트 URL 버튼 추가 (클릭 시 공유 URL 복사)",
+      "localStorage 의존성 제거 — 이제 새로고침/다른 브라우저에서도 동일 데이터",
+    ],
+  },
   {
     version: "0.8.0",
     date: "2026-04-21",
@@ -977,6 +988,142 @@ async function listGeminiImageModels(apiKey) {
     }));
 }
 
+// ─── D1 row <-> frontend shape 변환 ──────────────────────────────
+// 서버는 snake_case + JSON 문자열로 저장, 프론트는 camelCase + 실제 객체.
+function safeParse(s) {
+  if (s == null) return null;
+  if (typeof s === "object") return s;
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+function dbRowToJob(row) {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    step: row.step ?? 0,
+    loading: !!row.loading,
+    loadingMsg: row.loading_msg || "",
+    loadingProgress: row.loading_progress ?? 0,
+    category: row.category,
+    topTab: row.top_tab || "furniture",
+    selectedRoom: row.selected_room || "침실",
+    stylePreset: row.style_preset,
+    prompt: row.prompt || "",
+    refImages: safeParse(row.ref_images) || [],
+    variantCount: row.variant_count ?? 4,
+    designs: safeParse(row.designs) || [],
+    enhancedPrompt: row.enhanced_prompt || "",
+    selectedDesign: row.selected_design,
+    feedback: row.feedback || "",
+    votes: safeParse(row.votes) || {},
+    voters: safeParse(row.voters) || [],
+    currentVoter: row.current_voter || "",
+    currentVotes: safeParse(row.current_votes) || [],
+    conceptSheet: row.concept_sheet,
+    multiViewImages: safeParse(row.multi_view_images) || {},
+  };
+}
+
+function jobToDbPayload(job, actor) {
+  return {
+    step: job.step ?? 0,
+    loading: job.loading ? 1 : 0,
+    loading_msg: job.loadingMsg || null,
+    loading_progress: job.loadingProgress ?? 0,
+    category: job.category ?? null,
+    top_tab: job.topTab || "furniture",
+    selected_room: job.selectedRoom || "침실",
+    style_preset: job.stylePreset ?? null,
+    prompt: job.prompt ?? null,
+    ref_images: JSON.stringify(job.refImages || []),
+    variant_count: job.variantCount ?? 4,
+    designs: JSON.stringify(job.designs || []),
+    enhanced_prompt: job.enhancedPrompt ?? null,
+    selected_design: job.selectedDesign ?? null,
+    feedback: job.feedback ?? null,
+    votes: JSON.stringify(job.votes || {}),
+    voters: JSON.stringify(job.voters || []),
+    current_voter: job.currentVoter ?? null,
+    current_votes: JSON.stringify(job.currentVotes || []),
+    concept_sheet: job.conceptSheet ?? null,
+    multi_view_images: JSON.stringify(job.multiViewImages || {}),
+    updated_by: actor || null,
+  };
+}
+
+function dbRowToCompleted(row) {
+  return {
+    id: row.id,
+    assetCode: row.asset_code,
+    category: row.category,
+    categoryLabel: row.category_label,
+    categoryIcon: row.category_icon,
+    style: row.style,
+    prompt: row.prompt,
+    seed: row.seed,
+    colors: safeParse(row.colors) || [],
+    gradient: row.gradient,
+    imageUrl: row.image_url,
+    conceptSheetUrl: row.concept_sheet_url,
+    voters: row.voters,
+    winner: row.winner,
+    pipelineStatus: row.pipeline_status,
+    designer: row.designer,
+    completedAt: row.completed_at,
+  };
+}
+
+function completedToDbPayload(item) {
+  return {
+    id: String(item.id),
+    job_id: item.jobId ?? null,
+    asset_code: item.assetCode ?? null,
+    category: item.category,
+    category_label: item.categoryLabel,
+    category_icon: item.categoryIcon,
+    style: item.style,
+    prompt: item.prompt,
+    seed: item.seed,
+    colors: item.colors || [],
+    gradient: item.gradient,
+    image_url: item.imageUrl,
+    concept_sheet_url: item.conceptSheetUrl,
+    voters: item.voters,
+    winner: item.winner,
+    pipeline_status: item.pipelineStatus,
+    designer: item.designer,
+    completed_at: item.completedAt,
+  };
+}
+
+function dbRowToWishlist(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    note: row.note,
+    imageUrl: row.image_url,
+    gradient: row.gradient,
+    createdAt: row.created_at,
+  };
+}
+
+function wishlistToDbPayload(item) {
+  return {
+    id: String(item.id),
+    title: item.title,
+    note: item.note,
+    image_url: item.imageUrl,
+    gradient: item.gradient,
+    created_at: item.createdAt,
+  };
+}
+
+function getSlugFromUrl() {
+  if (typeof location === "undefined") return null;
+  const m = location.pathname.match(/^\/p\/([A-Za-z0-9]+)/);
+  return m ? m[1] : null;
+}
+
 // Each in-flight concept generation is a "job". The app keeps an array of
 // jobs so the user can spawn a new one while previous ones are still
 // running (image generation, voting, etc.). One job is the "active" job
@@ -1186,27 +1333,15 @@ export default function InZOIConceptTool() {
     });
   }, []);
 
-  // Completed list state (persisted to localStorage)
-  const [completedList, setCompletedList] = useState(() => {
-    try {
-      const raw = localStorage.getItem("inzoi_completed_list");
-      if (raw) return JSON.parse(raw);
-    } catch (e) { /* fall through */ }
-    return SAMPLE_COMPLETED;
-  });
+  // Completed list / wishlist — D1 가 source of truth. 초기 렌더는 빈 배열로
+  // 시작하고, 아래 init effect 에서 스냅샷을 로드한다.
+  const [completedList, setCompletedList] = useState([]);
   const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [newItemId, setNewItemId] = useState(null);
 
-  // Wishlist state (persisted to localStorage)
-  const [wishlist, setWishlist] = useState(() => {
-    try {
-      const raw = localStorage.getItem("inzoi_wishlist");
-      if (raw) return JSON.parse(raw);
-    } catch (e) { /* fall through */ }
-    return SAMPLE_WISHLIST;
-  });
+  const [wishlist, setWishlist] = useState([]);
   const [wishTitle, setWishTitle] = useState("");
   const [wishNote, setWishNote] = useState("");
   const [wishImage, setWishImage] = useState(null);
@@ -1231,36 +1366,181 @@ export default function InZOIConceptTool() {
     }
   }, [jobs, activeJobId]);
 
-  // Persist completed list + wishlist to localStorage.
-  // Image data urls can exceed the ~5MB quota fast, so on quota errors
-  // we retry without the heavy image fields rather than losing the item.
+  // ── 프로젝트 slug / 동기화 상태 ──
+  const [projectSlug, setProjectSlug] = useState(null);
+  const [projectReady, setProjectReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("idle"); // "idle" | "saving" | "error"
+  const actorName = useMemo(() => {
+    try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
+  }, []);
+
+  // 앱 시작 시: URL 또는 localStorage 의 slug 를 확보하고, 없으면 새 프로젝트 생성.
+  // 이어서 프로젝트 스냅샷을 내려받아 jobs / completedList / wishlist 를 복원한다.
   useEffect(() => {
-    const stripImages = (list) => list.map(({ imageUrl, conceptSheetUrl, ...rest }) => rest);
-    try {
-      localStorage.setItem("inzoi_completed_list", JSON.stringify(completedList));
-    } catch (err) {
+    let cancelled = false;
+    async function init() {
+      let slug = getSlugFromUrl();
+      if (!slug) {
+        try { slug = localStorage.getItem("inzoi_active_slug"); } catch { slug = null; }
+      }
+      if (!slug) {
+        try {
+          const r = await fetch("/api/projects", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: "inZOI Concept Studio" }),
+          });
+          if (r.ok) {
+            const p = await r.json();
+            slug = p.slug;
+          }
+        } catch (e) { console.warn("프로젝트 생성 실패", e); }
+      }
+      if (cancelled || !slug) { setProjectReady(true); return; }
+
+      try { localStorage.setItem("inzoi_active_slug", slug); } catch {}
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", `/p/${slug}${location.search}`);
+      }
+      setProjectSlug(slug);
+
+      // Snapshot 로드
       try {
-        localStorage.setItem("inzoi_completed_list", JSON.stringify(stripImages(completedList)));
-        console.warn("완료 목록 저장 용량 초과 — 이미지 데이터는 생략하고 메타데이터만 저장했습니다.");
-      } catch (e2) {
-        console.error("완료 목록 저장 실패", e2);
+        const r = await fetch(`/api/projects/${slug}`);
+        if (!r.ok) throw new Error(`snapshot ${r.status}`);
+        const data = await r.json();
+        if (cancelled) return;
+        const serverJobs = (data.jobs || []).map(dbRowToJob);
+        if (serverJobs.length > 0) {
+          setJobs(serverJobs);
+          setActiveJobId(serverJobs[0].id);
+        }
+        setCompletedList((data.completed || []).map(dbRowToCompleted));
+        setWishlist((data.wishlist || []).map(dbRowToWishlist));
+      } catch (err) {
+        console.warn("스냅샷 로드 실패 — 기본 상태로 시작", err);
+      } finally {
+        if (!cancelled) setProjectReady(true);
       }
     }
-  }, [completedList]);
+    init();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── D1 동기화 effect: jobs / completedList / wishlist 변경을 debounce 후 저장 ──
+  const prevJobsRef = useRef([]);
+  const prevCompletedRef = useRef([]);
+  const prevWishlistRef = useRef([]);
 
   useEffect(() => {
-    const stripImages = (list) => list.map(({ imageUrl, ...rest }) => rest);
-    try {
-      localStorage.setItem("inzoi_wishlist", JSON.stringify(wishlist));
-    } catch (err) {
+    if (!projectSlug || !projectReady) return;
+    const timer = setTimeout(async () => {
+      const prev = prevJobsRef.current;
+      setSyncStatus("saving");
       try {
-        localStorage.setItem("inzoi_wishlist", JSON.stringify(stripImages(wishlist)));
-        console.warn("위시리스트 저장 용량 초과 — 이미지 데이터는 생략하고 메타데이터만 저장했습니다.");
-      } catch (e2) {
-        console.error("위시리스트 저장 실패", e2);
-      }
-    }
-  }, [wishlist]);
+        // upsert changed
+        for (const j of jobs) {
+          const old = prev.find((p) => p.id === j.id);
+          if (!old || JSON.stringify(old) !== JSON.stringify(j)) {
+            await fetch(`/api/projects/${projectSlug}/jobs/${j.id}`, {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(jobToDbPayload(j, actorName)),
+            });
+          }
+        }
+        // delete removed
+        for (const p of prev) {
+          if (!jobs.find((j) => j.id === p.id)) {
+            await fetch(`/api/projects/${projectSlug}/jobs/${p.id}`, { method: "DELETE" });
+          }
+        }
+        prevJobsRef.current = jobs;
+        setSyncStatus("idle");
+      } catch (e) { console.warn("jobs 동기화 실패", e); setSyncStatus("error"); }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [jobs, projectSlug, projectReady, actorName]);
+
+  useEffect(() => {
+    if (!projectSlug || !projectReady) return;
+    const timer = setTimeout(async () => {
+      const prev = prevCompletedRef.current;
+      try {
+        const added = completedList.filter((c) => !prev.find((p) => p.id === c.id));
+        const removed = prev.filter((p) => !completedList.find((c) => c.id === p.id));
+        for (const c of added) {
+          await fetch(`/api/projects/${projectSlug}/completed`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(completedToDbPayload(c)),
+          });
+        }
+        for (const r of removed) {
+          await fetch(`/api/projects/${projectSlug}/completed/${r.id}`, { method: "DELETE" });
+        }
+        prevCompletedRef.current = completedList;
+      } catch (e) { console.warn("completed 동기화 실패", e); }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [completedList, projectSlug, projectReady]);
+
+  useEffect(() => {
+    if (!projectSlug || !projectReady) return;
+    const timer = setTimeout(async () => {
+      const prev = prevWishlistRef.current;
+      try {
+        const added = wishlist.filter((c) => !prev.find((p) => p.id === c.id));
+        const removed = prev.filter((p) => !wishlist.find((c) => c.id === p.id));
+        for (const c of added) {
+          await fetch(`/api/projects/${projectSlug}/wishlist`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(wishlistToDbPayload(c)),
+          });
+        }
+        for (const r of removed) {
+          await fetch(`/api/projects/${projectSlug}/wishlist/${r.id}`, { method: "DELETE" });
+        }
+        prevWishlistRef.current = wishlist;
+      } catch (e) { console.warn("wishlist 동기화 실패", e); }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [wishlist, projectSlug, projectReady]);
+
+  // 5초마다 서버 스냅샷을 가져와 자신이 편집 중이 아닌 리소스를 갱신 (협업).
+  useEffect(() => {
+    if (!projectSlug || !projectReady) return;
+    let cancelled = false;
+    const pollInterval = 5000;
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/projects/${projectSlug}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        if (cancelled) return;
+        // 내가 편집 중(active) 인 job 은 덮어쓰지 않는다. 다른 것만 병합.
+        const serverJobs = (data.jobs || []).map(dbRowToJob);
+        setJobs((local) => {
+          const merged = local.map((lj) => {
+            if (lj.id === activeJobId) return lj;
+            const sj = serverJobs.find((s) => s.id === lj.id);
+            return sj || lj;
+          });
+          // 서버에만 있는 것 추가
+          for (const sj of serverJobs) {
+            if (!merged.find((m) => m.id === sj.id)) merged.push(sj);
+          }
+          return merged;
+        });
+        setCompletedList((data.completed || []).map(dbRowToCompleted));
+        setWishlist((data.wishlist || []).map(dbRowToWishlist));
+      } catch (e) { /* silent */ }
+    };
+    const handle = setInterval(tick, pollInterval);
+    return () => { cancelled = true; clearInterval(handle); };
+  }, [projectSlug, projectReady, activeJobId]);
+
   const [availableModels, setAvailableModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("gemini_model") || "gemini-3-flash-image");
@@ -1549,6 +1829,32 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
         {/* Right: Settings + New Start button */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 160, justifyContent: "flex-end" }}>
+          {projectSlug && (
+            <button
+              onClick={() => {
+                const url = `${location.origin}/p/${projectSlug}`;
+                navigator.clipboard?.writeText(url).catch(() => {});
+                alert(`공유 URL 복사됨:\n${url}\n\n팀원에게 이 링크를 보내면 같은 프로젝트로 접속합니다.`);
+              }}
+              className="hover-lift"
+              title={`프로젝트 URL: /p/${projectSlug}`}
+              style={{
+                padding: "10px 14px", borderRadius: 12,
+                background: "rgba(7,110,232,0.08)",
+                border: "1px solid rgba(7,110,232,0.3)",
+                color: "var(--primary)",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                transition: "all 0.3s",
+                display: "flex", alignItems: "center", gap: 6,
+                fontFamily: "monospace",
+              }}
+            >
+              <span style={{ fontSize: 14 }}>🔗</span>
+              {projectSlug}
+              {syncStatus === "saving" && <span style={{ fontSize: 10, opacity: 0.6 }}>저장중</span>}
+              {syncStatus === "error" && <span style={{ fontSize: 10, color: "#ef4444" }}>⚠</span>}
+            </button>
+          )}
           <button
             onClick={() => setShowApiSettings(true)}
             className="hover-lift"
