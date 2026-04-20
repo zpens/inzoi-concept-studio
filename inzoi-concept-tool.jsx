@@ -1,8 +1,18 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.7.1";
 const CHANGELOG = [
+  {
+    version: "0.7.1",
+    date: "2026-04-21",
+    changes: [
+      "시안 생성을 완전 백그라운드 작업으로 전환 — \"생성중\" 화면 없이 입력 폼 유지",
+      "생성 클릭 시 새 빈 작업으로 자동 전환되어 다음 어셋을 바로 입력 가능",
+      "진행 상황은 우측 하단 큐 패널에서만 표시, 메인 화면은 방해받지 않음",
+      "생성 중인 작업 카드 클릭 시 버튼 비활성화로 중복 제출 방지",
+    ],
+  },
   {
     version: "0.7.0",
     date: "2026-04-20",
@@ -1219,9 +1229,13 @@ export default function InZOIConceptTool() {
   const STEPS = ["입력", "시안 생성", "투표", "시안 선정", "컨셉시트 생성", "결과 전달"];
 
   // ─── Step 1 → 2: Generate designs ───
-  // Runs against a specific jobId captured at call-time, so the user
-  // can switch to other jobs mid-generation without affecting this one.
-  const generateDesigns = async () => {
+  // The generation runs entirely in the background against the captured
+  // jobId. The ACTIVE workspace is reset to a new blank job immediately
+  // so the user can start typing the next asset without waiting for
+  // Gemini. Progress shows in the floating queue panel; clicking the
+  // finished card switches the workspace to review the designs.
+  const generateDesigns = async (opts = {}) => {
+    const { keepActive = false } = opts;
     const jobId = activeJobId;
     const snap = jobs.find((j) => j.id === jobId) || activeJob;
     if (!snap.category || !snap.prompt) return;
@@ -1236,15 +1250,23 @@ export default function InZOIConceptTool() {
 
     let enhanced = `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${snap.prompt}${spec.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`;
 
-    // Advance to step 1 immediately so the main view reflects "generating";
-    // the floating queue panel shows detailed progress.
+    // Kick the job into "loading" without advancing step — the main view
+    // should NOT transition to the gallery until the designs are ready.
     updateJob(jobId, {
       loading: true,
       loadingMsg: "프롬프트 최적화 중...",
       loadingProgress: 10,
-      step: 1,
       designs: [],
     });
+
+    // Re-generation from the gallery (step === 1) should stay in place.
+    // Initial generation from the input form: hand the user a fresh blank
+    // workspace so they can queue up the next asset immediately.
+    if (!keepActive) {
+      const next = createBlankJob(Date.now() + 1);
+      setJobs((prev) => [...prev, next]);
+      setActiveJobId(next.id);
+    }
 
     try {
       if (claudeApiKey) {
@@ -1299,6 +1321,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       updateJob(jobId, {
         loadingProgress: 100,
         loadingMsg: "완료!",
+        step: 1,
         designs: [{
           id: 0,
           seed,
@@ -1314,6 +1337,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       console.error(err);
       alert(`이미지 생성 오류: ${err.message}`);
       updateJob(jobId, {
+        step: 1,
         designs: [{
           id: 0,
           seed: generateSeed(),
@@ -1735,25 +1759,30 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               {/* Generate Button */}
               <div style={{ textAlign: "center" }}>
                 <button
-                  onClick={generateDesigns}
-                  disabled={!category || !prompt}
-                  className={(!category || !prompt) ? "" : "btn-primary"}
+                  onClick={() => generateDesigns()}
+                  disabled={!category || !prompt || loading}
+                  className={(!category || !prompt || loading) ? "" : "btn-primary"}
                   style={{
                     width: "100%", maxWidth: 600, padding: "20px 40px",
                     borderRadius: 20,
-                    background: (!category || !prompt)
+                    background: (!category || !prompt || loading)
                       ? "var(--surface-color)"
                       : "",
-                    border: (!category || !prompt) ? "1px solid var(--surface-border)" : "none",
-                    color: (!category || !prompt) ? "var(--text-muted)" : "#fff",
+                    border: (!category || !prompt || loading) ? "1px solid var(--surface-border)" : "none",
+                    color: (!category || !prompt || loading) ? "var(--text-muted)" : "#fff",
                     fontSize: 18, fontWeight: 800,
-                    cursor: (!category || !prompt) ? "not-allowed" : "pointer",
+                    cursor: (!category || !prompt || loading) ? "not-allowed" : "pointer",
                     letterSpacing: "0.05em",
-                    boxShadow: (!category || !prompt) ? "none" : "0 10px 30px var(--primary-glow)",
+                    boxShadow: (!category || !prompt || loading) ? "none" : "0 10px 30px var(--primary-glow)",
                   }}
                 >
-                  시안 생성하기 ✨
+                  {loading ? "🎨 백그라운드에서 생성 중…" : "시안 생성하기 ✨"}
                 </button>
+                {loading && (
+                  <div style={{ marginTop: 14, fontSize: 12, color: "var(--text-muted)" }}>
+                    우측 하단 작업 큐에서 진행률을 확인할 수 있습니다.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1770,7 +1799,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 </p>
               </div>
               <button
-                onClick={generateDesigns}
+                onClick={() => generateDesigns({ keepActive: true })}
                 className="hover-lift glass-panel"
                 style={{
                   padding: "12px 24px", borderRadius: 14,
@@ -1808,40 +1837,18 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             {/* Design Grid */}
             <div style={{
               display: "grid",
-              gridTemplateColumns: designs.length === 0 && loading ? "1fr" : "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(4, 1fr)",
               gap: 24, marginBottom: 40,
             }}>
-              {designs.length === 0 && loading ? (
-                <div className="glass-panel" style={{
-                  padding: "60px 40px", borderRadius: 20, textAlign: "center",
-                  border: "1px dashed var(--surface-border)",
-                }}>
-                  <div style={{ fontSize: 42, marginBottom: 14 }}>🎨</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-main)", marginBottom: 6 }}>
-                    {loadingMsg || "디자인 시안 생성 중..."}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
-                    우측 하단 작업 큐에서 진행률을 확인하세요. 다른 시안을 생성하려면 헤더의 "＋ 새 시안" 버튼을 누르세요.
-                  </div>
-                  <div style={{ width: 280, height: 6, margin: "0 auto", borderRadius: 3, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
-                    <div style={{
-                      width: `${loadingProgress}%`, height: "100%",
-                      background: "linear-gradient(90deg, var(--primary), var(--accent))",
-                      transition: "width 0.3s",
-                    }} />
-                  </div>
-                </div>
-              ) : (
-                designs.map((design, i) => (
-                  <DesignCard
-                    key={design.id}
-                    design={design}
-                    index={i}
-                    selected={selectedDesign === i}
-                    onClick={() => setSelectedDesign(i)}
-                  />
-                ))
-              )}
+              {designs.map((design, i) => (
+                <DesignCard
+                  key={design.id}
+                  design={design}
+                  index={i}
+                  selected={selectedDesign === i}
+                  onClick={() => setSelectedDesign(i)}
+                />
+              ))}
             </div>
 
             {/* Next button */}
