@@ -474,133 +474,156 @@ function generateColors(count) {
 }
 
 // ─── Concept Sheet Canvas Generator ───
+// Draws the passed image into a slot with a per-view transform
+// (flip for back, zoom for detail, crop for top/side). All slots
+// share the same source image so the sheet presents ONE consistent
+// design instead of six drifting AI re-rolls.
+function drawViewSlot(ctx, img, x, y, w, h, viewKey) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+
+  if (viewKey === "back") {
+    ctx.translate(x + w, y);
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, 0, 0, w, h);
+  } else if (viewKey === "detail") {
+    const sw = img.width * 0.45;
+    const sh = img.height * 0.45;
+    const sx = (img.width - sw) / 2;
+    const sy = (img.height - sh) / 2;
+    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+  } else if (viewKey === "top") {
+    const sh = img.height * 0.55;
+    ctx.drawImage(img, 0, 0, img.width, sh, x, y, w, h);
+  } else if (viewKey === "side") {
+    const sw = img.width * 0.7;
+    const sx = (img.width - sw) / 2;
+    ctx.drawImage(img, sx, 0, sw, img.height, x, y, w, h);
+  } else {
+    ctx.drawImage(img, x, y, w, h);
+  }
+  ctx.restore();
+}
+
 function generateConceptSheetCanvas(canvas, images, metadata) {
   const ctx = canvas.getContext("2d");
   const W = 2400, H = 3200;
   canvas.width = W;
   canvas.height = H;
 
-  // Background
-  ctx.fillStyle = "#0f0f13";
+  // Background — light theme to match app
+  ctx.fillStyle = "#f5f7fb";
   ctx.fillRect(0, 0, W, H);
 
-  // Header bar
+  // Header bar (inZOI dark blue)
   const grad = ctx.createLinearGradient(0, 0, W, 0);
-  grad.addColorStop(0, "#1a1a2e");
-  grad.addColorStop(1, "#16213e");
+  grad.addColorStop(0, "#0b1a3e");
+  grad.addColorStop(1, "#102a5e");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, 120);
 
   // Title
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 42px 'Segoe UI', sans-serif";
-  ctx.fillText("inZOI ASSET CONCEPT SHEET", 60, 78);
+  ctx.font = "bold 42px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
+  ctx.fillText("inZOI 에셋 컨셉시트", 60, 78);
 
   // Subtitle
-  ctx.fillStyle = "#64748b";
-  ctx.font = "20px 'Segoe UI', sans-serif";
+  ctx.fillStyle = "#a5b8de";
+  ctx.font = "20px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
   ctx.fillText(`${metadata.category} — ${metadata.style} — ${new Date().toLocaleDateString("ko-KR")}`, W - 600, 78);
 
-  // Main view area
-  const mainY = 160;
-  ctx.strokeStyle = "#1e293b";
+  const slotFill = "#ffffff";
+  const slotBorder = "#d8dce8";
+  const labelColor = "#334155";
   ctx.lineWidth = 2;
 
+  const drawSlot = (x, y, w, h, viewKey, label) => {
+    ctx.fillStyle = slotFill;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = slotBorder;
+    ctx.strokeRect(x, y, w, h);
+    if (images && images[viewKey]) {
+      drawViewSlot(ctx, images[viewKey], x, y, w, h, viewKey);
+    }
+    ctx.fillStyle = "rgba(11, 26, 62, 0.82)";
+    ctx.fillRect(x, y + h - 44, 230, 44);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 18px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
+    ctx.fillText(label, x + 16, y + h - 14);
+  };
+
+  const mainY = 160;
+
   // Main image (large)
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillRect(60, mainY, 1400, 1100);
-  ctx.strokeRect(60, mainY, 1400, 1100);
-  if (images.main) {
-    ctx.drawImage(images.main, 60, mainY, 1400, 1100);
-  }
-  ctx.fillStyle = "#475569";
-  ctx.font = "16px 'Segoe UI', sans-serif";
-  ctx.fillText("MAIN VIEW (3/4)", 70, mainY + 1090);
+  drawSlot(60, mainY, 1400, 1100, "main", "메인 뷰 (3/4)");
 
   // Side views (right column)
   const sideX = 1500;
   const sideW = 840;
   const sideH = 530;
-  const views = [
-    { key: "front", label: "FRONT VIEW" },
-    { key: "side", label: "SIDE VIEW" },
-  ];
-  views.forEach((v, i) => {
-    const y = mainY + i * (sideH + 40);
-    ctx.fillStyle = "#1a1a2e";
-    ctx.fillRect(sideX, y, sideW, sideH);
-    ctx.strokeRect(sideX, y, sideW, sideH);
-    if (images[v.key]) {
-      ctx.drawImage(images[v.key], sideX, y, sideW, sideH);
-    }
-    ctx.fillStyle = "#475569";
-    ctx.font = "16px 'Segoe UI', sans-serif";
-    ctx.fillText(v.label, sideX + 10, y + sideH - 10);
+  [
+    { key: "front", label: "정면 뷰" },
+    { key: "side", label: "측면 뷰" },
+  ].forEach((v, i) => {
+    drawSlot(sideX, mainY + i * (sideH + 40), sideW, sideH, v.key, v.label);
   });
 
   // Bottom row
   const bottomY = mainY + 1140;
   const bottomViews = [
-    { key: "back", label: "BACK VIEW" },
-    { key: "detail", label: "DETAIL" },
-    { key: "top", label: "TOP VIEW" },
+    { key: "back", label: "후면 뷰" },
+    { key: "detail", label: "디테일" },
+    { key: "top", label: "상단 뷰" },
   ];
   const bw = (W - 120 - 40 * 2) / 3;
   bottomViews.forEach((v, i) => {
-    const x = 60 + i * (bw + 40);
-    ctx.fillStyle = "#1a1a2e";
-    ctx.fillRect(x, bottomY, bw, 600);
-    ctx.strokeRect(x, bottomY, bw, 600);
-    if (images[v.key]) {
-      ctx.drawImage(images[v.key], x, bottomY, bw, 600);
-    }
-    ctx.fillStyle = "#475569";
-    ctx.font = "16px 'Segoe UI', sans-serif";
-    ctx.fillText(v.label, x + 10, bottomY + 590);
+    drawSlot(60 + i * (bw + 40), bottomY, bw, 600, v.key, v.label);
   });
 
   // Info section
   const infoY = bottomY + 640;
 
   // Color palette
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 22px 'Segoe UI', sans-serif";
-  ctx.fillText("COLOR PALETTE", 60, infoY + 30);
+  ctx.fillStyle = "#0b1a3e";
+  ctx.font = "bold 22px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
+  ctx.fillText("컬러 팔레트", 60, infoY + 30);
   const colors = metadata.colors || generateColors(5);
   colors.forEach((c, i) => {
     ctx.fillStyle = c;
     ctx.fillRect(60 + i * 120, infoY + 50, 100, 60);
-    ctx.strokeStyle = "#334155";
+    ctx.strokeStyle = "#cbd2e0";
     ctx.strokeRect(60 + i * 120, infoY + 50, 100, 60);
-    ctx.fillStyle = "#94a3b8";
+    ctx.fillStyle = labelColor;
     ctx.font = "12px monospace";
     ctx.fillText(c, 65 + i * 120, infoY + 130);
   });
 
   // Metadata
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 22px 'Segoe UI', sans-serif";
-  ctx.fillText("SPECIFICATIONS", 900, infoY + 30);
+  ctx.fillStyle = "#0b1a3e";
+  ctx.font = "bold 22px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
+  ctx.fillText("에셋 사양", 900, infoY + 30);
 
   const specs = [
     `카테고리: ${metadata.category}`,
     `스타일: ${metadata.style}`,
     `프롬프트: ${metadata.prompt?.substring(0, 60)}...`,
-    `생성 모델: ComfyUI Pipeline`,
+    `생성 모델: ${metadata.model || "Gemini Image"}`,
     `시드: ${metadata.seed || "N/A"}`,
   ];
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "18px 'Segoe UI', sans-serif";
+  ctx.fillStyle = labelColor;
+  ctx.font = "18px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
   specs.forEach((s, i) => {
     ctx.fillText(s, 900, infoY + 65 + i * 32);
   });
 
   // Footer
-  ctx.fillStyle = "#1e293b";
+  ctx.fillStyle = "#0b1a3e";
   ctx.fillRect(0, H - 50, W, 50);
-  ctx.fillStyle = "#475569";
-  ctx.font = "14px 'Segoe UI', sans-serif";
-  ctx.fillText("Generated with inZOI Asset Concept Tool — Powered by ComfyUI", 60, H - 18);
+  ctx.fillStyle = "#a5b8de";
+  ctx.font = "14px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
+  ctx.fillText("inZOI 에셋 컨셉 도구에서 생성 — Powered by Gemini", 60, H - 18);
   ctx.fillText(`© ${new Date().getFullYear()} KRAFTON inZOI`, W - 300, H - 18);
 }
 
@@ -957,6 +980,7 @@ export default function InZOIConceptTool() {
   const [completedList, setCompletedList] = useState(SAMPLE_COMPLETED);
   const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
   const [expandedItem, setExpandedItem] = useState(null);
+  const [detailItem, setDetailItem] = useState(null);
   const [newItemId, setNewItemId] = useState(null);
 
   // Wishlist state
@@ -1086,47 +1110,39 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
   // ─── Step 3 → 4: Generate concept sheet ───
   const generateConceptSheet = async () => {
     if (selectedDesign === null) return;
-    if (!geminiApiKey) {
-      setShowApiSettings(true);
-      return;
-    }
 
     setLoading(true);
-    setLoadingMsg("멀티뷰 이미지 생성 중...");
-    setLoadingProgress(10);
+    setLoadingMsg("컨셉시트 레이아웃 생성 중...");
+    setLoadingProgress(20);
 
     const design = designs[selectedDesign];
-    const basePrompt = design.prompt || enhancedPrompt || prompt;
-    const views = {};
+
+    // Reuse the SAME source image across all view slots.
+    // Gemini image generation isn't seed-consistent across calls, so
+    // generating a separate image per view produced six different
+    // products on one sheet. Instead we take the one image the user
+    // actually voted for in Step 3 and transform it per slot.
+    const sourceUrl = design.imageUrl || `/images/${category}.jpg`;
+    const sourceImg = await new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = sourceUrl;
+    });
+
+    setLoadingProgress(60);
+
     const viewImages = {};
-
-    for (let i = 0; i < VIEW_ANGLES.length; i++) {
-      const view = VIEW_ANGLES[i];
-      setLoadingMsg(`${view.label} 뷰 생성 중... (${i + 1}/${VIEW_ANGLES.length})`);
-      setLoadingProgress(10 + (i / VIEW_ANGLES.length) * 70);
-
-      try {
-        const viewPrompt = `${basePrompt}, ${view.angle}, clean white background`;
-        const imgDataUrl = await generateImageWithGemini(geminiApiKey, viewPrompt, selectedModel);
-        views[view.id] = imgDataUrl;
-
-        // Load as Image element for canvas drawing
-        const img = new Image();
-        img.src = imgDataUrl;
-        await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
-        viewImages[view.id] = img;
-      } catch (err) {
-        console.error(`${view.label} view generation failed:`, err);
-        views[view.id] = null;
-        viewImages[view.id] = null;
-      }
+    const views = {};
+    for (const view of VIEW_ANGLES) {
+      viewImages[view.id] = sourceImg;
+      views[view.id] = sourceUrl;
     }
-
     setMultiViewImages(views);
-    setLoadingMsg("컨셉시트 레이아웃 생성 중...");
-    setLoadingProgress(85);
 
-    await new Promise((r) => setTimeout(r, 300));
+    setLoadingProgress(80);
+    await new Promise((r) => setTimeout(r, 200));
 
     if (canvasRef.current) {
       const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
@@ -1137,13 +1153,14 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         prompt: enhancedPrompt || prompt,
         seed: design.seed,
         colors: design.colors,
+        model: selectedModel,
       });
       setConceptSheet(canvasRef.current.toDataURL("image/png"));
     }
 
     setLoadingProgress(100);
     setLoadingMsg("컨셉시트 완성!");
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 400));
     setStep(5);
     setLoading(false);
   };
@@ -2403,13 +2420,13 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
               {completedList.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+                  onClick={() => setDetailItem(item)}
                   className="hover-lift glass-panel"
                   style={{
                     borderRadius: 20, overflow: "hidden",
-                    border: expandedItem === item.id ? "1px solid rgba(7,110,232,0.4)" : "1px solid var(--surface-border)",
+                    border: "1px solid var(--surface-border)",
                     cursor: "pointer", transition: "all 0.3s",
-                    background: expandedItem === item.id ? "rgba(7,110,232,0.03)" : "var(--surface-color)",
+                    background: "var(--surface-color)",
                     position: "relative",
                   }}
                 >
@@ -2474,20 +2491,11 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                         {new Date(item.completedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 6, marginBottom: expandedItem === item.id ? 14 : 0 }}>
+                    <div style={{ display: "flex", gap: 6 }}>
                       {item.colors.map((c, ci) => (
                         <div key={ci} style={{ flex: 1, height: 20, borderRadius: 5, background: c, border: "1px solid rgba(0,0,0,0.06)" }} />
                       ))}
                     </div>
-                    {expandedItem === item.id && (
-                      <div style={{ borderTop: "1px solid var(--surface-border)", paddingTop: 14, animation: "fadeIn 0.3s ease" }}>
-                        <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.8, marginBottom: 12 }}>{item.prompt}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 14 }}>
-                          <span>Seed: <code style={{ color: "var(--accent)" }}>{item.seed}</code></span>
-                          <span>{new Date(item.completedAt).toLocaleString("ko-KR")}</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
@@ -2865,6 +2873,193 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         </>
       )}
 
+      {/* Completed Item Detail Modal */}
+      {detailItem && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setDetailItem(null)} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 1200, maxWidth: "95vw", maxHeight: "92vh",
+            background: "rgba(255, 255, 255, 0.98)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid var(--surface-border)",
+            borderRadius: 24, zIndex: 202,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+            animation: "fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: "20px 28px", borderBottom: "1px solid var(--surface-border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              flexShrink: 0,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <span style={{ fontSize: 32 }}>{detailItem.categoryIcon}</span>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-main)" }}>
+                      {detailItem.categoryLabel}
+                    </div>
+                    {detailItem.assetCode && (
+                      <code style={{
+                        fontSize: 12, color: "var(--primary)", fontWeight: 700, letterSpacing: "0.04em",
+                        background: "rgba(7,110,232,0.07)", padding: "3px 10px", borderRadius: 6,
+                      }}>
+                        {detailItem.assetCode}
+                      </code>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 3 }}>
+                    {detailItem.style}
+                    {detailItem.designer && ` · 담당 ${detailItem.designer}`}
+                    {` · ${new Date(detailItem.completedAt).toLocaleDateString("ko-KR")}`}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailItem(null)}
+                style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+                onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
+                onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 0,
+              overflowY: "auto", flex: 1,
+            }}>
+              {/* Image */}
+              <div style={{
+                padding: 24, borderRight: "1px solid var(--surface-border)",
+                background: detailItem.gradient || "linear-gradient(135deg, #1a1a2e, #2d1b4e)",
+                display: "flex", alignItems: "center", justifyContent: "center", minHeight: 420,
+              }}>
+                {detailItem.conceptSheetUrl || detailItem.imageUrl ? (
+                  <img
+                    src={detailItem.conceptSheetUrl || detailItem.imageUrl}
+                    alt=""
+                    style={{
+                      width: "100%", maxHeight: "72vh", objectFit: "contain",
+                      borderRadius: 12, background: "#fff",
+                      boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
+                    }}
+                  />
+                ) : (
+                  <span style={{ fontSize: 128, opacity: 0.4 }}>{detailItem.categoryIcon}</span>
+                )}
+              </div>
+
+              {/* Details */}
+              <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+                {detailItem.pipelineStatus && (() => {
+                  const statusColor = detailItem.pipelineStatus.includes("완료") ? "#22c55e"
+                    : detailItem.pipelineStatus.includes("진행") ? "#f59e0b"
+                    : detailItem.pipelineStatus.includes("대기") ? "#94a3b8"
+                    : "var(--text-muted)";
+                  return (
+                    <div style={{
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      padding: "6px 12px", borderRadius: 10, alignSelf: "flex-start",
+                      background: `${statusColor}15`, border: `1px solid ${statusColor}40`,
+                    }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor }} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: statusColor }}>
+                        {detailItem.pipelineStatus}
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                <div style={{
+                  display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12,
+                  padding: 16, borderRadius: 14, background: "rgba(0,0,0,0.03)",
+                  border: "1px solid var(--surface-border)",
+                }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.04em", marginBottom: 4 }}>선정 시안</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--primary)" }}>{detailItem.winner}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.04em", marginBottom: 4 }}>투표 인원</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text-main)" }}>{detailItem.voters}명</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.04em", marginBottom: 8 }}>
+                    프롬프트
+                  </div>
+                  <div style={{
+                    fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.8,
+                    padding: 14, borderRadius: 12,
+                    background: "rgba(0,0,0,0.03)", border: "1px solid var(--surface-border)",
+                  }}>
+                    {detailItem.prompt}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.04em", marginBottom: 8 }}>
+                    컬러 팔레트
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {detailItem.colors.map((c, ci) => (
+                      <div key={ci} style={{ flex: 1 }}>
+                        <div style={{ height: 40, borderRadius: 8, background: c, border: "1px solid rgba(0,0,0,0.06)" }} />
+                        <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace", marginTop: 4, textAlign: "center" }}>{c}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{
+                  display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12,
+                  fontSize: 12,
+                }}>
+                  <div>
+                    <div style={{ color: "var(--text-muted)", fontWeight: 600, marginBottom: 4 }}>Seed</div>
+                    <code style={{ color: "var(--accent)", fontSize: 13 }}>{detailItem.seed}</code>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--text-muted)", fontWeight: 600, marginBottom: 4 }}>완료일시</div>
+                    <div style={{ color: "var(--text-lighter)", fontSize: 13 }}>
+                      {new Date(detailItem.completedAt).toLocaleString("ko-KR")}
+                    </div>
+                  </div>
+                </div>
+
+                {(detailItem.conceptSheetUrl || detailItem.imageUrl) && (
+                  <a
+                    href={detailItem.conceptSheetUrl || detailItem.imageUrl}
+                    download={`inzoi_${detailItem.category}_${detailItem.id}.png`}
+                    className="btn-primary hover-lift"
+                    style={{
+                      marginTop: "auto",
+                      padding: "14px 20px", borderRadius: 14,
+                      color: "#fff", fontSize: 14, fontWeight: 700,
+                      textDecoration: "none", textAlign: "center",
+                      boxShadow: "0 4px 20px var(--primary-glow)",
+                    }}
+                  >
+                    📥 이미지 다운로드
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Version Info Modal */}
       {versionOpen && (
         <>
@@ -3026,11 +3221,11 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                   <div
                     key={item.id}
                     className="sidebar-item"
-                    onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+                    onClick={() => setDetailItem(item)}
                     style={{
                       borderRadius: 16,
-                      background: expandedItem === item.id ? "rgba(7,110,232,0.08)" : "rgba(0,0,0,0.02)",
-                      border: expandedItem === item.id ? "1px solid rgba(7,110,232,0.3)" : "1px solid var(--surface-border)",
+                      background: "rgba(0,0,0,0.02)",
+                      border: "1px solid var(--surface-border)",
                       cursor: "pointer", transition: "all 0.2s",
                       position: "relative", overflow: "hidden",
                     }}
@@ -3094,25 +3289,6 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                           }} />
                         ))}
                       </div>
-                      {/* Expanded details */}
-                      {expandedItem === item.id && (
-                        <div style={{
-                          marginTop: 12, paddingTop: 12,
-                          borderTop: "1px solid rgba(0,0,0,0.05)",
-                          animation: "fadeIn 0.3s ease",
-                        }}>
-                          <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.7, marginBottom: 10 }}>
-                            {item.prompt}
-                          </div>
-                          <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-muted)" }}>
-                            <span>Seed: <code style={{ color: "var(--accent)", fontFamily: "monospace" }}>{item.seed}</code></span>
-                            <span>카테고리: {item.category}</span>
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                            완료: {new Date(item.completedAt).toLocaleString("ko-KR")}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 ))}
