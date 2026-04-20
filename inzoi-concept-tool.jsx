@@ -1,8 +1,19 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.7.1";
+const APP_VERSION = "0.8.0";
 const CHANGELOG = [
+  {
+    version: "0.8.0",
+    date: "2026-04-21",
+    changes: [
+      "시안 N개 동시 생성 — 입력 폼에 \"시안 개수\" 선택 (1/2/4/8) 추가",
+      "Gemini API 병렬 호출 (최대 동시 4개 쓰로틀링으로 레이트 리밋 회피)",
+      "큐 패널 진행률이 완료된 시안 개수 표시 (예: 3/4)",
+      "1개만 생성 시 투표 건너뛰고 자동 선정으로 진행",
+      "일부 시안 실패 시에도 성공한 것은 갤러리에 표시 (부분 실패 허용)",
+    ],
+  },
   {
     version: "0.7.1",
     date: "2026-04-21",
@@ -984,6 +995,7 @@ function createBlankJob(id) {
     stylePreset: null,
     prompt: "",
     refImages: [],
+    variantCount: 4,      // 한 번에 생성할 시안 개수 (2 / 4 / 8)
     designs: [],
     enhancedPrompt: "",
     selectedDesign: null,
@@ -995,6 +1007,33 @@ function createBlankJob(id) {
     conceptSheet: null,
     multiViewImages: {},
   };
+}
+
+// Gemini 레이트 리밋을 피하려 병렬 호출 수를 제한한다.
+// 청크 단위로 실행하고 각 호출이 끝나면 onProgress 콜백을 쏜다.
+async function runWithConcurrencyLimit(tasks, limit, onProgress) {
+  const results = new Array(tasks.length);
+  let nextIndex = 0;
+  let completed = 0;
+
+  const worker = async () => {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= tasks.length) return;
+      try {
+        results[i] = await tasks[i]();
+      } catch (err) {
+        results[i] = { __error: err };
+      }
+      completed++;
+      onProgress?.(completed, tasks.length);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, () => worker())
+  );
+  return results;
 }
 
 const JOB_STEP_LABELS = ["입력", "시안 생성중", "투표", "선정", "컨셉시트", "전송 준비", "전송 완료"];
@@ -1108,6 +1147,7 @@ export default function InZOIConceptTool() {
   const setStylePreset = mk("stylePreset");
   const setPrompt = mk("prompt");
   const setRefImages = mk("refImages");
+  const setVariantCount = mk("variantCount");
   const setDesigns = mk("designs");
   const setEnhancedPrompt = mk("enhancedPrompt");
   const setSelectedDesign = mk("selectedDesign");
@@ -1123,6 +1163,7 @@ export default function InZOIConceptTool() {
   const {
     step, loading, loadingMsg, loadingProgress,
     category, topTab, selectedRoom, stylePreset, prompt, refImages,
+    variantCount,
     designs, enhancedPrompt,
     selectedDesign, feedback,
     votes, voters, currentVoter, currentVotes,
@@ -1303,50 +1344,72 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           enhanced = claudeData.content?.[0]?.text || enhanced;
         }
       }
+      // N개 시안을 병렬 생성. 각 호출은 다른 seed로 변주를 유도.
+      const count = Math.max(1, Math.min(8, snap.variantCount || 4));
+      const seeds = Array.from({ length: count }, () => generateSeed());
+
       updateJob(jobId, {
         enhancedPrompt: enhanced,
-        loadingMsg: "나노바나나2로 디자인 시안 생성 중...",
+        loadingMsg: `나노바나나2로 시안 생성 중... (0/${count})`,
         loadingProgress: 30,
       });
 
-      const seed = generateSeed();
-      let imageUrl = null;
-      try {
-        imageUrl = await generateImageWithGemini(geminiApiKey, enhanced, selectedModel);
-      } catch (imgErr) {
-        console.error("Image generation failed:", imgErr);
-        alert(`이미지 생성 실패: ${imgErr.message}`);
-      }
+      const tasks = seeds.map((s) => async () => {
+        try {
+          const url = await generateImageWithGemini(geminiApiKey, enhanced, selectedModel);
+          return { seed: s, imageUrl: url };
+        } catch (imgErr) {
+          console.error("Image generation failed:", imgErr);
+          return { seed: s, imageUrl: null, error: imgErr.message };
+        }
+      });
+
+      // Gemini 레이트 리밋 회피를 위해 최대 4개씩 병렬 실행.
+      const CONCURRENCY = 4;
+      const results = await runWithConcurrencyLimit(tasks, CONCURRENCY, (done, total) => {
+        const pct = 30 + Math.round((done / total) * 65);
+        updateJob(jobId, {
+          loadingMsg: `나노바나나2로 시안 생성 중... (${done}/${total})`,
+          loadingProgress: pct,
+        });
+      });
+
+      const failed = results.filter((r) => !r || !r.imageUrl).length;
 
       updateJob(jobId, {
         loadingProgress: 100,
-        loadingMsg: "완료!",
+        loadingMsg: failed > 0 ? `완료 (${count - failed}/${count})` : "완료!",
         step: 1,
-        designs: [{
-          id: 0,
-          seed,
+        designs: results.map((r, i) => ({
+          id: i,
+          seed: r?.seed ?? seeds[i],
           icon: catInfo.icon,
           gradient: "linear-gradient(135deg, #1e293b, #334155)",
           prompt: enhanced,
-          imageUrl,
+          imageUrl: r?.imageUrl ?? null,
           colors: generateColors(5),
-        }],
+        })),
       });
+      if (failed === count) {
+        alert(`모든 시안 생성 실패 (${count}개). API 키/모델 설정을 확인해주세요.`);
+      }
       await new Promise((r) => setTimeout(r, 400));
     } catch (err) {
       console.error(err);
       alert(`이미지 생성 오류: ${err.message}`);
+      // 모든 시안이 실패해도 UI가 빈 상태로 남지 않도록 placeholder N개 생성.
+      const count = Math.max(1, Math.min(8, snap.variantCount || 4));
       updateJob(jobId, {
         step: 1,
-        designs: [{
-          id: 0,
+        designs: Array.from({ length: count }, (_, i) => ({
+          id: i,
           seed: generateSeed(),
           icon: catInfo.icon,
           gradient: "linear-gradient(135deg, #1e293b, #334155)",
           prompt: enhanced,
           imageUrl: null,
           colors: generateColors(5),
-        }],
+        })),
       });
     } finally {
       updateJob(jobId, { loading: false, loadingProgress: 0 });
@@ -1756,6 +1819,40 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 </p>
               </div>
 
+              {/* Variant Count Selector */}
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ fontSize: 15, fontWeight: 700, color: "var(--text-lighter)", display: "block", marginBottom: 12 }}>
+                  시안 개수
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500, marginLeft: 8 }}>
+                    — 동일 프롬프트로 생성할 변주 개수 (Gemini 호출 {variantCount}회)
+                  </span>
+                </label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[1, 2, 4, 8].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setVariantCount(n)}
+                      style={{
+                        padding: "10px 22px", borderRadius: 12,
+                        background: variantCount === n
+                          ? "linear-gradient(135deg, var(--primary), var(--secondary))"
+                          : "rgba(0,0,0,0.04)",
+                        border: variantCount === n
+                          ? "none"
+                          : "1px solid var(--surface-border)",
+                        color: variantCount === n ? "#fff" : "var(--text-lighter)",
+                        fontSize: 14, fontWeight: 700, cursor: "pointer",
+                        transition: "all 0.2s",
+                        boxShadow: variantCount === n ? "0 4px 14px var(--primary-glow)" : "none",
+                        minWidth: 56,
+                      }}
+                    >
+                      {n}개
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Generate Button */}
               <div style={{ textAlign: "center" }}>
                 <button
@@ -1776,7 +1873,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     boxShadow: (!category || !prompt || loading) ? "none" : "0 10px 30px var(--primary-glow)",
                   }}
                 >
-                  {loading ? "🎨 백그라운드에서 생성 중…" : "시안 생성하기 ✨"}
+                  {loading ? "🎨 백그라운드에서 생성 중…" : `시안 ${variantCount}개 생성하기 ✨`}
                 </button>
                 {loading && (
                   <div style={{ marginTop: 14, fontSize: 12, color: "var(--text-muted)" }}>
@@ -1855,7 +1952,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             {designs.length > 0 && (
               <div style={{ textAlign: "center" }}>
                 <button
-                  onClick={() => { setSelectedDesign(null); setStep(2); }}
+                  onClick={() => {
+                    // 1개만 생성된 경우 투표는 의미 없으니 건너뛰고 자동 선정 → 시안 선정 스텝.
+                    if (designs.length === 1) {
+                      setSelectedDesign(0);
+                      setStep(3);
+                    } else {
+                      setSelectedDesign(null);
+                      setStep(2);
+                    }
+                  }}
                   className="btn-primary"
                   style={{
                     width: "100%", maxWidth: 600, padding: "20px 40px",
@@ -1868,7 +1974,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     boxShadow: "0 10px 30px var(--primary-glow)",
                   }}
                 >
-                  투표 시작하기 🗳️
+                  {designs.length === 1 ? "이 시안으로 진행하기 →" : "투표 시작하기 🗳️"}
                 </button>
               </div>
             )}
