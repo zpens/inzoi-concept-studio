@@ -976,15 +976,27 @@ export default function InZOIConceptTool() {
   const [conceptSheet, setConceptSheet] = useState(null);
   const [multiViewImages, setMultiViewImages] = useState({});
 
-  // Completed list state
-  const [completedList, setCompletedList] = useState(SAMPLE_COMPLETED);
+  // Completed list state (persisted to localStorage)
+  const [completedList, setCompletedList] = useState(() => {
+    try {
+      const raw = localStorage.getItem("inzoi_completed_list");
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* fall through */ }
+    return SAMPLE_COMPLETED;
+  });
   const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [newItemId, setNewItemId] = useState(null);
 
-  // Wishlist state
-  const [wishlist, setWishlist] = useState(SAMPLE_WISHLIST);
+  // Wishlist state (persisted to localStorage)
+  const [wishlist, setWishlist] = useState(() => {
+    try {
+      const raw = localStorage.getItem("inzoi_wishlist");
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* fall through */ }
+    return SAMPLE_WISHLIST;
+  });
   const [wishTitle, setWishTitle] = useState("");
   const [wishNote, setWishNote] = useState("");
   const [wishImage, setWishImage] = useState(null);
@@ -997,6 +1009,37 @@ export default function InZOIConceptTool() {
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
   const [claudeApiKey, setClaudeApiKey] = useState(() => localStorage.getItem("claude_api_key") || "");
   const [showApiSettings, setShowApiSettings] = useState(false);
+
+  // Persist completed list + wishlist to localStorage.
+  // Image data urls can exceed the ~5MB quota fast, so on quota errors
+  // we retry without the heavy image fields rather than losing the item.
+  useEffect(() => {
+    const stripImages = (list) => list.map(({ imageUrl, conceptSheetUrl, ...rest }) => rest);
+    try {
+      localStorage.setItem("inzoi_completed_list", JSON.stringify(completedList));
+    } catch (err) {
+      try {
+        localStorage.setItem("inzoi_completed_list", JSON.stringify(stripImages(completedList)));
+        console.warn("완료 목록 저장 용량 초과 — 이미지 데이터는 생략하고 메타데이터만 저장했습니다.");
+      } catch (e2) {
+        console.error("완료 목록 저장 실패", e2);
+      }
+    }
+  }, [completedList]);
+
+  useEffect(() => {
+    const stripImages = (list) => list.map(({ imageUrl, ...rest }) => rest);
+    try {
+      localStorage.setItem("inzoi_wishlist", JSON.stringify(wishlist));
+    } catch (err) {
+      try {
+        localStorage.setItem("inzoi_wishlist", JSON.stringify(stripImages(wishlist)));
+        console.warn("위시리스트 저장 용량 초과 — 이미지 데이터는 생략하고 메타데이터만 저장했습니다.");
+      } catch (e2) {
+        console.error("위시리스트 저장 실패", e2);
+      }
+    }
+  }, [wishlist]);
   const [availableModels, setAvailableModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("gemini_model") || "gemini-3-flash-image");
