@@ -1,8 +1,21 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.7.0";
 const CHANGELOG = [
+  {
+    version: "0.7.0",
+    date: "2026-04-20",
+    changes: [
+      "시안 작업 큐 도입 — 여러 시안을 동시에 백그라운드에서 생성",
+      "전체화면 로딩 오버레이 제거, 우측 하단 플로팅 큐 패널로 진행 상황 표시",
+      "헤더 \"＋ 새 시안\" 버튼으로 진행 중 작업 유지한 채 새 작업 시작",
+      "완료된 컨셉시트 클릭 시 대형 모달에 전체 정보/이미지 표시",
+      "완료 목록·위시리스트 localStorage 자동 저장 (새로고침해도 유지)",
+      "컨셉시트 전 뷰에 동일 디자인 공유 (정면/측면/후면/디테일 자동 변형)",
+      "컨셉시트 캔버스 한글 라벨 + 라이트 테마 통일",
+    ],
+  },
   {
     version: "0.6.0",
     date: "2026-03-27",
@@ -943,38 +956,184 @@ async function listGeminiImageModels(apiKey) {
     }));
 }
 
+// Each in-flight concept generation is a "job". The app keeps an array of
+// jobs so the user can spawn a new one while previous ones are still
+// running (image generation, voting, etc.). One job is the "active" job
+// — its state drives the main content area.
+function createBlankJob(id) {
+  return {
+    id,
+    createdAt: new Date().toISOString(),
+    step: 0,
+    loading: false,
+    loadingMsg: "",
+    loadingProgress: 0,
+    category: null,
+    topTab: "furniture",
+    selectedRoom: "침실",
+    stylePreset: null,
+    prompt: "",
+    refImages: [],
+    designs: [],
+    enhancedPrompt: "",
+    selectedDesign: null,
+    feedback: "",
+    votes: {},
+    voters: [],
+    currentVoter: "",
+    currentVotes: [],
+    conceptSheet: null,
+    multiViewImages: {},
+  };
+}
+
+const JOB_STEP_LABELS = ["입력", "시안 생성중", "투표", "선정", "컨셉시트", "전송 준비", "전송 완료"];
+
+function JobQueueCard({ job, active, onSelect, onRemove }) {
+  const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === job.category);
+  const title = catInfo ? `${catInfo.icon} ${catInfo.label}` : "🆕 새 시안 작업";
+  const subtitle = job.prompt
+    ? (job.prompt.length > 42 ? job.prompt.substring(0, 42) + "…" : job.prompt)
+    : "어셋 정보 입력 중";
+  const stepLabel = job.loading
+    ? (job.loadingMsg || "진행 중…")
+    : (JOB_STEP_LABELS[job.step] || "");
+  const progress = job.loading ? job.loadingProgress : Math.min(100, (job.step / 5) * 100);
+
+  return (
+    <div
+      onClick={onSelect}
+      className="hover-lift"
+      style={{
+        padding: "12px 14px",
+        borderRadius: 12,
+        cursor: "pointer",
+        background: active ? "rgba(7,110,232,0.10)" : "rgba(0,0,0,0.02)",
+        border: active ? "1px solid rgba(7,110,232,0.35)" : "1px solid var(--surface-border)",
+        marginBottom: 8,
+        transition: "all 0.2s",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 13, fontWeight: 700, color: "var(--text-main)",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>{title}</div>
+          <div style={{
+            fontSize: 11, color: "var(--text-muted)", marginTop: 3,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>{subtitle}</div>
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title="작업 제거"
+          style={{
+            width: 22, height: 22, borderRadius: 7, flexShrink: 0,
+            background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+            color: "var(--text-muted)", fontSize: 11, cursor: "pointer", lineHeight: 1,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onMouseOver={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.12)"; e.currentTarget.style.color = "#ef4444"; }}
+          onMouseOut={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+        >✕</button>
+      </div>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{
+          flex: 1, height: 5, borderRadius: 3,
+          background: "rgba(0,0,0,0.06)", overflow: "hidden",
+        }}>
+          <div style={{
+            width: `${progress}%`, height: "100%",
+            background: job.loading
+              ? "linear-gradient(90deg, var(--primary), var(--accent))"
+              : "var(--accent)",
+            transition: "width 0.3s",
+            boxShadow: job.loading ? "0 0 8px rgba(152,166,255,0.6)" : "none",
+          }} />
+        </div>
+        <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, minWidth: 72, textAlign: "right" }}>
+          {stepLabel}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ───
 export default function InZOIConceptTool() {
-  const [step, setStep] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState("");
-  const [loadingProgress, setLoadingProgress] = useState(0);
+  // ─── Per-job state ──────────────────────────────────────────────
+  // Each in-flight concept generation is a job. All the step-specific
+  // state (step, category, prompt, designs, voting, conceptSheet, ...)
+  // lives inside the job object so multiple jobs can coexist.
+  // The setter names below (setStep, setCategory, ...) are kept
+  // backwards-compatible — they route to the ACTIVE job, so the JSX
+  // in the rest of this file does not need to change.
+  const [jobs, setJobs] = useState(() => [createBlankJob(Date.now())]);
+  const [activeJobId, setActiveJobId] = useState(() => jobs[0].id);
 
-  // Step 1 state
-  const [category, setCategory] = useState(null);
-  const [topTab, setTopTab] = useState("furniture");
-  const [selectedRoom, setSelectedRoom] = useState("침실");
-  const [stylePreset, setStylePreset] = useState(null);
-  const [prompt, setPrompt] = useState("");
-  const [refImages, setRefImages] = useState([]);
+  const activeJob = jobs.find((j) => j.id === activeJobId) || jobs[0] || createBlankJob(0);
 
-  // Step 2 state
-  const [designs, setDesigns] = useState([]);
-  const [enhancedPrompt, setEnhancedPrompt] = useState("");
+  const updateJob = useCallback((jobId, patch) => {
+    setJobs((prev) => prev.map((j) => {
+      if (j.id !== jobId) return j;
+      const p = typeof patch === "function" ? patch(j) : patch;
+      return { ...j, ...p };
+    }));
+  }, []);
 
-  // Step 3 state
-  const [selectedDesign, setSelectedDesign] = useState(null);
-  const [feedback, setFeedback] = useState("");
+  // Setter factory — targets the active job. Supports function form.
+  const mk = (field) => (v) => setJobs((prev) => prev.map((j) => {
+    if (j.id !== activeJobId) return j;
+    return { ...j, [field]: typeof v === "function" ? v(j[field]) : v };
+  }));
 
-  // Voting state
-  const [votes, setVotes] = useState({});
-  const [voters, setVoters] = useState([]);
-  const [currentVoter, setCurrentVoter] = useState("");
-  const [currentVotes, setCurrentVotes] = useState([]);
+  const setStep = mk("step");
+  const setLoading = mk("loading");
+  const setLoadingMsg = mk("loadingMsg");
+  const setLoadingProgress = mk("loadingProgress");
+  const setCategory = mk("category");
+  const setTopTab = mk("topTab");
+  const setSelectedRoom = mk("selectedRoom");
+  const setStylePreset = mk("stylePreset");
+  const setPrompt = mk("prompt");
+  const setRefImages = mk("refImages");
+  const setDesigns = mk("designs");
+  const setEnhancedPrompt = mk("enhancedPrompt");
+  const setSelectedDesign = mk("selectedDesign");
+  const setFeedback = mk("feedback");
+  const setVotes = mk("votes");
+  const setVoters = mk("voters");
+  const setCurrentVoter = mk("currentVoter");
+  const setCurrentVotes = mk("currentVotes");
+  const setConceptSheet = mk("conceptSheet");
+  const setMultiViewImages = mk("multiViewImages");
 
-  // Step 4 state
-  const [conceptSheet, setConceptSheet] = useState(null);
-  const [multiViewImages, setMultiViewImages] = useState({});
+  // Read active-job fields as if they were top-level state.
+  const {
+    step, loading, loadingMsg, loadingProgress,
+    category, topTab, selectedRoom, stylePreset, prompt, refImages,
+    designs, enhancedPrompt,
+    selectedDesign, feedback,
+    votes, voters, currentVoter, currentVotes,
+    conceptSheet, multiViewImages,
+  } = activeJob;
+
+  // Spawn a new blank job and focus it.
+  const spawnNewJob = useCallback(() => {
+    const nj = createBlankJob(Date.now());
+    setJobs((prev) => [...prev, nj]);
+    setActiveJobId(nj.id);
+  }, []);
+
+  // Remove a job; invariant effect below picks a new active one.
+  const removeJob = useCallback((jobId) => {
+    setJobs((prev) => {
+      const remaining = prev.filter((j) => j.id !== jobId);
+      if (remaining.length === 0) return [createBlankJob(Date.now())];
+      return remaining;
+    });
+  }, []);
 
   // Completed list state (persisted to localStorage)
   const [completedList, setCompletedList] = useState(() => {
@@ -1009,6 +1168,17 @@ export default function InZOIConceptTool() {
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
   const [claudeApiKey, setClaudeApiKey] = useState(() => localStorage.getItem("claude_api_key") || "");
   const [showApiSettings, setShowApiSettings] = useState(false);
+
+  // Invariant: always have ≥ 1 job and activeJobId points to one that exists.
+  useEffect(() => {
+    if (jobs.length === 0) {
+      const nj = createBlankJob(Date.now());
+      setJobs([nj]);
+      setActiveJobId(nj.id);
+    } else if (!jobs.find((j) => j.id === activeJobId)) {
+      setActiveJobId(jobs[0].id);
+    }
+  }, [jobs, activeJobId]);
 
   // Persist completed list + wishlist to localStorage.
   // Image data urls can exceed the ~5MB quota fast, so on quota errors
@@ -1049,25 +1219,34 @@ export default function InZOIConceptTool() {
   const STEPS = ["입력", "시안 생성", "투표", "시안 선정", "컨셉시트 생성", "결과 전달"];
 
   // ─── Step 1 → 2: Generate designs ───
+  // Runs against a specific jobId captured at call-time, so the user
+  // can switch to other jobs mid-generation without affecting this one.
   const generateDesigns = async () => {
-    if (!category || !prompt) return;
+    const jobId = activeJobId;
+    const snap = jobs.find((j) => j.id === jobId) || activeJob;
+    if (!snap.category || !snap.prompt) return;
     if (!geminiApiKey) {
       setShowApiSettings(true);
       return;
     }
 
-    setLoading(true);
-    setLoadingMsg("프롬프트 최적화 중...");
-    setLoadingProgress(10);
+    const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === snap.category);
+    const styleInfo = STYLE_PRESETS.find((s) => s.id === snap.stylePreset);
+    const spec = ASSET_SPECS[snap.category] || DEFAULT_SPEC;
 
-    const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
-    const styleInfo = STYLE_PRESETS.find((s) => s.id === stylePreset);
-    const spec = ASSET_SPECS[category] || DEFAULT_SPEC;
+    let enhanced = `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${snap.prompt}${spec.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`;
 
-    let enhanced = `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${spec.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`;
+    // Advance to step 1 immediately so the main view reflects "generating";
+    // the floating queue panel shows detailed progress.
+    updateJob(jobId, {
+      loading: true,
+      loadingMsg: "프롬프트 최적화 중...",
+      loadingProgress: 10,
+      step: 1,
+      designs: [],
+    });
 
     try {
-      // Use Claude API to enhance prompt (if key available)
       if (claudeApiKey) {
         const systemPrompt = `You are an expert furniture concept artist for inZOI (a life simulation game by KRAFTON).
 Given a furniture description, generate an enhanced, detailed prompt optimized for AI image generation.
@@ -1078,8 +1257,8 @@ Respond ONLY with the enhanced prompt in English, nothing else.`;
 
         const userMsg = `Furniture type: ${catInfo.label} (${catInfo.preset})
 Style: ${styleInfo?.label || "modern"}
-User description: ${prompt}${spec.hint ? `\nDimension & scale reference: ${spec.hint}` : ""}
-Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
+User description: ${snap.prompt}${spec.hint ? `\nDimension & scale reference: ${spec.hint}` : ""}
+Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
         const claudeResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -1102,12 +1281,12 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
           enhanced = claudeData.content?.[0]?.text || enhanced;
         }
       }
-      setEnhancedPrompt(enhanced);
+      updateJob(jobId, {
+        enhancedPrompt: enhanced,
+        loadingMsg: "나노바나나2로 디자인 시안 생성 중...",
+        loadingProgress: 30,
+      });
 
-      setLoadingMsg("나노바나나2로 디자인 시안 생성 중...");
-      setLoadingProgress(30);
-
-      // Generate 1 image with Gemini API
       const seed = generateSeed();
       let imageUrl = null;
       try {
@@ -1117,55 +1296,49 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
         alert(`이미지 생성 실패: ${imgErr.message}`);
       }
 
-      setLoadingProgress(90);
-      setDesigns([{
-        id: 0,
-        seed,
-        icon: catInfo.icon,
-        gradient: "linear-gradient(135deg, #1e293b, #334155)",
-        prompt: enhanced,
-        imageUrl,
-        colors: generateColors(5),
-      }]);
-      setLoadingProgress(100);
-      setLoadingMsg("완료!");
-      await new Promise((r) => setTimeout(r, 500));
-      setStep(1);
+      updateJob(jobId, {
+        loadingProgress: 100,
+        loadingMsg: "완료!",
+        designs: [{
+          id: 0,
+          seed,
+          icon: catInfo.icon,
+          gradient: "linear-gradient(135deg, #1e293b, #334155)",
+          prompt: enhanced,
+          imageUrl,
+          colors: generateColors(5),
+        }],
+      });
+      await new Promise((r) => setTimeout(r, 400));
     } catch (err) {
       console.error(err);
       alert(`이미지 생성 오류: ${err.message}`);
-      setDesigns([{
-        id: 0,
-        seed: generateSeed(),
-        icon: catInfo.icon,
-        gradient: "linear-gradient(135deg, #1e293b, #334155)",
-        prompt: enhanced,
-        imageUrl: null,
-        colors: generateColors(5),
-      }]);
-      setStep(1);
+      updateJob(jobId, {
+        designs: [{
+          id: 0,
+          seed: generateSeed(),
+          icon: catInfo.icon,
+          gradient: "linear-gradient(135deg, #1e293b, #334155)",
+          prompt: enhanced,
+          imageUrl: null,
+          colors: generateColors(5),
+        }],
+      });
     } finally {
-      setLoading(false);
-      setLoadingProgress(0);
+      updateJob(jobId, { loading: false, loadingProgress: 0 });
     }
   };
 
   // ─── Step 3 → 4: Generate concept sheet ───
   const generateConceptSheet = async () => {
-    if (selectedDesign === null) return;
+    const jobId = activeJobId;
+    const snap = jobs.find((j) => j.id === jobId) || activeJob;
+    if (snap.selectedDesign === null || snap.selectedDesign === undefined) return;
 
-    setLoading(true);
-    setLoadingMsg("컨셉시트 레이아웃 생성 중...");
-    setLoadingProgress(20);
+    updateJob(jobId, { loading: true, loadingMsg: "컨셉시트 레이아웃 생성 중...", loadingProgress: 20 });
 
-    const design = designs[selectedDesign];
-
-    // Reuse the SAME source image across all view slots.
-    // Gemini image generation isn't seed-consistent across calls, so
-    // generating a separate image per view produced six different
-    // products on one sheet. Instead we take the one image the user
-    // actually voted for in Step 3 and transform it per slot.
-    const sourceUrl = design.imageUrl || `/images/${category}.jpg`;
+    const design = snap.designs[snap.selectedDesign];
+    const sourceUrl = design.imageUrl || `/images/${snap.category}.jpg`;
     const sourceImg = await new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -1174,7 +1347,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
       img.src = sourceUrl;
     });
 
-    setLoadingProgress(60);
+    updateJob(jobId, { loadingProgress: 60 });
 
     const viewImages = {};
     const views = {};
@@ -1182,30 +1355,27 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
       viewImages[view.id] = sourceImg;
       views[view.id] = sourceUrl;
     }
-    setMultiViewImages(views);
-
-    setLoadingProgress(80);
+    updateJob(jobId, { multiViewImages: views, loadingProgress: 80 });
     await new Promise((r) => setTimeout(r, 200));
 
+    let sheetDataUrl = null;
     if (canvasRef.current) {
-      const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
-      const styleInfo = STYLE_PRESETS.find((s) => s.id === stylePreset);
+      const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === snap.category);
+      const styleInfo = STYLE_PRESETS.find((s) => s.id === snap.stylePreset);
       generateConceptSheetCanvas(canvasRef.current, viewImages, {
         category: catInfo?.label || "",
         style: styleInfo?.label || "",
-        prompt: enhancedPrompt || prompt,
+        prompt: snap.enhancedPrompt || snap.prompt,
         seed: design.seed,
         colors: design.colors,
         model: selectedModel,
       });
-      setConceptSheet(canvasRef.current.toDataURL("image/png"));
+      sheetDataUrl = canvasRef.current.toDataURL("image/png");
     }
 
-    setLoadingProgress(100);
-    setLoadingMsg("컨셉시트 완성!");
+    updateJob(jobId, { conceptSheet: sheetDataUrl, loadingProgress: 100, loadingMsg: "컨셉시트 완성!" });
     await new Promise((r) => setTimeout(r, 400));
-    setStep(5);
-    setLoading(false);
+    updateJob(jobId, { step: 5, loading: false });
   };
 
   // ─── Download handler ───
@@ -1224,7 +1394,7 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
       // the background is now handled in index.css
       color: "var(--text-main)",
     }}>
-      {loading && <LoadingOverlay message={loadingMsg} progress={loadingProgress} />}
+      {/* Loading is shown per-job in the floating queue panel, not as a full-screen overlay. */}
 
       {/* Header */}
       <header className="glass-panel" style={{
@@ -1308,31 +1478,22 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
             <span style={{ fontSize: 14 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
             API 설정
           </button>
-          {activeTab === "create" && step > 0 && (
+          {activeTab === "create" && (
             <button
-              onClick={() => {
-                setStep(0);
-                setDesigns([]);
-                setSelectedDesign(null);
-                setConceptSheet(null);
-                setFeedback("");
-                setVotes({});
-                setVoters([]);
-                setCurrentVoter("");
-                setCurrentVotes([]);
-              }}
+              onClick={spawnNewJob}
               className="hover-lift"
               style={{
-                padding: "10px 24px", borderRadius: 12,
-                background: "rgba(0,0,0,0.04)",
-                border: "1px solid var(--surface-border)",
-                color: "var(--text-lighter)", fontSize: 14, fontWeight: 600, cursor: "pointer",
+                padding: "10px 20px", borderRadius: 12,
+                background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+                border: "none",
+                color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
                 transition: "all 0.3s",
+                boxShadow: "0 4px 14px var(--primary-glow)",
+                display: "flex", alignItems: "center", gap: 6,
               }}
-              onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "var(--text-main)"; }}
-              onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-lighter)"; }}
+              title="새 시안 작업 추가 (현재 작업은 유지)"
             >
-              새로 시작
+              <span style={{ fontSize: 16, lineHeight: 1 }}>＋</span> 새 시안
             </button>
           )}
         </div>
@@ -1647,39 +1808,63 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
             {/* Design Grid */}
             <div style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateColumns: designs.length === 0 && loading ? "1fr" : "repeat(4, 1fr)",
               gap: 24, marginBottom: 40,
             }}>
-              {designs.map((design, i) => (
-                <DesignCard
-                  key={design.id}
-                  design={design}
-                  index={i}
-                  selected={selectedDesign === i}
-                  onClick={() => setSelectedDesign(i)}
-                />
-              ))}
+              {designs.length === 0 && loading ? (
+                <div className="glass-panel" style={{
+                  padding: "60px 40px", borderRadius: 20, textAlign: "center",
+                  border: "1px dashed var(--surface-border)",
+                }}>
+                  <div style={{ fontSize: 42, marginBottom: 14 }}>🎨</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-main)", marginBottom: 6 }}>
+                    {loadingMsg || "디자인 시안 생성 중..."}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
+                    우측 하단 작업 큐에서 진행률을 확인하세요. 다른 시안을 생성하려면 헤더의 "＋ 새 시안" 버튼을 누르세요.
+                  </div>
+                  <div style={{ width: 280, height: 6, margin: "0 auto", borderRadius: 3, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                    <div style={{
+                      width: `${loadingProgress}%`, height: "100%",
+                      background: "linear-gradient(90deg, var(--primary), var(--accent))",
+                      transition: "width 0.3s",
+                    }} />
+                  </div>
+                </div>
+              ) : (
+                designs.map((design, i) => (
+                  <DesignCard
+                    key={design.id}
+                    design={design}
+                    index={i}
+                    selected={selectedDesign === i}
+                    onClick={() => setSelectedDesign(i)}
+                  />
+                ))
+              )}
             </div>
 
             {/* Next button */}
-            <div style={{ textAlign: "center" }}>
-              <button
-                onClick={() => { setSelectedDesign(null); setStep(2); }}
-                className="btn-primary"
-                style={{
-                  width: "100%", maxWidth: 600, padding: "20px 40px",
-                  borderRadius: 20,
-                  border: "none",
-                  color: "#fff",
-                  fontSize: 18, fontWeight: 800,
-                  cursor: "pointer",
-                  letterSpacing: "0.05em",
-                  boxShadow: "0 10px 30px var(--primary-glow)",
-                }}
-              >
-                투표 시작하기 🗳️
-              </button>
-            </div>
+            {designs.length > 0 && (
+              <div style={{ textAlign: "center" }}>
+                <button
+                  onClick={() => { setSelectedDesign(null); setStep(2); }}
+                  className="btn-primary"
+                  style={{
+                    width: "100%", maxWidth: 600, padding: "20px 40px",
+                    borderRadius: 20,
+                    border: "none",
+                    color: "#fff",
+                    fontSize: 18, fontWeight: 800,
+                    cursor: "pointer",
+                    letterSpacing: "0.05em",
+                    boxShadow: "0 10px 30px var(--primary-glow)",
+                  }}
+                >
+                  투표 시작하기 🗳️
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -2363,10 +2548,14 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
                           voters: voters.length || 1,
                           winner: `시안 ${(selectedDesign || 0) + 1}`,
                         };
+                        const finishedJobId = activeJobId;
                         setCompletedList((prev) => [newItem, ...prev]);
                         setNewItemId(newId);
                         setStep(6);
-                        setTimeout(() => setActiveTab("completed"), 1200);
+                        setTimeout(() => {
+                          setActiveTab("completed");
+                          removeJob(finishedJobId);
+                        }, 1200);
                       }}
                       className="hover-lift"
                       style={{
@@ -3539,6 +3728,64 @@ Reference images provided: ${refImages.length > 0 ? "yes" : "no"}`;
 
       {/* Hidden canvas for concept sheet generation */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
+
+      {/* Floating job queue — visible whenever the Create tab is active. */}
+      {activeTab === "create" && (
+        <div style={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          width: 340,
+          maxHeight: "70vh",
+          background: "rgba(255, 255, 255, 0.97)",
+          backdropFilter: "blur(16px)",
+          borderRadius: 16,
+          border: "1px solid var(--surface-border)",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
+          zIndex: 90,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--surface-border)",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 8,
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 14 }}>🗂️</span>
+              시안 작업 큐
+              <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 12 }}>
+                ({jobs.length})
+              </span>
+            </div>
+            <button
+              onClick={spawnNewJob}
+              style={{
+                padding: "6px 12px", borderRadius: 9,
+                background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+                border: "none", color: "#fff", fontSize: 12, fontWeight: 700,
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+              }}
+              title="빈 작업 추가"
+            >
+              <span style={{ fontSize: 13, lineHeight: 1 }}>＋</span> 새 시안
+            </button>
+          </div>
+          <div style={{ padding: 10, overflowY: "auto", flex: 1 }}>
+            {jobs.map((job) => (
+              <JobQueueCard
+                key={job.id}
+                job={job}
+                active={job.id === activeJobId}
+                onSelect={() => setActiveJobId(job.id)}
+                onRemove={() => removeJob(job.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
