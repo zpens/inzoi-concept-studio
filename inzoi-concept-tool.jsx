@@ -1,8 +1,17 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.1";
+const APP_VERSION = "0.9.2";
 const CHANGELOG = [
+  {
+    version: "0.9.2",
+    date: "2026-04-21",
+    changes: [
+      "디자인 시안 카드 클릭 시 이미지 확대 모달 (갤러리 스텝)",
+      "확대 모달에서 PNG 로컬 저장 버튼 제공",
+      "모달 하단에 사용된 프롬프트도 함께 표시",
+    ],
+  },
   {
     version: "0.9.1",
     date: "2026-04-21",
@@ -1347,6 +1356,7 @@ export default function InZOIConceptTool() {
   const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
+  const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달
   const [newItemId, setNewItemId] = useState(null);
 
   const [wishlist, setWishlist] = useState([]);
@@ -2280,7 +2290,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   design={design}
                   index={i}
                   selected={selectedDesign === i}
-                  onClick={() => setSelectedDesign(i)}
+                  onClick={() => setDetailDesign({ ...design, _index: i })}
                 />
               ))}
             </div>
@@ -3554,6 +3564,102 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 API 키는 브라우저 로컬 스토리지에만 저장되며 서버로 전송되지 않습니다.
               </div>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Design Image Zoom Modal */}
+      {detailDesign && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setDetailDesign(null)} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            maxWidth: "92vw", maxHeight: "94vh",
+            background: "rgba(255,255,255,0.98)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid var(--surface-border)",
+            borderRadius: 20, zIndex: 202,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+            animation: "fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
+            <div style={{
+              padding: "14px 20px", borderBottom: "1px solid var(--surface-border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              flexShrink: 0,
+            }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)" }}>
+                  시안 {(detailDesign._index ?? 0) + 1}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, fontFamily: "monospace" }}>
+                  Seed: {detailDesign.seed}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {detailDesign.imageUrl && (
+                  <a
+                    href={detailDesign.imageUrl}
+                    download={`inzoi_design_${detailDesign.seed || Date.now()}.png`}
+                    className="btn-primary"
+                    style={{
+                      padding: "9px 16px", borderRadius: 10,
+                      color: "#fff", fontSize: 13, fontWeight: 700,
+                      textDecoration: "none",
+                      display: "flex", alignItems: "center", gap: 6,
+                      boxShadow: "0 4px 14px var(--primary-glow)",
+                    }}
+                    title="이미지 로컬 저장 (PNG)"
+                  >
+                    <span style={{ fontSize: 14 }}>📥</span> 저장
+                  </a>
+                )}
+                <button
+                  onClick={() => setDetailDesign(null)}
+                  style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                  onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
+                  onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+                >✕</button>
+              </div>
+            </div>
+            <div style={{
+              flex: 1, overflow: "auto",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "rgba(0,0,0,0.03)", padding: 24,
+            }}>
+              {detailDesign.imageUrl ? (
+                <img
+                  src={detailDesign.imageUrl}
+                  alt={`design ${(detailDesign._index ?? 0) + 1}`}
+                  style={{
+                    maxWidth: "100%", maxHeight: "78vh",
+                    objectFit: "contain",
+                    borderRadius: 10, boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
+                    background: "#fff",
+                  }}
+                />
+              ) : (
+                <div style={{ padding: 80, color: "var(--text-muted)", fontSize: 14 }}>
+                  이미지가 아직 준비되지 않았습니다.
+                </div>
+              )}
+            </div>
+            {detailDesign.prompt && (
+              <div style={{
+                padding: "12px 20px", borderTop: "1px solid var(--surface-border)",
+                maxHeight: "18vh", overflowY: "auto",
+                fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, flexShrink: 0,
+              }}>
+                <div style={{ fontWeight: 700, color: "var(--text-lighter)", marginBottom: 4 }}>프롬프트</div>
+                {detailDesign.prompt}
+              </div>
+            )}
           </div>
         </>
       )}
