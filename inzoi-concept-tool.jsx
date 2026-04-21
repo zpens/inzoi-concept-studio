@@ -1,8 +1,19 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.6";
+const APP_VERSION = "0.9.7";
 const CHANGELOG = [
+  {
+    version: "0.9.7",
+    date: "2026-04-21",
+    changes: [
+      "상단 메뉴를 5단계로 재편 — 시안 생성 / 투표 및 선정 / 컨셉시트 생성 / 완료 목록 / 위시리스트",
+      "각 탭은 담당 step 범위(0-1 / 2-3 / 4-6)의 작업 개수를 뱃지로 표시",
+      "탭 클릭 시 해당 단계의 작업으로 자동 전환, 없으면 친절한 empty-state 안내",
+      "step 이 바뀌면 자동으로 맞는 탭으로 이동 (예: 투표 시작 시 '투표 및 선정' 탭으로)",
+      "'＋ 새 시안' 버튼은 모든 워크플로우 탭에서 사용 가능",
+    ],
+  },
   {
     version: "0.9.6",
     date: "2026-04-21",
@@ -1476,6 +1487,18 @@ export default function InZOIConceptTool() {
     }
   }, [jobs, activeJobId]);
 
+  // 활성 작업의 step 이 변하면 워크플로우 탭을 자동 전환한다
+  // (step 1→2 투표로, 3→4 컨셉시트로, 등). 사용자가 completed/wishlist 같은
+  // 비-워크플로우 탭에 있을 땐 건드리지 않는다.
+  useEffect(() => {
+    if (activeTab !== "create" && activeTab !== "vote" && activeTab !== "sheet") return;
+    let target = null;
+    if (step <= 1) target = "create";
+    else if (step <= 3) target = "vote";
+    else if (step <= 6) target = "sheet";
+    if (target && target !== activeTab) setActiveTab(target);
+  }, [step, activeTab]);
+
   // ── 프로젝트 slug / 동기화 상태 ──
   const [projectSlug, setProjectSlug] = useState(null);
   const [projectReady, setProjectReady] = useState(false);
@@ -1921,37 +1944,63 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             </div>
           </div>
         </div>
-        {/* Tab Navigation */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: 14, border: "1px solid var(--surface-border)" }}>
-          {[
-            { id: "create", label: "시안 생성", icon: "✨" },
-            { id: "completed", label: "완료 목록", icon: "📋", count: completedList.length },
-            { id: "wishlist", label: "위시리스트", icon: "⭐", count: wishlist.length },
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
-              padding: "8px 18px", borderRadius: 10,
-              background: activeTab === tab.id ? "#fff" : "transparent",
-              border: "none",
-              color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
-              fontSize: 14, fontWeight: activeTab === tab.id ? 700 : 500,
-              cursor: "pointer", transition: "all 0.2s",
-              display: "flex", alignItems: "center", gap: 7,
-              boxShadow: activeTab === tab.id ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
-            }}>
-              <span style={{ fontSize: 15 }}>{tab.icon}</span>
-              {tab.label}
-              {tab.count !== undefined && (
-                <span style={{
-                  fontSize: 11, fontWeight: 800, padding: "1px 7px", borderRadius: 8,
-                  background: activeTab === tab.id ? "rgba(7,110,232,0.12)" : "rgba(0,0,0,0.06)",
-                  color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
-                }}>
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        {/* Tab Navigation — 5-step workflow */}
+        {(() => {
+          // 각 탭이 "담당하는" step 범위. 탭 클릭 시 해당 범위의 작업으로
+          // active 를 옮기고, 범위 밖이면 empty 상태 UI 가 표시된다.
+          const TAB_STEP_RANGES = {
+            create: [0, 1],
+            vote: [2, 3],
+            sheet: [4, 6],
+          };
+          const TABS = [
+            { id: "create",    label: "시안 생성",     icon: "✨", count: jobs.filter(j => j.step >= 0 && j.step <= 1).length },
+            { id: "vote",      label: "투표 및 선정",  icon: "🗳️", count: jobs.filter(j => j.step >= 2 && j.step <= 3).length },
+            { id: "sheet",     label: "컨셉시트 생성", icon: "📑", count: jobs.filter(j => j.step >= 4 && j.step <= 6).length },
+            { id: "completed", label: "완료 목록",     icon: "📋", count: completedList.length },
+            { id: "wishlist", label: "위시리스트",    icon: "⭐", count: wishlist.length },
+          ];
+          const switchTab = (id) => {
+            setActiveTab(id);
+            const range = TAB_STEP_RANGES[id];
+            if (range && (step < range[0] || step > range[1])) {
+              const target = jobs.find(j => j.step >= range[0] && j.step <= range[1]);
+              if (target) setActiveJobId(target.id);
+            }
+          };
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: 14, border: "1px solid var(--surface-border)" }}>
+              {TABS.map((tab, idx) => (
+                <React.Fragment key={tab.id}>
+                  {idx === 3 && <div style={{ width: 1, height: 20, background: "var(--surface-border)", margin: "0 2px" }} />}
+                  <button onClick={() => switchTab(tab.id)} style={{
+                    padding: "8px 14px", borderRadius: 10,
+                    background: activeTab === tab.id ? "#fff" : "transparent",
+                    border: "none",
+                    color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
+                    fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 500,
+                    cursor: "pointer", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", gap: 6,
+                    boxShadow: activeTab === tab.id ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
+                    whiteSpace: "nowrap",
+                  }}>
+                    <span style={{ fontSize: 14 }}>{tab.icon}</span>
+                    {tab.label}
+                    {tab.count > 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 7,
+                        background: activeTab === tab.id ? "rgba(7,110,232,0.14)" : "rgba(0,0,0,0.06)",
+                        color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
+                      }}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Right: Settings + New Start button */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 160, justifyContent: "flex-end" }}>
@@ -1997,9 +2046,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <span style={{ fontSize: 14 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
             API 설정
           </button>
-          {activeTab === "create" && (
+          {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && (
             <button
-              onClick={spawnNewJob}
+              onClick={() => { setActiveTab("create"); spawnNewJob(); }}
               className="hover-lift"
               style={{
                 padding: "10px 20px", borderRadius: 12,
@@ -2018,13 +2067,54 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         </div>
       </header>
 
-      {/* ═══ Create Tab ═══ */}
-      {activeTab === "create" && <>
+      {/* ═══ 작업 탭 (시안 생성 / 투표 및 선정 / 컨셉시트 생성) ═══ */}
+      {/* 세 탭이 공유하는 워크플로우 본문. 각 탭은 step 범위로 매칭.
+          - create: step 0~1
+          - vote:   step 2~3
+          - sheet:  step 4~6
+          범위 밖이면 빈 상태 안내 */}
+      {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && <>
 
-      {/* Step Indicator */}
-      <div style={{ padding: "32px 0 0" }}>
-        <StepIndicator currentStep={step} steps={STEPS} />
-      </div>
+      {/* Empty-state 안내: 현재 탭이 담당하는 step 에 아무 job 도 없을 때 */}
+      {(() => {
+        const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
+        const [min, max] = ranges[activeTab];
+        const inRange = step >= min && step <= max;
+        if (inRange) return null;
+        const emptyMsg = {
+          create: { icon: "✨", title: "시안 생성 준비", hint: "'＋ 새 시안' 버튼을 눌러 새 어셋 정보를 입력하거나 큐 패널에서 진행 중 작업을 선택하세요." },
+          vote:   { icon: "🗳️", title: "투표할 시안이 없습니다", hint: "시안 생성 탭에서 먼저 이미지를 만든 뒤, 갤러리 하단 '투표 시작하기' 버튼을 누르면 이 탭으로 이동합니다." },
+          sheet:  { icon: "📑", title: "컨셉시트를 만들 작업이 없습니다", hint: "투표 및 선정을 마친 뒤 '컨셉시트 생성' 버튼을 누르면 이 탭으로 이동합니다." },
+        }[activeTab];
+        return (
+          <main style={{ padding: "80px 40px", maxWidth: 900, margin: "0 auto", textAlign: "center" }}>
+            <div style={{ fontSize: 64, marginBottom: 16, opacity: 0.7 }}>{emptyMsg.icon}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-main)", marginBottom: 10 }}>{emptyMsg.title}</div>
+            <div style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.8, maxWidth: 540, margin: "0 auto" }}>
+              {emptyMsg.hint}
+            </div>
+            {activeTab === "create" && (
+              <button onClick={spawnNewJob} className="btn-primary hover-lift" style={{
+                marginTop: 28, padding: "12px 32px", borderRadius: 14, border: "none",
+                color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                boxShadow: "0 4px 20px var(--primary-glow)",
+              }}>＋ 새 시안 시작하기</button>
+            )}
+          </main>
+        );
+      })()}
+
+      {/* Step Indicator — 범위 내일 때만 표시 */}
+      {(() => {
+        const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
+        const [min, max] = ranges[activeTab];
+        if (step < min || step > max) return null;
+        return (
+          <div style={{ padding: "32px 0 0" }}>
+            <StepIndicator currentStep={step} steps={STEPS} />
+          </div>
+        );
+      })()}
 
       {/* Content */}
       <main style={{ padding: "0 40px 60px", maxWidth: 1400, margin: "0 auto" }}>
@@ -3157,7 +3247,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         </div>
       )}
 
-      </>} {/* end activeTab === "create" */}
+      </>} {/* end workflow tabs (create / vote / sheet) */}
 
       {/* ═══ Completed Tab ═══ */}
       {activeTab === "completed" && (
@@ -4373,8 +4463,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {/* Hidden canvas for concept sheet generation */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
-      {/* Floating job queue — visible whenever the Create tab is active. */}
-      {activeTab === "create" && (
+      {/* Floating job queue — visible on all workflow tabs (create/vote/sheet). */}
+      {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && (
         <div style={{
           position: "fixed",
           bottom: 24,
