@@ -21,9 +21,20 @@ param(
   [switch]$SkipBackupTask
 )
 
-$ErrorActionPreference = "Stop"
+# Keep Continue so that native CLIs (npm/pm2/winget) writing to stderr
+# do not get wrapped into terminating RemoteException by Windows PS 5.x.
+# We check $LASTEXITCODE explicitly after every native command.
+$ErrorActionPreference = "Continue"
 $ProjectRoot = $PSScriptRoot
 Set-Location $ProjectRoot
+
+function Exit-OnFail {
+  param([int]$Code, [string]$What)
+  if ($Code -ne 0) {
+    Write-Host "  [x]  $What  (exit=$Code)" -ForegroundColor Red
+    exit 1
+  }
+}
 
 function Write-Step { param([string]$Msg) Write-Host ""; Write-Host "=== $Msg ===" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
@@ -62,11 +73,8 @@ if ($SkipNode) {
       Write-Err "winget unavailable. Install Node.js LTS manually from https://nodejs.org"
       exit 1
     }
-    winget install OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0) {
-      Write-Err "Node.js install failed. Install manually from https://nodejs.org"
-      exit 1
-    }
+    & winget install OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements
+    Exit-OnFail $LASTEXITCODE "Node.js install failed"
     $machinePath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
     $userPath    = [Environment]::GetEnvironmentVariable("PATH", "User")
     $env:PATH    = $machinePath + ";" + $userPath
@@ -84,13 +92,15 @@ if ($SkipBuild) {
   } else {
     Write-Host "  running npm install..." -ForegroundColor DarkCyan
   }
-  npm install --no-fund --no-audit 2>&1 | Out-Host
-  if ($LASTEXITCODE -ne 0) { Write-Err "npm install failed"; exit 1 }
+  # cmd /c suppresses PowerShell's habit of elevating native stderr to errors.
+  # Any deprecation warnings from npm are now just printed and ignored.
+  cmd /c "npm install --no-fund --no-audit"
+  Exit-OnFail $LASTEXITCODE "npm install failed"
   Write-Ok "dependencies installed"
 
   Write-Host "  running npm run build..." -ForegroundColor DarkCyan
-  npm run build 2>&1 | Out-Host
-  if ($LASTEXITCODE -ne 0) { Write-Err "build failed"; exit 1 }
+  cmd /c "npm run build"
+  Exit-OnFail $LASTEXITCODE "build failed"
   Write-Ok "frontend build complete"
 }
 
@@ -123,8 +133,8 @@ if ($SkipPm2) {
   $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
   if (-not $pm2) {
     Write-Host "  installing pm2 globally..." -ForegroundColor DarkCyan
-    npm install -g pm2 pm2-windows-startup 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { Write-Err "pm2 install failed"; exit 1 }
+    cmd /c "npm install -g pm2 pm2-windows-startup"
+    Exit-OnFail $LASTEXITCODE "pm2 install failed"
     $machinePath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
     $userPath    = [Environment]::GetEnvironmentVariable("PATH", "User")
     $env:PATH    = $machinePath + ";" + $userPath
@@ -133,15 +143,15 @@ if ($SkipPm2) {
     Write-Ok "pm2 already installed"
   }
 
-  pm2 delete inzoi 2>&1 | Out-Null
+  cmd /c "pm2 delete inzoi" 2>$null | Out-Null
   $env:PORT = $Port
-  pm2 start server.js --name inzoi --cwd "$ProjectRoot" 2>&1 | Out-Host
-  if ($LASTEXITCODE -ne 0) { Write-Err "pm2 start failed"; exit 1 }
-  pm2 save | Out-Host
+  cmd /c "pm2 start server.js --name inzoi --cwd ""$ProjectRoot"""
+  Exit-OnFail $LASTEXITCODE "pm2 start failed"
+  cmd /c "pm2 save" | Out-Null
 
   $startupCmd = Get-Command pm2-startup -ErrorAction SilentlyContinue
   if ($startupCmd) {
-    pm2-startup install 2>&1 | Out-Null
+    cmd /c "pm2-startup install" | Out-Null
     Write-Ok "auto-start on boot registered (pm2-windows-startup)"
   } else {
     Write-Warn "pm2-windows-startup not found - skipping auto-start"
