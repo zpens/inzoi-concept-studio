@@ -1,8 +1,16 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.0";
+const APP_VERSION = "0.9.1";
 const CHANGELOG = [
+  {
+    version: "0.9.1",
+    date: "2026-04-21",
+    changes: [
+      "위시리스트에 Ctrl+V 클립보드 이미지 붙여넣기 지원",
+      "시안 개수 기본값을 4개 → 1개로 변경 (필요 시 2/4/8 선택)",
+    ],
+  },
   {
     version: "0.9.0",
     date: "2026-04-21",
@@ -1142,7 +1150,7 @@ function createBlankJob(id) {
     stylePreset: null,
     prompt: "",
     refImages: [],
-    variantCount: 4,      // 한 번에 생성할 시안 개수 (2 / 4 / 8)
+    variantCount: 1,      // 한 번에 생성할 시안 개수 (1 / 2 / 4 / 8), 기본 1
     designs: [],
     enhancedPrompt: "",
     selectedDesign: null,
@@ -1346,6 +1354,29 @@ export default function InZOIConceptTool() {
   const [wishNote, setWishNote] = useState("");
   const [wishImage, setWishImage] = useState(null);
   const wishImageRef = useRef(null);
+
+  // 클립보드 이미지 붙여넣기 지원 (위시리스트 탭에서만 활성).
+  // 캡처한 첫 번째 이미지 아이템을 dataURL 로 읽어 setWishImage 에 저장한다.
+  useEffect(() => {
+    if (activeTab !== "wishlist") return;
+    const onPaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const file = it.getAsFile();
+          if (!file) continue;
+          const reader = new FileReader();
+          reader.onload = (ev) => setWishImage(ev.target.result);
+          reader.readAsDataURL(file);
+          e.preventDefault();
+          return;
+        }
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [activeTab]);
 
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
@@ -3224,6 +3255,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   >
                     🖼️ 이미지 첨부
                   </button>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
+                    또는 <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "rgba(0,0,0,0.06)", border: "1px solid var(--surface-border)", fontFamily: "monospace", fontSize: 10 }}>Ctrl+V</kbd> 로 붙여넣기
+                  </span>
                   {wishImage && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <img src={wishImage} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover" }} />
