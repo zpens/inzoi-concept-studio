@@ -35,11 +35,21 @@ iwr https://raw.githubusercontent.com/zpens/inzoi-concept-studio/main/bootstrap.
 프로젝트 폴더 안에서 `install.bat` **더블 클릭** → UAC 승인 → 끝.
 
 ### 업데이트 (개발자가 새 버전 배포한 후)
-`update.bat` **더블 클릭** 또는:
+자동: 운영자 PC 의 작업 스케줄러가 **5분마다 `git pull` → 변경사항 있으면 자동 빌드 + 재시작**. 별도 조작 불필요.
+
+수동 즉시 반영이 필요하면 `update.bat` **더블 클릭** 또는:
 ```powershell
 .\update.bat
 ```
-→ git pull + npm install + build + pm2 restart 자동.
+
+### 헬스체크 자동 복구
+**2분마다** `/api/health` 를 확인해서 응답이 없으면 자동으로 `pm2 restart` → 여전히 실패면 cold start. 로그:
+```
+type logs\health-check.log
+```
+
+### 재부팅 시 자동 복원
+`pm2-windows-startup` 이 Windows 서비스로 등록되어 PC 재부팅 후에도 `pm2 resurrect` 로 서버가 자동 기동됩니다.
 
 ### 완전 제거 (데이터는 보존)
 ```powershell

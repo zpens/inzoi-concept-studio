@@ -7,6 +7,7 @@ dist/
 # 로컬 서버 런타임 데이터 (개인 PC / 사내 서버에서만 생성)
 data/
 backup/
+logs/
 *.log
 .env
 .env.local

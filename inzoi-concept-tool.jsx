@@ -1,8 +1,20 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.5";
+const APP_VERSION = "0.9.6";
 const CHANGELOG = [
+  {
+    version: "0.9.6",
+    date: "2026-04-21",
+    changes: [
+      "사내 서버 자동 운영 강화 — 5분마다 git pull + 재빌드 + pm2 restart 자동",
+      "2분마다 /api/health 헬스체크 실패 시 자동 복구 (pm2 restart → 실패 시 cold start)",
+      "ecosystem.config.cjs 로 pm2 설정 체계화 (max_restarts 20, restart_delay 5s, 메모리 1GB 초과 시 재시작)",
+      "재부팅 시 pm2-windows-startup 이 프로세스 자동 복구",
+      "logs/ 디렉토리에 auto-update.log, health-check.log, pm2-*.log 남김",
+      "better-sqlite3 v12.9.0 (Node v24 prebuild 공식 지원)",
+    ],
+  },
   {
     version: "0.9.5",
     date: "2026-04-21",

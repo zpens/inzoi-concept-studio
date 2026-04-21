@@ -2,6 +2,34 @@
 
 inZOI Concept Studio 변경 이력. 최신 버전이 위쪽에 있습니다.
 
+## [0.9.6] — 2026-04-21
+
+### 사내 서버 무인 자동 운영 강화
+- **자동 git pull + 재빌드** — `scripts/auto-update.ps1` 이 **5분마다** 실행. `git fetch`/`pull --ff-only` → HEAD 가 바뀌었으면 `npm install` + `npm run build` + `pm2 restart`. 변화 없으면 no-op. 로그: `logs/auto-update.log`.
+- **헬스체크 + 자동 복구** — `scripts/health-check.ps1` 이 **2분마다** `/api/health` 호출. 실패 시 `pm2 restart inzoi`; 여전히 응답 없으면 `pm2 delete` 후 ecosystem 파일로 cold start. 상태 변화(복구/끊김)만 로그: `logs/health-check.log`.
+- **재부팅 자동 시작** — `pm2-windows-startup` 서비스로 부팅 시 `pm2 resurrect` 자동 실행. install.ps1 이 등록.
+- **pm2 ecosystem** — `ecosystem.config.cjs` 로 프로세스 정책 체계화:
+  - `max_restarts: 20`, `restart_delay: 5000ms`, `min_uptime: 10s`
+  - `max_memory_restart: 1G` (메모리 누수 보호)
+  - 로그 경로 `logs/pm2-error.log`, `logs/pm2-out.log`
+- **better-sqlite3 v12.9.0** — Node v24 LTS prebuild 공식 지원. Visual Studio Build Tools 불필요.
+
+### 스크립트 업데이트
+- `install.ps1` 6단계가 백업 / auto-update / health-check 3개 스케줄 작업을 한 번에 등록.
+- `uninstall.ps1` 이 3개 작업 모두 해제.
+- `package.json` 에 `npm run auto-update`, `npm run health-check` 스크립트 노출.
+
+### 운영 관점
+- 개발자가 main 에 push 하면 **운영자 PC 가 최대 5분 내 자동 반영**. update.bat 수동 실행 불필요.
+- 프로세스가 응답 없으면 **최대 2분 내 자동 복구 시도**.
+- 운영자 PC 재부팅 시 pm2 가 inzoi 프로세스 자동 복원.
+- 확인 명령:
+  ```
+  pm2 status                    현재 프로세스 상태
+  type logs\auto-update.log     최근 업데이트 기록
+  type logs\health-check.log    최근 헬스체크 이벤트
+  ```
+
 ## [0.9.5] — 2026-04-21
 
 ### 자동 설치 스크립트

@@ -155,7 +155,9 @@ if ($SkipPm2) {
 
   cmd /c "pm2 delete inzoi" 2>$null | Out-Null
   $env:PORT = $Port
-  cmd /c "pm2 start server.js --name inzoi --cwd ""$ProjectRoot"""
+  # Start through the ecosystem file so max_restarts / restart_delay /
+  # log paths are consistent across restarts.
+  cmd /c "pm2 start ecosystem.config.cjs"
   Exit-OnFail $LASTEXITCODE "pm2 start failed"
   cmd /c "pm2 save" | Out-Null
 
@@ -169,22 +171,43 @@ if ($SkipPm2) {
   Write-Ok "pm2 registered: inzoi (port $Port)"
 }
 
-# --- 6. Scheduled Task: daily backup ---
-Write-Step "6/7  scheduled backup (daily 18:30)"
+# --- 6. Scheduled Tasks: backup + auto-update + health check ---
+Write-Step "6/7  scheduled tasks (backup / auto-update / health)"
 if ($SkipBackupTask) {
   Write-Skip "skipped by -SkipBackupTask"
 } else {
-  $taskName = "inZOI Concept Backup"
-  $existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-  if ($existing) {
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+  $principalSchedule = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
+  $commonSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
+
+  function Register-Mine {
+    param([string]$Name, $Action, $Trigger, [string]$Description)
+    $existing = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+    if ($existing) { Unregister-ScheduledTask -TaskName $Name -Confirm:$false }
+    Register-ScheduledTask -TaskName $Name -Action $Action -Trigger $Trigger `
+      -Settings $commonSettings -Principal $principalSchedule -Description $Description | Out-Null
+    Write-Ok "registered: $Name"
   }
-  $action   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c npm run backup" -WorkingDirectory $ProjectRoot
-  $trigger  = New-ScheduledTaskTrigger -Daily -At 6:30PM
-  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-  $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive
-  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "inZOI Concept Studio - daily data backup" | Out-Null
-  Write-Ok "registered: $taskName (daily 18:30)"
+
+  # 6a. Daily backup at 18:30
+  $backupAction = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c npm run backup" -WorkingDirectory $ProjectRoot
+  $backupTrigger = New-ScheduledTaskTrigger -Daily -At 6:30PM
+  Register-Mine "inZOI Concept Backup" $backupAction $backupTrigger "inZOI Concept Studio - daily data backup (18:30)"
+
+  # 6b. Auto update every 5 minutes
+  $updateAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ProjectRoot\scripts\auto-update.ps1`"" `
+    -WorkingDirectory $ProjectRoot
+  $updateTrigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(2)) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
+  Register-Mine "inZOI Concept Auto Update" $updateAction $updateTrigger "git pull + rebuild + pm2 restart (every 5 min)"
+
+  # 6c. Health check every 2 minutes
+  $healthAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ProjectRoot\scripts\health-check.ps1`" -Port $Port" `
+    -WorkingDirectory $ProjectRoot
+  $healthTrigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) `
+    -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration (New-TimeSpan -Days 3650)
+  Register-Mine "inZOI Concept Health Check" $healthAction $healthTrigger "ping /api/health; pm2 restart on failure (every 2 min)"
 }
 
 # --- 7. health check ---

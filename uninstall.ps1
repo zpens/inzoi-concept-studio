@@ -33,14 +33,22 @@ if ($rules) {
 }
 
 Write-Host ""
-Write-Host "=== 3/4  scheduled task ===" -ForegroundColor Cyan
-$task = Get-ScheduledTask -TaskName "inZOI Concept Backup" -ErrorAction SilentlyContinue
-if ($task) {
-  Unregister-ScheduledTask -TaskName "inZOI Concept Backup" -Confirm:$false
-  Write-Host "  [OK] removed scheduled task" -ForegroundColor Green
-} else {
-  Write-Host "  [skip] no scheduled task registered" -ForegroundColor DarkGray
+Write-Host "=== 3/4  scheduled tasks ===" -ForegroundColor Cyan
+$taskNames = @(
+  "inZOI Concept Backup",
+  "inZOI Concept Auto Update",
+  "inZOI Concept Health Check"
+)
+$removed = 0
+foreach ($n in $taskNames) {
+  $task = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+  if ($task) {
+    Unregister-ScheduledTask -TaskName $n -Confirm:$false
+    Write-Host "  [OK] removed: $n" -ForegroundColor Green
+    $removed++
+  }
 }
+if ($removed -eq 0) { Write-Host "  [skip] no scheduled tasks registered" -ForegroundColor DarkGray }
 
 Write-Host ""
 Write-Host "=== 4/4  data ===" -ForegroundColor Cyan
