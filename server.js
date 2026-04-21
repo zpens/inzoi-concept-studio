@@ -151,6 +151,8 @@ app.get("/api/health", (c) =>
 );
 
 // POST /api/projects
+// slug 가 이미 있으면 충돌 에러 대신 기존 프로젝트를 그대로 반환 (idempotent).
+// 팀이 "default" 하나로 수렴할 때 race 없이 안전.
 app.post("/api/projects", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const id = randomUUID();
@@ -160,6 +162,8 @@ app.post("/api/projects", async (c) => {
     stmts.insertProject.run(id, slug, name);
     return c.json({ id, slug, name }, 201);
   } catch (err) {
+    const existing = stmts.getProjectBySlug.get(slug);
+    if (existing) return c.json(existing, 200);
     return c.json({ error: "slug conflict, retry" }, 409);
   }
 });

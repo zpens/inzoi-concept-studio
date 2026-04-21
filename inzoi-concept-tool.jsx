@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 const CHANGELOG = [
+  {
+    version: "1.0.1",
+    date: "2026-04-21",
+    changes: [
+      "프로젝트 URL 개념 제거 — 팀 전체가 단일 'default' 프로젝트 공유",
+      "헤더에서 🔗 공유 URL 버튼 제거, 저장 상태 표시로 대체",
+      "워크플로우 탭 진입 시 카드 그리드만 표시, 아래 입력/단계 UI 는 숨김",
+      "카드 클릭 또는 ＋ 새 시안 누를 때만 상세 UI 전개",
+      "상세 헤더에 '← 목록으로' 버튼 추가로 쉽게 그리드 복귀",
+    ],
+  },
   {
     version: "1.0.0",
     date: "2026-04-21",
@@ -1564,11 +1575,13 @@ export default function InZOIConceptTool() {
     conceptSheet, multiViewImages,
   } = activeJob;
 
-  // Spawn a new blank job and focus it.
+  // Spawn a new blank job and focus it. 상세 UI 도 자동으로 전개.
   const spawnNewJob = useCallback(() => {
     const nj = createBlankJob(Date.now());
     setJobs((prev) => [...prev, nj]);
     setActiveJobId(nj.id);
+    setShowWorkflowDetail(true);
+    return nj.id;
   }, []);
 
   // Remove a job; invariant effect below picks a new active one.
@@ -1589,6 +1602,9 @@ export default function InZOIConceptTool() {
   const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달
   const [detailWish, setDetailWish] = useState(null);     // 위시리스트 상세 모달
   const [newItemId, setNewItemId] = useState(null);
+  // 워크플로우 탭 상세 전개 여부. 기본 false 라 그리드만 보이고, 카드 클릭하거나
+  // ＋ 새 시안 눌렀을 때만 true 로 전환되어 입력/단계 UI 가 드러난다.
+  const [showWorkflowDetail, setShowWorkflowDetail] = useState(false);
 
   const [wishlist, setWishlist] = useState([]);
   const [wishTitle, setWishTitle] = useState("");
@@ -1658,34 +1674,26 @@ export default function InZOIConceptTool() {
     try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
   }, []);
 
-  // 앱 시작 시: URL 또는 localStorage 의 slug 를 확보하고, 없으면 새 프로젝트 생성.
-  // 이어서 프로젝트 스냅샷을 내려받아 jobs / completedList / wishlist 를 복원한다.
+  // 앱 시작 시: 팀 전체가 공유하는 단일 프로젝트 (default 슬러그) 를 사용한다.
+  // 없으면 생성하고, 이어서 스냅샷을 내려받아 jobs / completedList / wishlist 를 복원한다.
   useEffect(() => {
     let cancelled = false;
     async function init() {
-      let slug = getSlugFromUrl();
-      if (!slug) {
-        try { slug = localStorage.getItem("inzoi_active_slug"); } catch { slug = null; }
-      }
-      if (!slug) {
-        try {
-          const r = await fetch("/api/projects", {
+      const slug = "default";
+
+      // 프로젝트 없으면 생성 (서버가 idempotent 하게 처리).
+      try {
+        const probe = await fetch(`/api/projects/${slug}`);
+        if (probe.status === 404) {
+          await fetch("/api/projects", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name: "inZOI Concept Studio" }),
+            body: JSON.stringify({ slug, name: "inZOI Concept Studio" }),
           });
-          if (r.ok) {
-            const p = await r.json();
-            slug = p.slug;
-          }
-        } catch (e) { console.warn("프로젝트 생성 실패", e); }
-      }
-      if (cancelled || !slug) { setProjectReady(true); return; }
+        }
+      } catch (e) { console.warn("프로젝트 확인/생성 실패", e); }
 
-      try { localStorage.setItem("inzoi_active_slug", slug); } catch {}
-      if (typeof window !== "undefined") {
-        window.history.replaceState(null, "", `/p/${slug}${location.search}`);
-      }
+      if (cancelled) return;
       setProjectSlug(slug);
 
       // Snapshot 로드
@@ -2160,6 +2168,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           ];
           const switchTab = (id) => {
             setActiveTab(id);
+            // 명시적 탭 이동 시에는 상세 뷰를 닫고 그리드만 보이게 한다.
+            setShowWorkflowDetail(false);
             const range = TAB_STEP_RANGES[id];
             if (range && (step < range[0] || step > range[1])) {
               const target = jobs.find(j => j.step >= range[0] && j.step <= range[1]);
@@ -2202,31 +2212,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
         {/* Right: Settings + New Start button */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 160, justifyContent: "flex-end" }}>
-          {projectSlug && (
-            <button
-              onClick={() => {
-                const url = `${location.origin}/p/${projectSlug}`;
-                navigator.clipboard?.writeText(url).catch(() => {});
-                alert(`공유 URL 복사됨:\n${url}\n\n팀원에게 이 링크를 보내면 같은 프로젝트로 접속합니다.`);
-              }}
-              className="hover-lift"
-              title={`프로젝트 URL: /p/${projectSlug}`}
-              style={{
-                padding: "10px 14px", borderRadius: 12,
-                background: "rgba(7,110,232,0.08)",
-                border: "1px solid rgba(7,110,232,0.3)",
-                color: "var(--primary)",
-                fontSize: 13, fontWeight: 700, cursor: "pointer",
-                transition: "all 0.3s",
-                display: "flex", alignItems: "center", gap: 6,
-                fontFamily: "monospace",
-              }}
-            >
-              <span style={{ fontSize: 14 }}>🔗</span>
-              {projectSlug}
-              {syncStatus === "saving" && <span style={{ fontSize: 10, opacity: 0.6 }}>저장중</span>}
-              {syncStatus === "error" && <span style={{ fontSize: 10, color: "#ef4444" }}>⚠</span>}
-            </button>
+          {/* 저장 상태 작은 인디케이터 (프로젝트는 전체 공유 하나라 URL 공유 UI 는 제거). */}
+          {syncStatus !== "idle" && (
+            <span style={{
+              fontSize: 11, fontWeight: 700,
+              padding: "6px 10px", borderRadius: 8,
+              background: syncStatus === "error" ? "rgba(239,68,68,0.1)" : "rgba(7,110,232,0.08)",
+              color: syncStatus === "error" ? "#ef4444" : "var(--primary)",
+            }}>
+              {syncStatus === "saving" ? "저장중..." : "저장 실패"}
+            </span>
           )}
           <button
             onClick={() => setShowApiSettings(true)}
@@ -2323,9 +2318,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <WorkflowJobCard
                     key={j.id}
                     job={j}
-                    active={j.id === activeJobId}
+                    active={j.id === activeJobId && showWorkflowDetail}
                     tabId={activeTab}
-                    onSelect={() => setActiveJobId(j.id)}
+                    onSelect={() => { setActiveJobId(j.id); setShowWorkflowDetail(true); }}
                   />
                 ))}
               </div>
@@ -2353,30 +2348,44 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         );
       })()}
 
-      {/* 선택된 작업이 이 탭 범위 안에 있을 때만 아래에 상세 UI 표시 */}
+      {/* 상세 진행 UI 는 사용자가 카드를 직접 선택하거나 ＋ 새 시안을 눌렀을 때만 전개 */}
       {(() => {
         const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
         const [min, max] = ranges[activeTab];
         if (step < min || step > max) return null;
+        if (!showWorkflowDetail) return null;
         return (
           <>
             <div style={{
               margin: "8px 40px 0", maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
-              borderTop: "1px solid var(--surface-border)", paddingTop: 28,
+              borderTop: "1px solid var(--surface-border)", paddingTop: 20,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
-              <div style={{ padding: "0 0 8px", color: "var(--text-muted)", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>
+              <div style={{ color: "var(--text-muted)", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>
                 선택된 작업 진행
               </div>
+              <button
+                onClick={() => setShowWorkflowDetail(false)}
+                className="hover-lift"
+                style={{
+                  padding: "6px 12px", borderRadius: 9,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                }}
+              >← 목록으로</button>
             </div>
-            <div style={{ padding: "0 0 0" }}>
+            <div style={{ padding: "20px 0 0" }}>
               <StepIndicator currentStep={step} steps={STEPS} />
             </div>
           </>
         );
       })()}
 
-      {/* Content */}
-      <main style={{ padding: "0 40px 60px", maxWidth: 1400, margin: "0 auto" }}>
+      {/* Content — 상세 모드일 때만 렌더 */}
+      <main style={{
+        padding: "0 40px 60px", maxWidth: 1400, margin: "0 auto",
+        display: showWorkflowDetail ? "block" : "none",
+      }}>
 
         {/* ═══ STEP 1: Input ═══ */}
         {step === 0 && (
