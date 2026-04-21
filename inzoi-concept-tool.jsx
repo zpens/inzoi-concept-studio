@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.10";
+const APP_VERSION = "1.0.0";
 const CHANGELOG = [
+  {
+    version: "1.0.0",
+    date: "2026-04-21",
+    changes: [
+      "[UX 대개편] 각 워크플로우 탭을 카드 허브로 전환",
+      "시안 생성 탭 — 시안 여러 개 동시 관리, 각 카드 클릭 시 갤러리로 진입",
+      "투표 및 선정 탭 — 생성된 시안 리스트가 카드 그리드로 표시, 카드마다 투표자/득표 현황",
+      "컨셉시트 생성 탭 — 선정된 작업 리스트, 시트 생성/검토 상태 한눈에",
+      "탭 상단에 '＋ 새 시안' 버튼 + 작업 개수 안내",
+      "기존 step 기반 단계 UI 는 카드 하단에 '선택된 작업 진행' 섹션으로 통합",
+    ],
+  },
   {
     version: "0.9.10",
     date: "2026-04-21",
@@ -1328,6 +1340,98 @@ async function runWithConcurrencyLimit(tasks, limit, onProgress) {
 
 const JOB_STEP_LABELS = ["입력", "시안 생성중", "투표", "선정", "컨셉시트", "전송 준비", "전송 완료"];
 
+// 워크플로우 탭(시안 생성/투표/컨셉시트) 의 카드 허브에서 사용하는 job 카드.
+// 큐 패널 카드(JobQueueCard)는 작고 컴팩트한 사이드뷰용이고,
+// 이것은 메인 영역의 그리드용 큰 카드.
+function WorkflowJobCard({ job, active, onSelect, tabId }) {
+  const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === job.category);
+  const icon = catInfo?.icon || "🆕";
+  const label = catInfo?.label || "새 작업";
+  const promptSnippet = job.prompt
+    ? (job.prompt.length > 70 ? job.prompt.slice(0, 70) + "…" : job.prompt)
+    : "입력 대기 중";
+
+  const designs = Array.isArray(job.designs) ? job.designs : [];
+  const firstImage = designs.find((d) => d && d.imageUrl)?.imageUrl || null;
+  const selectedDesign = (job.selectedDesign != null && designs[job.selectedDesign]) || null;
+
+  // 탭별로 카드의 주 썸네일을 다르게.
+  let thumb = null;
+  if (tabId === "create") thumb = firstImage;
+  else if (tabId === "vote") thumb = firstImage;
+  else if (tabId === "sheet") thumb = job.conceptSheet || selectedDesign?.imageUrl || firstImage;
+
+  const stepLabel = JOB_STEP_LABELS[job.step] || "";
+  const voterCount = Array.isArray(job.voters) ? job.voters.length : 0;
+  const voteCounts = (job.votes && typeof job.votes === "object") ? Object.values(job.votes).reduce((a, b) => a + (b || 0), 0) : 0;
+
+  return (
+    <div
+      onClick={onSelect}
+      className="hover-lift"
+      style={{
+        borderRadius: 16, overflow: "hidden", cursor: "pointer",
+        border: active ? "2px solid var(--primary)" : "1px solid var(--surface-border)",
+        background: "var(--surface-color)",
+        transition: "all 0.2s",
+        boxShadow: active ? "0 6px 24px var(--primary-glow)" : "0 2px 8px rgba(0,0,0,0.04)",
+      }}
+    >
+      <div style={{
+        width: "100%", height: 180, position: "relative",
+        background: thumb ? "#000" : "rgba(0,0,0,0.04)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {thumb ? (
+          <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <span style={{ fontSize: 56, opacity: 0.5 }}>{icon}</span>
+        )}
+        {designs.length > 1 && (
+          <div style={{
+            position: "absolute", top: 10, right: 10,
+            padding: "3px 10px", borderRadius: 10,
+            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 11, fontWeight: 700,
+          }}>시안 {designs.length}</div>
+        )}
+        {active && (
+          <div style={{
+            position: "absolute", top: 10, left: 10,
+            padding: "3px 10px", borderRadius: 10,
+            background: "var(--primary)", color: "#fff", fontSize: 11, fontWeight: 800, letterSpacing: "0.05em",
+          }}>선택됨</div>
+        )}
+      </div>
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: "var(--text-main)" }}>{icon} {label}</span>
+          <span style={{
+            marginLeft: "auto", fontSize: 11, fontWeight: 700,
+            color: "var(--primary)", background: "rgba(7,110,232,0.1)",
+            padding: "2px 8px", borderRadius: 7,
+          }}>{stepLabel}</span>
+        </div>
+        <div style={{
+          fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6,
+          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+          overflow: "hidden", minHeight: 36,
+        }}>{promptSnippet}</div>
+        {tabId === "vote" && (
+          <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
+            <span>투표자 {voterCount}명</span>
+            <span>총 득표 {voteCounts}</span>
+          </div>
+        )}
+        {tabId === "sheet" && selectedDesign && (
+          <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+            시안 {(job.selectedDesign ?? 0) + 1} 선정{job.conceptSheet ? " · 시트 생성됨" : ""}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function JobQueueCard({ job, active, onSelect, onRemove }) {
   const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === job.category);
   const title = catInfo ? `${catInfo.icon} ${catInfo.label}` : "🆕 새 시안 작업";
@@ -2169,44 +2273,105 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           범위 밖이면 빈 상태 안내 */}
       {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && <>
 
-      {/* Empty-state 안내: 현재 탭이 담당하는 step 에 아무 job 도 없을 때 */}
+      {/* 카드 허브 — 탭 헤더 + 해당 step 범위의 작업 카드 그리드. 카드 클릭
+          시 해당 작업을 active 로 전환하고 아래쪽에 step-based 상세 UI 표시. */}
       {(() => {
         const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
         const [min, max] = ranges[activeTab];
-        const inRange = step >= min && step <= max;
-        if (inRange) return null;
-        const emptyMsg = {
-          create: { icon: "✨", title: "시안 생성 준비", hint: "'＋ 새 시안' 버튼을 눌러 새 어셋 정보를 입력하거나 큐 패널에서 진행 중 작업을 선택하세요." },
-          vote:   { icon: "🗳️", title: "투표할 시안이 없습니다", hint: "시안 생성 탭에서 먼저 이미지를 만든 뒤, 갤러리 하단 '투표 시작하기' 버튼을 누르면 이 탭으로 이동합니다." },
-          sheet:  { icon: "📑", title: "컨셉시트를 만들 작업이 없습니다", hint: "투표 및 선정을 마친 뒤 '컨셉시트 생성' 버튼을 누르면 이 탭으로 이동합니다." },
+        const inRangeJobs = jobs.filter((j) => j.step >= min && j.step <= max);
+        const tabMeta = {
+          create: { title: "시안 생성",     icon: "✨", desc: "새 어셋 시안을 만들고 갤러리에서 확인하세요." },
+          vote:   { title: "투표 및 선정",  icon: "🗳️", desc: "생성된 시안 중 팀 투표로 최종안을 선정하세요." },
+          sheet:  { title: "컨셉시트 생성", icon: "📑", desc: "선정된 시안으로 멀티뷰 컨셉시트를 만들고 파이프라인에 전송하세요." },
         }[activeTab];
+
         return (
-          <main style={{ padding: "80px 40px", maxWidth: 900, margin: "0 auto", textAlign: "center" }}>
-            <div style={{ fontSize: 64, marginBottom: 16, opacity: 0.7 }}>{emptyMsg.icon}</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-main)", marginBottom: 10 }}>{emptyMsg.title}</div>
-            <div style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.8, maxWidth: 540, margin: "0 auto" }}>
-              {emptyMsg.hint}
+          <main style={{ padding: "32px 40px 0", maxWidth: 1400, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
+              <div>
+                <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>
+                  {tabMeta.icon} {tabMeta.title}
+                </h2>
+                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                  {inRangeJobs.length > 0
+                    ? `이 단계에 ${inRangeJobs.length}개의 작업이 있습니다. 카드를 선택해 진행하세요.`
+                    : tabMeta.desc}
+                </p>
+              </div>
+              {activeTab === "create" && (
+                <button
+                  onClick={spawnNewJob}
+                  className="btn-primary hover-lift"
+                  style={{
+                    padding: "12px 22px", borderRadius: 12, border: "none",
+                    color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 6,
+                    boxShadow: "0 4px 14px var(--primary-glow)",
+                  }}
+                >＋ 새 시안</button>
+              )}
             </div>
-            {activeTab === "create" && (
-              <button onClick={spawnNewJob} className="btn-primary hover-lift" style={{
-                marginTop: 28, padding: "12px 32px", borderRadius: 14, border: "none",
-                color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                boxShadow: "0 4px 20px var(--primary-glow)",
-              }}>＋ 새 시안 시작하기</button>
+
+            {inRangeJobs.length > 0 ? (
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: 16,
+                marginBottom: 40,
+              }}>
+                {inRangeJobs.map((j) => (
+                  <WorkflowJobCard
+                    key={j.id}
+                    job={j}
+                    active={j.id === activeJobId}
+                    tabId={activeTab}
+                    onSelect={() => setActiveJobId(j.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div style={{
+                padding: "60px 40px", textAlign: "center",
+                background: "rgba(0,0,0,0.02)",
+                border: "1px dashed var(--surface-border)", borderRadius: 16,
+                marginBottom: 40,
+              }}>
+                <div style={{ fontSize: 52, marginBottom: 14, opacity: 0.6 }}>{tabMeta.icon}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-main)", marginBottom: 8 }}>
+                  {activeTab === "create" ? "아직 생성된 시안이 없습니다" :
+                   activeTab === "vote"   ? "투표할 시안이 없습니다" :
+                                            "컨셉시트를 만들 작업이 없습니다"}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  {activeTab === "create" ? "＋ 새 시안 버튼을 눌러 첫 번째 작업을 시작하세요." :
+                   activeTab === "vote"   ? "시안 생성 탭에서 먼저 이미지를 만든 뒤 '투표 시작하기' 를 눌러주세요." :
+                                            "투표 및 선정을 마치면 이 탭으로 자동 이동합니다."}
+                </div>
+              </div>
             )}
           </main>
         );
       })()}
 
-      {/* Step Indicator — 범위 내일 때만 표시 */}
+      {/* 선택된 작업이 이 탭 범위 안에 있을 때만 아래에 상세 UI 표시 */}
       {(() => {
         const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
         const [min, max] = ranges[activeTab];
         if (step < min || step > max) return null;
         return (
-          <div style={{ padding: "32px 0 0" }}>
-            <StepIndicator currentStep={step} steps={STEPS} />
-          </div>
+          <>
+            <div style={{
+              margin: "8px 40px 0", maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
+              borderTop: "1px solid var(--surface-border)", paddingTop: 28,
+            }}>
+              <div style={{ padding: "0 0 8px", color: "var(--text-muted)", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>
+                선택된 작업 진행
+              </div>
+            </div>
+            <div style={{ padding: "0 0 0" }}>
+              <StepIndicator currentStep={step} steps={STEPS} />
+            </div>
+          </>
         );
       })()}
 
