@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
-    "better-sqlite3": "^11.5.0",
+    "better-sqlite3": "^12.9.0",
     "hono": "^4.6.12",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"

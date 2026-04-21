@@ -68,13 +68,9 @@ if ($SkipNode) {
     Write-Ok "Node.js already installed ($ver)"
     $majorStr = $ver.TrimStart('v').Split('.')[0]
     $major = 0; [int]::TryParse($majorStr, [ref]$major) | Out-Null
-    if ($major -ge 23) {
-      Write-Err "Node.js $ver is too new for prebuilt better-sqlite3 binaries."
-      Write-Err "Please install Node.js v22 LTS instead:"
-      Write-Err "    winget uninstall OpenJS.NodeJS"
-      Write-Err "    winget install OpenJS.NodeJS.LTS"
-      Write-Err "Or download from https://nodejs.org (LTS button). Then re-run .\install.ps1"
-      exit 1
+    if ($major -ge 25) {
+      Write-Warn "Node.js $ver is the Current channel - stick with LTS when possible."
+      Write-Warn "If better-sqlite3 fails to install, downgrade to v24 LTS from https://nodejs.org"
     }
     if ($major -lt 18) {
       Write-Err "Node.js $ver is too old. Please install v20 or v22 LTS and retry."
