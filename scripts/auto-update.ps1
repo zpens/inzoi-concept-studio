@@ -16,13 +16,30 @@ function Log {
   "$ts  $Msg" | Out-File -FilePath $logFile -Append -Encoding utf8
 }
 
+# cmd /c wrapper so git/npm stderr (informational text) does not get
+# wrapped into a PowerShell RemoteException with a stack trace.
+# We only log errors; success runs stay quiet to keep the log readable.
+function Invoke-Native {
+  param([string]$Cmd, [string]$Label)
+  $out = cmd /c "$Cmd 2>&1"
+  if ($LASTEXITCODE -ne 0) {
+    Log "[!] $Label failed (exit=$LASTEXITCODE)"
+    $text = ($out | Out-String).Trim()
+    if ($text) { Log "    $text" }
+    return $false
+  }
+  return $true
+}
+
 Log "--- auto-update run start ---"
 
 try {
-  $before = (& git rev-parse HEAD).Trim()
-  & git fetch origin main 2>&1 | Out-String | ForEach-Object { if ($_) { Log $_ } }
-  & git pull --ff-only origin main 2>&1 | Out-String | ForEach-Object { if ($_) { Log $_ } }
-  $after = (& git rev-parse HEAD).Trim()
+  $before = (cmd /c "git rev-parse HEAD").Trim()
+
+  if (-not (Invoke-Native "git fetch origin main" "git fetch")) { exit 1 }
+  if (-not (Invoke-Native "git pull --ff-only origin main" "git pull")) { exit 1 }
+
+  $after = (cmd /c "git rev-parse HEAD").Trim()
 
   if ($before -eq $after) {
     Log "no changes (HEAD=$after)"
@@ -30,18 +47,17 @@ try {
   }
 
   Log "HEAD advanced  $before -> $after"
-  Log "running npm install..."
-  cmd /c "npm install --no-fund --no-audit 2>&1" | Out-String | ForEach-Object { if ($_) { Log $_ } }
-  if ($LASTEXITCODE -ne 0) { Log "[!] npm install failed (exit=$LASTEXITCODE)"; exit 1 }
 
-  Log "running npm run build..."
-  cmd /c "npm run build 2>&1" | Out-String | ForEach-Object { if ($_) { Log $_ } }
-  if ($LASTEXITCODE -ne 0) { Log "[!] build failed (exit=$LASTEXITCODE)"; exit 1 }
+  if (-not (Invoke-Native "npm install --no-fund --no-audit" "npm install")) { exit 1 }
+  Log "dependencies updated"
 
-  Log "pm2 restart inzoi..."
-  cmd /c "pm2 restart inzoi 2>&1" | Out-String | ForEach-Object { if ($_) { Log $_ } }
+  if (-not (Invoke-Native "npm run build" "build")) { exit 1 }
+  Log "frontend rebuilt"
 
-  Log "auto-update done"
+  if (-not (Invoke-Native "pm2 restart inzoi" "pm2 restart")) { exit 1 }
+  Log "pm2 restart ok"
+
+  Log "auto-update done: $after"
 } catch {
   Log "[!] exception: $($_.Exception.Message)"
 }

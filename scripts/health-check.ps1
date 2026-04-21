@@ -39,8 +39,13 @@ try {
   Log "unreachable: $($_.Exception.Message)"
   "down" | Out-File -FilePath $stateFile -Encoding utf8 -NoNewline
 
-  # Try to bounce the pm2 process.
-  cmd /c "pm2 restart inzoi 2>&1" | Out-String | ForEach-Object { if ($_) { Log $_ } }
+  # Try to bounce the pm2 process. Capture cleanly so output doesn't
+  # explode into a PowerShell RemoteException trace.
+  $restartOut = cmd /c "pm2 restart inzoi 2>&1"
+  if ($LASTEXITCODE -ne 0) {
+    $text = ($restartOut | Out-String).Trim()
+    if ($text) { Log "pm2 restart stderr: $text" }
+  }
   Start-Sleep -Seconds 5
 
   # Second probe; if still failing, attempt a cold start.
@@ -54,7 +59,11 @@ try {
   } catch {
     Log "restart did not recover - trying cold start via ecosystem file..."
     cmd /c "pm2 delete inzoi 2>&1" | Out-Null
-    cmd /c "pm2 start ecosystem.config.cjs 2>&1" | Out-String | ForEach-Object { if ($_) { Log $_ } }
+    $startOut = cmd /c "pm2 start ecosystem.config.cjs 2>&1"
+    if ($LASTEXITCODE -ne 0) {
+      $text = ($startOut | Out-String).Trim()
+      if ($text) { Log "cold start stderr: $text" }
+    }
     cmd /c "pm2 save 2>&1" | Out-Null
   }
 }
