@@ -75,6 +75,34 @@ node server.js
 `set PORT=4000 && node server.js` (Windows)
 `PORT=4000 node server.js` (mac/Linux)
 
+### 기존 사내 서비스와 포트 충돌 피하기
+운영자 PC 에 이미 다른 서비스가 돌고 있으면 해당 포트를 피해야 합니다.
+현재 `10.99.4.115` 에는 **8080, 8081** 이 이미 사용 중이므로, 아래 중 하나 권장:
+
+| 상황 | 권장 포트 |
+|---|---|
+| 기본값 (대부분의 경우 충돌 없음) | **3000** |
+| 같은 PC 에 8080/8081 이 이미 떠있는 경우 | **8082**, **8090**, **5173** 등 |
+| 사내 방화벽이 3000 을 차단 | **8082** 또는 **80** (관리자 권한 필요) |
+
+사용 중인 포트 확인:
+```powershell
+# Windows
+netstat -ano | findstr :3000
+netstat -ano | findstr :8082
+
+# mac/Linux
+lsof -i :3000
+```
+결과가 비어 있으면 사용 가능. 차 있으면 다른 번호로 변경.
+
+시작 시 포트 지정:
+```powershell
+set PORT=8082
+start.bat
+```
+또는 `start.bat` 안의 `if not defined PORT set PORT=3000` 값을 원하는 포트로 수정.
+
 ---
 
 ## 4. 팀원이 접속하도록 공유

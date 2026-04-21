@@ -36,9 +36,22 @@ if not exist dist (
 
 if not defined PORT set PORT=3000
 
+rem 포트 충돌 체크 — 이미 사용 중이면 사용자에게 경고.
+netstat -ano | findstr ":%PORT% " | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (
+  echo.
+  echo [!] 포트 %PORT% 가 이미 사용 중입니다.
+  echo     다른 포트로 시작하려면:  set PORT=8082  ^&^&  start.bat
+  echo     사용 중인 프로세스 확인:  netstat -ano ^| findstr :%PORT%
+  echo.
+  pause
+  exit /b 1
+)
+
 echo.
 echo ─────────────────────────────────────────────
 echo  inZOI Concept Studio 서버를 시작합니다.
+echo  포트: %PORT%
 echo  중지하려면 이 창을 닫거나 Ctrl+C 를 누르세요.
 echo ─────────────────────────────────────────────
 echo.
