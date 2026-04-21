@@ -1,8 +1,18 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.2";
+const APP_VERSION = "0.9.3";
 const CHANGELOG = [
+  {
+    version: "0.9.3",
+    date: "2026-04-21",
+    changes: [
+      "[버그 수정] 완료 목록 항목이 사라지던 문제 해결 — 폴링이 서버 빈 응답으로 로컬 신규 항목 덮어쓰는 경쟁 조건 제거",
+      "대용량 base64 이미지(컨셉시트 등)가 D1 row 제한(2MB)을 넘지 않도록 저장 시 800KB 초과하면 자동 생략 (세션 내 표시는 유지)",
+      "완료 목록/위시리스트 폴링 merge 로직 추가 — 로컬에만 있는 아이템 보존",
+      "향후 R2 마이그레이션으로 근본 해결 예정",
+    ],
+  },
   {
     version: "0.9.2",
     date: "2026-04-21",
@@ -1013,6 +1023,31 @@ function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
+// D1 의 row 크기 제한(약 2MB) 을 초과할 수 있는 거대한 base64 dataURL 을
+// 조용히 null 로 만들어 INSERT/UPDATE 실패를 방지한다. R2 마이그레이션
+// 전까지의 임시 조치. 로컬(브라우저 메모리)에는 원본이 남아있어 현재
+// 세션에서는 그대로 보인다.
+const DB_MAX_DATA_URL = 800_000; // 약 800KB (base64 기준)
+function trimForDb(s, label) {
+  if (!s || typeof s !== "string") return s ?? null;
+  if (s.length > DB_MAX_DATA_URL) {
+    if (typeof console !== "undefined") {
+      console.warn(`[D1] ${label} 크기 ${(s.length / 1024).toFixed(0)}KB 가 2MB 제한 근처 — 서버 저장 생략 (세션 내에서는 그대로 표시됨)`);
+    }
+    return null;
+  }
+  return s;
+}
+
+// designs 배열 내부의 imageUrl 도 개별적으로 가드한다.
+function trimDesigns(designs) {
+  if (!Array.isArray(designs)) return designs;
+  return designs.map((d) => ({
+    ...d,
+    imageUrl: trimForDb(d?.imageUrl, `design.imageUrl(seed=${d?.seed})`),
+  }));
+}
+
 function dbRowToJob(row) {
   return {
     id: row.id,
@@ -1054,7 +1089,7 @@ function jobToDbPayload(job, actor) {
     prompt: job.prompt ?? null,
     ref_images: JSON.stringify(job.refImages || []),
     variant_count: job.variantCount ?? 4,
-    designs: JSON.stringify(job.designs || []),
+    designs: JSON.stringify(trimDesigns(job.designs || [])),
     enhanced_prompt: job.enhancedPrompt ?? null,
     selected_design: job.selectedDesign ?? null,
     feedback: job.feedback ?? null,
@@ -1062,7 +1097,7 @@ function jobToDbPayload(job, actor) {
     voters: JSON.stringify(job.voters || []),
     current_voter: job.currentVoter ?? null,
     current_votes: JSON.stringify(job.currentVotes || []),
-    concept_sheet: job.conceptSheet ?? null,
+    concept_sheet: trimForDb(job.conceptSheet, "job.conceptSheet"),
     multi_view_images: JSON.stringify(job.multiViewImages || {}),
     updated_by: actor || null,
   };
@@ -1103,8 +1138,8 @@ function completedToDbPayload(item) {
     seed: item.seed,
     colors: item.colors || [],
     gradient: item.gradient,
-    image_url: item.imageUrl,
-    concept_sheet_url: item.conceptSheetUrl,
+    image_url: trimForDb(item.imageUrl, "completed.imageUrl"),
+    concept_sheet_url: trimForDb(item.conceptSheetUrl, "completed.conceptSheetUrl"),
     voters: item.voters,
     winner: item.winner,
     pipeline_status: item.pipelineStatus,
@@ -1129,7 +1164,7 @@ function wishlistToDbPayload(item) {
     id: String(item.id),
     title: item.title,
     note: item.note,
-    image_url: item.imageUrl,
+    image_url: trimForDb(item.imageUrl, "wishlist.imageUrl"),
     gradient: item.gradient,
     created_at: item.createdAt,
   };
@@ -1550,6 +1585,8 @@ export default function InZOIConceptTool() {
   }, [wishlist, projectSlug, projectReady]);
 
   // 5초마다 서버 스냅샷을 가져와 자신이 편집 중이 아닌 리소스를 갱신 (협업).
+  // 주의: 로컬에 갓 추가됐지만 아직 서버 저장이 완료되지 않은 항목은 유지해야
+  // 한다 (폴링이 빈 서버 응답으로 덮어씌우는 경쟁 조건 방지).
   useEffect(() => {
     if (!projectSlug || !projectReady) return;
     let cancelled = false;
@@ -1560,22 +1597,36 @@ export default function InZOIConceptTool() {
         if (!r.ok) return;
         const data = await r.json();
         if (cancelled) return;
-        // 내가 편집 중(active) 인 job 은 덮어쓰지 않는다. 다른 것만 병합.
+
+        // jobs: active 는 로컬 유지, 나머지는 서버 기준. 서버에만 있는 것 추가.
         const serverJobs = (data.jobs || []).map(dbRowToJob);
         setJobs((local) => {
           const merged = local.map((lj) => {
             if (lj.id === activeJobId) return lj;
-            const sj = serverJobs.find((s) => s.id === lj.id);
+            const sj = serverJobs.find((s) => String(s.id) === String(lj.id));
             return sj || lj;
           });
-          // 서버에만 있는 것 추가
           for (const sj of serverJobs) {
-            if (!merged.find((m) => m.id === sj.id)) merged.push(sj);
+            if (!merged.find((m) => String(m.id) === String(sj.id))) merged.push(sj);
           }
           return merged;
         });
-        setCompletedList((data.completed || []).map(dbRowToCompleted));
-        setWishlist((data.wishlist || []).map(dbRowToWishlist));
+
+        // completed: 서버 기준 목록에 "로컬에만 있는" 아이템을 merge.
+        const serverCompleted = (data.completed || []).map(dbRowToCompleted);
+        setCompletedList((local) => {
+          const serverIds = new Set(serverCompleted.map((c) => String(c.id)));
+          const localOnly = local.filter((c) => !serverIds.has(String(c.id)));
+          return [...localOnly, ...serverCompleted];
+        });
+
+        // wishlist: 동일한 전략.
+        const serverWishlist = (data.wishlist || []).map(dbRowToWishlist);
+        setWishlist((local) => {
+          const serverIds = new Set(serverWishlist.map((c) => String(c.id)));
+          const localOnly = local.filter((c) => !serverIds.has(String(c.id)));
+          return [...localOnly, ...serverWishlist];
+        });
       } catch (e) { /* silent */ }
     };
     const handle = setInterval(tick, pollInterval);
