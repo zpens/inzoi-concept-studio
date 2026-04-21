@@ -1,8 +1,20 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.3";
+const APP_VERSION = "0.9.4";
 const CHANGELOG = [
+  {
+    version: "0.9.4",
+    date: "2026-04-21",
+    changes: [
+      "사내 PC 배포 지원 — Node + Hono + SQLite 단일 서버 추가 (server.js)",
+      "start.bat / start.sh 원클릭 실행 스크립트",
+      "data/ 폴더 기반 로컬 저장 (SQLite + 이미지 파일시스템)",
+      "scripts/backup.js 로 data/ 폴더 타임스탬프 백업",
+      "기존 Cloudflare 스택은 레거시로 유지 — 사내 운영자 PC 안정화 후 제거 예정",
+      "상세 배포 가이드: README-사내배포.md",
+    ],
+  },
   {
     version: "0.9.3",
     date: "2026-04-21",

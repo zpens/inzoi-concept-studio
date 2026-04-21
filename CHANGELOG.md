@@ -2,6 +2,25 @@
 
 inZOI Concept Studio 변경 이력. 최신 버전이 위쪽에 있습니다.
 
+## [0.9.4] — 2026-04-21
+
+### 사내 PC 배포 지원
+- **Node + Hono + SQLite 단일 서버 (`server.js`)** — Cloudflare Pages Functions 로직을 Node.js 로 포팅. Docker 없이 Node LTS 하나만 설치하면 실행.
+- **원클릭 실행** — Windows `start.bat`, macOS/Linux `start.sh`. 의존성 자동 설치 + 빌드 + 기동.
+- **로컬 저장** — `data/inzoi.db` (SQLite) + `data/images/` (이미지). 폴더 하나가 전체 상태.
+- **사내 IP 자동 감지** — 서버 기동 시 콘솔에 동료 접속용 URL 표시.
+- **백업 스크립트** — `npm run backup` 으로 `data/` 를 `backup/data-YYYYMMDD-HHMM/` 에 타임스탬프 복사. 외부 의존성 없음.
+- **배포 가이드** — [README-사내배포.md](./README-사내배포.md) 에 운영자 PC 세팅 단계, 방화벽, pm2 상주 방법, 문제 해결 등 문서화.
+
+### 아키텍처
+- 프론트엔드는 변경 없음 — 기존 `/api/projects/...` 엔드포인트를 같은 스펙으로 서빙.
+- 기존 Cloudflare 스택(`wrangler.jsonc`, `functions/`)은 레거시로 유지. 사내 운영자 PC 안정화 후 제거 예정.
+
+### 알려진 한계
+- 운영자 PC 가 꺼지면 서비스 중단. 절전 모드 비활성화 + pm2 상주 필요.
+- 동시 접속 ~20명 내외에서 안정. 그 이상이면 전용 서버 고려.
+- 이미지는 여전히 base64 dataURL 로 DB 에 저장 (SQLite 는 용량 제한 없음). 추후 `data/images/` 분리 업로드로 전환 예정.
+
 ## [0.9.3] — 2026-04-21
 
 ### 버그 수정
