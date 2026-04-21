@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.8";
+const APP_VERSION = "0.9.9";
 const CHANGELOG = [
+  {
+    version: "0.9.9",
+    date: "2026-04-21",
+    changes: [
+      "위시리스트 카드 클릭 시 상세 정보 모달 추가 — 큰 이미지/제목/메모/등록일시/삭제/다운로드",
+      "위시리스트 카드의 메모는 2줄까지만 표시(ellipsis), 클릭하면 전체 내용 확인",
+      "삭제 버튼은 카드/모달 양쪽에 제공",
+    ],
+  },
   {
     version: "0.9.8",
     date: "2026-04-21",
@@ -1447,6 +1456,7 @@ export default function InZOIConceptTool() {
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달
+  const [detailWish, setDetailWish] = useState(null);     // 위시리스트 상세 모달
   const [newItemId, setNewItemId] = useState(null);
 
   const [wishlist, setWishlist] = useState([]);
@@ -3579,11 +3589,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   {wishlist.map((item) => (
                     <div
                       key={item.id}
+                      onClick={() => setDetailWish(item)}
                       className="hover-lift glass-panel"
                       style={{
                         borderRadius: 18, overflow: "hidden",
                         border: "1px solid var(--surface-border)",
                         transition: "all 0.3s",
+                        cursor: "pointer",
                       }}
                     >
                       {item.imageUrl && (
@@ -3596,16 +3608,26 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       )}
                       <div style={{ padding: "16px 18px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-main)", marginBottom: 6 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: 15, fontWeight: 700, color: "var(--text-main)", marginBottom: 6,
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            }}>
                               {item.title}
                             </div>
                             {item.note && (
-                              <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>{item.note}</div>
+                              <div style={{
+                                fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6,
+                                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}>{item.note}</div>
                             )}
                           </div>
                           <button
-                            onClick={() => setWishlist(prev => prev.filter(w => w.id !== item.id))}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setWishlist(prev => prev.filter(w => w.id !== item.id));
+                            }}
                             style={{
                               width: 30, height: 30, borderRadius: 8, flexShrink: 0,
                               background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
@@ -3809,6 +3831,134 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </button>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
                 API 키는 브라우저 로컬 스토리지에만 저장되며 서버로 전송되지 않습니다.
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Wishlist Detail Modal */}
+      {detailWish && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setDetailWish(null)} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 720, maxWidth: "94vw", maxHeight: "92vh",
+            background: "rgba(255, 255, 255, 0.98)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid var(--surface-border)",
+            borderRadius: 20, zIndex: 202,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+            animation: "fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
+            <div style={{
+              padding: "16px 24px", borderBottom: "1px solid var(--surface-border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <span style={{ fontSize: 22 }}>⭐</span>
+                <div style={{
+                  fontSize: 18, fontWeight: 800, color: "var(--text-main)",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                }}>
+                  {detailWish.title}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                {detailWish.imageUrl && (
+                  <a
+                    href={detailWish.imageUrl}
+                    download={`wish_${String(detailWish.id)}.png`}
+                    style={{
+                      padding: "8px 14px", borderRadius: 10,
+                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                      color: "var(--text-muted)", fontSize: 13, fontWeight: 600,
+                      textDecoration: "none", display: "flex", alignItems: "center", gap: 6,
+                    }}
+                    title="이미지 로컬 저장"
+                  >📥 저장</a>
+                )}
+                <button
+                  onClick={() => {
+                    if (confirm("이 아이디어를 삭제하시겠어요?")) {
+                      setWishlist(prev => prev.filter(w => w.id !== detailWish.id));
+                      setDetailWish(null);
+                    }
+                  }}
+                  style={{
+                    padding: "8px 14px", borderRadius: 10,
+                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)",
+                    color: "#ef4444", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >삭제</button>
+                <button
+                  onClick={() => setDetailWish(null)}
+                  style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >✕</button>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflow: "auto" }}>
+              {detailWish.imageUrl ? (
+                <div style={{
+                  background: "rgba(0,0,0,0.04)", padding: 20,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  maxHeight: "52vh",
+                }}>
+                  <img
+                    src={detailWish.imageUrl}
+                    alt=""
+                    style={{
+                      maxWidth: "100%", maxHeight: "48vh", objectFit: "contain",
+                      borderRadius: 10, background: "#fff",
+                      boxShadow: "0 8px 30px rgba(0,0,0,0.15)",
+                    }}
+                  />
+                </div>
+              ) : detailWish.gradient ? (
+                <div style={{ height: 100, background: detailWish.gradient }} />
+              ) : null}
+
+              <div style={{ padding: "22px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.04em", marginBottom: 6 }}>
+                    메모
+                  </div>
+                  <div style={{
+                    fontSize: 14, color: "var(--text-lighter)", lineHeight: 1.8,
+                    padding: 14, borderRadius: 12,
+                    background: "rgba(0,0,0,0.03)", border: "1px solid var(--surface-border)",
+                    whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    minHeight: 60,
+                  }}>
+                    {detailWish.note || "(메모 없음)"}
+                  </div>
+                </div>
+
+                <div style={{
+                  display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14,
+                  fontSize: 12,
+                }}>
+                  <div>
+                    <div style={{ color: "var(--text-muted)", fontWeight: 600, marginBottom: 4 }}>ID</div>
+                    <code style={{ color: "var(--accent)", fontSize: 13, fontFamily: "monospace" }}>
+                      {String(detailWish.id)}
+                    </code>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--text-muted)", fontWeight: 600, marginBottom: 4 }}>등록일시</div>
+                    <div style={{ color: "var(--text-lighter)", fontSize: 13 }}>
+                      {new Date(detailWish.createdAt).toLocaleString("ko-KR")}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
