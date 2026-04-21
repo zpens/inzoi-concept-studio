@@ -285,7 +285,49 @@ app.post("/api/projects/:slug/activity", async (c) => {
   return c.json({ ok: true });
 });
 
-// 향후 업로드 이미지 서빙용 (지금은 프론트가 dataURL 유지 — R2 분리 시 활성화).
+// POST /api/upload — dataURL 을 받아 data/images/ 에 파일로 저장하고 URL 반환.
+// Gemini 시안, 컨셉시트 PNG, 위시 붙여넣기 이미지 모두 여기로 업로드해서
+// DB 의 2MB row 제한을 회피한다.
+app.post("/api/upload", async (c) => {
+  let body;
+  try { body = await c.req.json(); }
+  catch { return c.json({ error: "invalid json" }, 400); }
+
+  const dataUrl = body?.dataUrl;
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
+    return c.json({ error: "expected { dataUrl: 'data:*;base64,...' }" }, 400);
+  }
+
+  const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
+  if (!match) return c.json({ error: "malformed dataUrl" }, 400);
+
+  const mime = match[1];
+  const base64 = match[2];
+  const buffer = Buffer.from(base64, "base64");
+
+  // mime → 확장자 매핑 (단순 추출).
+  const extMap = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+  const ext = extMap[mime] || mime.split("/")[1] || "bin";
+  const id = randomUUID();
+  const filename = `${id}.${ext}`;
+  const filepath = path.join(IMAGES_DIR, filename);
+
+  try {
+    fs.writeFileSync(filepath, buffer);
+  } catch (err) {
+    console.error("image write failed", err);
+    return c.json({ error: "write failed" }, 500);
+  }
+
+  return c.json({
+    url: `/data/images/${filename}`,
+    filename,
+    mime,
+    size: buffer.length,
+  }, 201);
+});
+
+// 업로드된 이미지 스태틱 서빙.
 app.use("/data/images/*", serveStatic({ root: "./" }));
 
 // React 빌드 결과물 서빙. 매칭되지 않으면 SPA fallback 으로 index.html 반환.

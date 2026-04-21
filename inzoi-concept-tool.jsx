@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.9";
+const APP_VERSION = "0.9.10";
 const CHANGELOG = [
+  {
+    version: "0.9.10",
+    date: "2026-04-21",
+    changes: [
+      "[중대] 이미지 저장소를 파일시스템으로 분리 — /api/upload → data/images/{uuid}.png",
+      "Gemini 시안, 컨셉시트 PNG, 위시 첨부 이미지 모두 서버 파일로 저장 후 URL 만 DB 에 보관",
+      "위시리스트 추가 시 await POST 로 즉시 동기 저장 (새로고침 안전)",
+      "위시리스트 폼 버튼이 이미지 업로드 완료까지 기다린 후 완료 처리",
+      "[버그 수정] DB 2MB row 제한 때문에 이미지가 null 저장되던 문제 근본 해결",
+    ],
+  },
   {
     version: "0.9.9",
     date: "2026-04-21",
@@ -1087,23 +1098,19 @@ function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
-// D1 의 row 크기 제한(약 2MB) 을 초과할 수 있는 거대한 base64 dataURL 을
-// 조용히 null 로 만들어 INSERT/UPDATE 실패를 방지한다. R2 마이그레이션
-// 전까지의 임시 조치. 로컬(브라우저 메모리)에는 원본이 남아있어 현재
-// 세션에서는 그대로 보인다.
-const DB_MAX_DATA_URL = 800_000; // 약 800KB (base64 기준)
+// 이제 Gemini 이미지, 컨셉시트, 위시 이미지는 모두 /api/upload 를 거쳐
+// /data/images/{uuid}.png 형식의 URL 만 DB 에 저장되므로 행 크기 걱정 없음.
+// dataURL 이 여전히 들어온 경우(업로드 실패 fallback) 만 잘라서 DB 폭주 방지.
+const DB_MAX_DATA_URL = 800_000;
 function trimForDb(s, label) {
   if (!s || typeof s !== "string") return s ?? null;
-  if (s.length > DB_MAX_DATA_URL) {
-    if (typeof console !== "undefined") {
-      console.warn(`[D1] ${label} 크기 ${(s.length / 1024).toFixed(0)}KB 가 2MB 제한 근처 — 서버 저장 생략 (세션 내에서는 그대로 표시됨)`);
-    }
+  if (s.startsWith("data:") && s.length > DB_MAX_DATA_URL) {
+    console.warn(`[D1] ${label} 가 아직 dataURL 상태 (${(s.length / 1024).toFixed(0)}KB) — 업로드 실패로 판단, DB 에서 생략`);
     return null;
   }
   return s;
 }
 
-// designs 배열 내부의 imageUrl 도 개별적으로 가드한다.
 function trimDesigns(designs) {
   if (!Array.isArray(designs)) return designs;
   return designs.map((d) => ({
@@ -1238,6 +1245,26 @@ function getSlugFromUrl() {
   if (typeof location === "undefined") return null;
   const m = location.pathname.match(/^\/p\/([A-Za-z0-9]+)/);
   return m ? m[1] : null;
+}
+
+// dataURL 을 서버에 업로드하고 /data/images/... URL 을 반환.
+// 이미 URL 이거나 업로드 실패 시 원본 반환 (fallback 으로 dataURL 유지).
+async function uploadDataUrl(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== "string") return dataUrl;
+  if (!dataUrl.startsWith("data:")) return dataUrl; // 이미 URL
+  try {
+    const r = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (!r.ok) throw new Error(`upload ${r.status}`);
+    const data = await r.json();
+    return data.url || dataUrl;
+  } catch (e) {
+    console.warn("이미지 업로드 실패, dataURL 로 대체:", e.message);
+    return dataUrl;
+  }
 }
 
 // Each in-flight concept generation is a "job". The app keeps an array of
@@ -1848,7 +1875,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       const tasks = seeds.map((s) => async () => {
         try {
           const url = await generateImageWithGemini(geminiApiKey, enhanced, selectedModel);
-          return { seed: s, imageUrl: url };
+          // 서버 /data/images/ 로 업로드해서 URL 만 DB 에 저장. 용량 제한 회피.
+          const stored = await uploadDataUrl(url);
+          return { seed: s, imageUrl: stored };
         } catch (imgErr) {
           console.error("Image generation failed:", imgErr);
           return { seed: s, imageUrl: null, error: imgErr.message };
@@ -1948,7 +1977,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         colors: design.colors,
         model: selectedModel,
       });
-      sheetDataUrl = canvasRef.current.toDataURL("image/png");
+      const raw = canvasRef.current.toDataURL("image/png");
+      // 대용량 PNG (2400x3200, 수 MB) 을 서버 파일로 업로드.
+      updateJob(jobId, { loadingMsg: "서버에 컨셉시트 업로드 중..." });
+      sheetDataUrl = await uploadDataUrl(raw);
     }
 
     updateJob(jobId, { conceptSheet: sheetDataUrl, loadingProgress: 100, loadingMsg: "컨셉시트 완성!" });
@@ -3536,7 +3568,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   )}
                 </div>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!wishTitle.trim()) return;
                     const gradients = [
                       "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
@@ -3544,14 +3576,32 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
                       "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
                     ];
-                    setWishlist(prev => [{
+                    // 이미지가 dataURL 이면 먼저 서버에 업로드해서 URL 로 변환.
+                    const uploadedUrl = await uploadDataUrl(wishImage);
+                    const item = {
                       id: Date.now(),
                       title: wishTitle.trim(),
                       note: wishNote.trim(),
-                      imageUrl: wishImage,
+                      imageUrl: uploadedUrl,
                       gradient: gradients[Math.floor(Math.random() * gradients.length)],
                       createdAt: new Date().toISOString(),
-                    }, ...prev]);
+                    };
+                    // 새로고침에도 남도록 즉시 서버 저장 (await).
+                    if (projectSlug) {
+                      try {
+                        const r = await fetch(`/api/projects/${projectSlug}/wishlist`, {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify(wishlistToDbPayload(item)),
+                        });
+                        if (!r.ok) throw new Error(`${r.status}`);
+                      } catch (e) {
+                        alert("위시리스트 저장 실패: " + e.message);
+                        return;
+                      }
+                    }
+                    setWishlist(prev => [item, ...prev]);
+                    prevWishlistRef.current = [item, ...prevWishlistRef.current];
                     setWishTitle("");
                     setWishNote("");
                     setWishImage(null);
@@ -4569,7 +4619,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   )}
                 </div>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!wishTitle.trim()) return;
                     const gradients = [
                       "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
@@ -4577,14 +4627,32 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
                       "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
                     ];
-                    setWishlist(prev => [{
+                    // 이미지가 dataURL 이면 먼저 서버에 업로드해서 URL 로 변환.
+                    const uploadedUrl = await uploadDataUrl(wishImage);
+                    const item = {
                       id: Date.now(),
                       title: wishTitle.trim(),
                       note: wishNote.trim(),
-                      imageUrl: wishImage,
+                      imageUrl: uploadedUrl,
                       gradient: gradients[Math.floor(Math.random() * gradients.length)],
                       createdAt: new Date().toISOString(),
-                    }, ...prev]);
+                    };
+                    // 새로고침에도 남도록 즉시 서버 저장 (await).
+                    if (projectSlug) {
+                      try {
+                        const r = await fetch(`/api/projects/${projectSlug}/wishlist`, {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify(wishlistToDbPayload(item)),
+                        });
+                        if (!r.ok) throw new Error(`${r.status}`);
+                      } catch (e) {
+                        alert("위시리스트 저장 실패: " + e.message);
+                        return;
+                      }
+                    }
+                    setWishlist(prev => [item, ...prev]);
+                    prevWishlistRef.current = [item, ...prevWishlistRef.current];
                     setWishTitle("");
                     setWishNote("");
                     setWishImage(null);
