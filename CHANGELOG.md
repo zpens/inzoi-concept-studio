@@ -2,6 +2,19 @@
 
 inZOI Concept Studio 변경 이력. 최신 버전이 위쪽에 있습니다.
 
+## [0.9.8] — 2026-04-21
+
+### 버그 수정 — 새로고침 시 완료 목록 유실
+**증상**: 파이프라인 전송 완료 버튼을 누른 직후 새로고침하면 방금 추가한 항목이 사라짐.
+
+**원인**: `setCompletedList` 후 500ms debounce 가 서버 POST 를 예약하는데, 그 사이 새로고침이 일어나면 POST 가 발사되기 전에 페이지가 종료 → 서버에 저장 안 됨 → 재로드 시 서버의 (추가 전) 빈 목록으로 덮어씀.
+
+**수정**:
+- **파이프라인 전송 완료** 버튼이 서버에 **즉시 동기 POST** (`await`) 후 로컬 반영. 저장 실패 시 알림 + 중단.
+- 로컬 반영과 동시에 `prevCompletedRef` 에도 등록해서 debounce effect 가 중복 POST 하지 않도록.
+- `beforeunload` / `pagehide` 이벤트 리스너 추가 — 아직 debounce 대기 중이던 완료/위시리스트 신규 항목을 `navigator.sendBeacon` 으로 긴급 전송. 브라우저가 페이지를 닫거나 새로고침할 때도 안전하게 보장.
+- 앱 시작 시 서버 스냅샷으로 `prevJobsRef` / `prevCompletedRef` / `prevWishlistRef` 를 선제 초기화 → 첫 debounce effect 가 서버 데이터를 "새로 추가됐다"고 오인해 중복 POST 하지 않도록.
+
 ## [0.9.7] — 2026-04-21
 
 ### 상단 메뉴 5단계 재편

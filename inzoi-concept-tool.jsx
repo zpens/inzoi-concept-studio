@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.7";
+const APP_VERSION = "0.9.8";
 const CHANGELOG = [
+  {
+    version: "0.9.8",
+    date: "2026-04-21",
+    changes: [
+      "[버그 수정] 파이프라인 전송 완료 직후 새로고침하면 완료 목록에서 사라지던 문제 해결",
+      "파이프라인 전송 시 즉시 서버에 저장 (await) 후 로컬 반영 — 500ms debounce 대기 없이 확정",
+      "beforeunload/pagehide 이벤트에서 sendBeacon 으로 보류 중인 변경사항 긴급 전송",
+      "앱 시작 시 서버 스냅샷으로 prev refs 초기화 — 불필요한 중복 POST 방지",
+    ],
+  },
   {
     version: "0.9.7",
     date: "2026-04-21",
@@ -1544,12 +1554,21 @@ export default function InZOIConceptTool() {
         const data = await r.json();
         if (cancelled) return;
         const serverJobs = (data.jobs || []).map(dbRowToJob);
+        const serverCompleted = (data.completed || []).map(dbRowToCompleted);
+        const serverWishlist  = (data.wishlist  || []).map(dbRowToWishlist);
+
+        // prev ref 를 먼저 서버 스냅샷으로 채워서, 이후 setState 로 트리거되는
+        // sync effect 가 "새로 추가됐다" 고 오인해 중복 POST 를 하지 않게 한다.
+        prevJobsRef.current      = serverJobs;
+        prevCompletedRef.current = serverCompleted;
+        prevWishlistRef.current  = serverWishlist;
+
         if (serverJobs.length > 0) {
           setJobs(serverJobs);
           setActiveJobId(serverJobs[0].id);
         }
-        setCompletedList((data.completed || []).map(dbRowToCompleted));
-        setWishlist((data.wishlist || []).map(dbRowToWishlist));
+        setCompletedList(serverCompleted);
+        setWishlist(serverWishlist);
       } catch (err) {
         console.warn("스냅샷 로드 실패 — 기본 상태로 시작", err);
       } finally {
@@ -1640,6 +1659,39 @@ export default function InZOIConceptTool() {
     }, 500);
     return () => clearTimeout(timer);
   }, [wishlist, projectSlug, projectReady]);
+
+  // 페이지를 떠날 때 (새로고침/탭 닫기) debounce 타이머가 아직 발사되지 않은
+  // 변경사항이 있으면 sendBeacon 으로 서버에 긴급 전송한다. 사용자가 완료 항목
+  // 추가 직후 즉시 F5 눌러도 데이터가 사라지지 않도록 하기 위함.
+  useEffect(() => {
+    if (!projectSlug || !projectReady) return;
+    const flush = () => {
+      try {
+        const prevC = prevCompletedRef.current;
+        const addedC = completedList.filter((c) => !prevC.find((p) => String(p.id) === String(c.id)));
+        for (const c of addedC) {
+          navigator.sendBeacon?.(
+            `/api/projects/${projectSlug}/completed`,
+            new Blob([JSON.stringify(completedToDbPayload(c))], { type: "application/json" })
+          );
+        }
+        const prevW = prevWishlistRef.current;
+        const addedW = wishlist.filter((w) => !prevW.find((p) => String(p.id) === String(w.id)));
+        for (const w of addedW) {
+          navigator.sendBeacon?.(
+            `/api/projects/${projectSlug}/wishlist`,
+            new Blob([JSON.stringify(wishlistToDbPayload(w))], { type: "application/json" })
+          );
+        }
+      } catch (e) { /* best-effort */ }
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, [completedList, wishlist, projectSlug, projectReady]);
 
   // 5초마다 서버 스냅샷을 가져와 자신이 편집 중이 아닌 리소스를 갱신 (협업).
   // 주의: 로컬에 갓 추가됐지만 아직 서버 저장이 완료되지 않은 항목은 유지해야
@@ -3162,7 +3214,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
                   {step === 5 && (
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === category);
                         const styleInfo = STYLE_PRESETS.find((s) => s.id === stylePreset);
                         const design = designs[selectedDesign] || {};
@@ -3184,7 +3236,27 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           winner: `시안 ${(selectedDesign || 0) + 1}`,
                         };
                         const finishedJobId = activeJobId;
+
+                        // 1) 즉시 서버에 동기 저장. 새로고침해도 남도록 await.
+                        if (projectSlug) {
+                          try {
+                            const r = await fetch(`/api/projects/${projectSlug}/completed`, {
+                              method: "POST",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify(completedToDbPayload(newItem)),
+                            });
+                            if (!r.ok) console.warn("완료 아이템 서버 저장 실패:", r.status);
+                          } catch (e) {
+                            console.warn("완료 아이템 서버 저장 실패:", e);
+                            alert("완료 아이템을 서버에 저장하지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.");
+                            return;
+                          }
+                        }
+
+                        // 2) 서버 저장 확정 후 로컬 반영
                         setCompletedList((prev) => [newItem, ...prev]);
+                        // prev ref 에도 등록해서 debounce effect 가 중복 POST 하지 않도록.
+                        prevCompletedRef.current = [newItem, ...prevCompletedRef.current];
                         setNewItemId(newId);
                         setStep(6);
                         setTimeout(() => {
