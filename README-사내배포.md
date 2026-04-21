@@ -8,6 +8,51 @@
 
 ---
 
+## 🚀 한 줄 자동 설치 (관리자 PowerShell 에서)
+
+Node / Git 이 없어도 자동으로 설치됩니다. Windows 10/11 기준:
+
+```powershell
+iwr https://raw.githubusercontent.com/zpens/inzoi-concept-studio/main/bootstrap.ps1 | iex
+```
+
+이 한 줄이 다음을 모두 처리합니다:
+1. Git, Node.js LTS 설치 (winget 이용, 없을 때만)
+2. `C:\inzoi-concept-studio` 로 코드 clone
+3. `npm install` + `npm run build`
+4. Windows 방화벽 규칙 추가 (포트 3000)
+5. 절전 모드 비활성화 (AC 전원)
+6. pm2 상주 등록 + 부팅 시 자동 시작
+7. 매일 오후 6:30 자동 백업 작업 스케줄러 등록
+8. 서버 기동 + 접속 URL 콘솔 출력
+
+다른 포트로 설치하려면:
+```powershell
+iwr https://raw.githubusercontent.com/zpens/inzoi-concept-studio/main/bootstrap.ps1 -OutFile $env:TEMP\boot.ps1; & $env:TEMP\boot.ps1 -Port 8082
+```
+
+### 이미 코드를 받아둔 경우
+프로젝트 폴더 안에서 `install.bat` **더블 클릭** → UAC 승인 → 끝.
+
+### 업데이트 (개발자가 새 버전 배포한 후)
+`update.bat` **더블 클릭** 또는:
+```powershell
+.\update.bat
+```
+→ git pull + npm install + build + pm2 restart 자동.
+
+### 완전 제거 (데이터는 보존)
+```powershell
+.\uninstall.ps1
+```
+데이터까지 삭제: `.\uninstall.ps1 -PurgeData`
+
+---
+
+## 📝 수동 설치 (자동 설치가 실패하는 경우에만)
+
+---
+
 ## 1. 운영자 PC 요구사항
 
 | 항목 | 권장 | 최소 |

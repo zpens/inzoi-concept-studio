@@ -1,8 +1,18 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "0.9.4";
+const APP_VERSION = "0.9.5";
 const CHANGELOG = [
+  {
+    version: "0.9.5",
+    date: "2026-04-21",
+    changes: [
+      "원클릭 자동 설치 스크립트 추가 — install.ps1 / install.bat / bootstrap.ps1",
+      "관리자 PowerShell 한 줄로 Node/Git 설치 + clone + build + 방화벽 + pm2 + 백업 스케줄러 전부 자동화",
+      "update.bat: GitHub 최신 코드 pull + 재빌드 + pm2 재시작 원클릭",
+      "uninstall.ps1: pm2/방화벽/백업 작업 등록 해제 (데이터 보존)",
+    ],
+  },
   {
     version: "0.9.4",
     date: "2026-04-21",

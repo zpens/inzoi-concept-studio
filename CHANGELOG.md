@@ -2,6 +2,19 @@
 
 inZOI Concept Studio 변경 이력. 최신 버전이 위쪽에 있습니다.
 
+## [0.9.5] — 2026-04-21
+
+### 자동 설치 스크립트
+- **`bootstrap.ps1`** — 원격 한 줄 설치. 관리자 PowerShell 에서 `iwr .../bootstrap.ps1 | iex` 하면 Git/Node 설치부터 clone, 빌드, 방화벽, pm2 상주, 자동 백업 스케줄러까지 일괄 처리.
+- **`install.ps1`** — 프로젝트 루트에서 실행하는 자동 설치 본체. 이미 코드를 받아둔 경우 이걸 바로 실행. 7단계로 색상 로그 출력.
+- **`install.bat`** — 더블 클릭 시 UAC 승격 후 `install.ps1` 호출.
+- **`update.bat`** — 더블 클릭 원클릭 업데이트. `git pull` + `npm install` + `build` + `pm2 restart`.
+- **`uninstall.ps1`** — pm2 프로세스, 방화벽 규칙, 백업 작업 스케줄러를 일괄 해제. 기본은 data/ 보존, `-PurgeData` 플래그로 완전 삭제 가능.
+- 실패 시 명확한 색상 로그와 복구 안내. 멱등성(이미 설치된 부분은 자동 skip) 보장.
+
+### 문서
+- README-사내배포.md 상단에 "🚀 한 줄 자동 설치" 섹션 추가. 기존 수동 설치는 fallback 으로 아래로 이동.
+
 ## [0.9.4] — 2026-04-21
 
 ### 사내 PC 배포 지원
