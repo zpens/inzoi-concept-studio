@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.6";
+const APP_VERSION = "1.6.7";
 const CHANGELOG = [
+  {
+    version: "1.6.7",
+    date: "2026-04-22",
+    changes: [
+      "리스트 뷰 행 높이 약 1.5배 확대 — 썸네일 60→90px, 패딩 10→15px, 제목/메타 폰트 조금 키움",
+    ],
+  },
   {
     version: "1.6.6",
     date: "2026-04-22",
@@ -2712,45 +2719,45 @@ function CardListRow({ card, tabId, onClick }) {
       className="hover-lift"
       style={{
         display: "grid",
-        gridTemplateColumns: "60px 1fr 160px 110px 100px",
-        gap: 14, alignItems: "center",
-        padding: "10px 14px", borderRadius: 10,
+        gridTemplateColumns: "90px 1fr 180px 120px 110px",
+        gap: 18, alignItems: "center",
+        padding: "15px 18px", borderRadius: 12,
         border: "1px solid var(--surface-border)",
         background: "var(--surface-color)",
         cursor: "pointer", transition: "all 0.15s",
       }}
     >
       <div style={{
-        width: 60, height: 60, borderRadius: 8, overflow: "hidden",
+        width: 90, height: 90, borderRadius: 10, overflow: "hidden",
         background: thumb ? "#000" : "rgba(0,0,0,0.05)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {thumb ? (
           <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <span style={{ fontSize: 24, opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
+          <span style={{ fontSize: 36, opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
       </div>
       <div style={{ minWidth: 0 }}>
         <div style={{
-          fontSize: 14, fontWeight: 700, color: "var(--text-main)",
+          fontSize: 15, fontWeight: 700, color: "var(--text-main)",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
           {catInfo?.icon || ""} {card.title || "(제목 없음)"}
         </div>
         {(card.description || styleInfo) && (
           <div style={{
-            fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4, marginTop: 2,
+            fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           }}>
             {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || ""}
           </div>
         )}
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+      <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
         {catInfo ? `${catInfo.label} · ${catInfo.room}` : "— 카테고리 없음 —"}
       </div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
         {tabId === "vote" && `시안 ${designs.length}개`}
         {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
           <span style={{ color: "#22c55e", fontWeight: 600 }}>✓ 시트</span>
@@ -2758,7 +2765,7 @@ function CardListRow({ card, tabId, onClick }) {
         {tabId === "create" && designs.length > 0 && `시안 ${designs.length}개`}
         {tabId === "wishlist" && ""}
       </div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "right" }}>
         {date ? date.slice(0, 10) : "-"}
       </div>
     </div>
@@ -2771,9 +2778,9 @@ function CardListHeader({ tabId }) {
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "60px 1fr 160px 110px 100px",
-      gap: 14, alignItems: "center",
-      padding: "6px 14px",
+      gridTemplateColumns: "90px 1fr 180px 120px 110px",
+      gap: 18, alignItems: "center",
+      padding: "6px 18px",
     }}>
       <div />
       <div style={cell}>제목</div>
