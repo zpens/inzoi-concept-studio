@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.8";
+const APP_VERSION = "1.5.9";
 const CHANGELOG = [
+  {
+    version: "1.5.9",
+    date: "2026-04-22",
+    changes: [
+      "위시리스트 / 완료목록 카드 그리드를 CardHubCard 양식으로 통일 — 시안 생성 / 투표 / 컨셉시트 생성 탭과 동일한 UI",
+      "메인 카드 그리드에 정렬 드롭다운 추가 (최신순 / 오래된순 / 이름 A→Z / 이름 Z→A)",
+      "CardHubCard 가 tabId='wishlist' 와 'completed' 도 인식해 썸네일/메타 표시",
+    ],
+  },
   {
     version: "1.5.8",
     date: "2026-04-22",
@@ -2294,6 +2303,43 @@ function WishlistToDraftingAction({ card, onMoveTo }) {
 
 // 카드 제목 인라인 에디터. 클릭(또는 포커스)하면 input 로 전환,
 // blur / Enter 로 저장, ESC 로 취소.
+// 카드 배열 정렬 헬퍼. sortBy 가 "date_desc" | "date_asc" | "title_asc" | "title_desc".
+// dateKey/titleKey 로 각 리스트의 필드 이름을 받는다.
+function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") {
+  const cpy = arr.slice();
+  if (sortBy === "date_asc") {
+    cpy.sort((a, b) => (a[dateKey] || "").localeCompare(b[dateKey] || ""));
+  } else if (sortBy === "title_asc") {
+    cpy.sort((a, b) => (a[titleKey] || "").localeCompare(b[titleKey] || "", "ko"));
+  } else if (sortBy === "title_desc") {
+    cpy.sort((a, b) => (b[titleKey] || "").localeCompare(a[titleKey] || "", "ko"));
+  } else {
+    cpy.sort((a, b) => (b[dateKey] || "").localeCompare(a[dateKey] || ""));
+  }
+  return cpy;
+}
+
+// 정렬 드롭다운 — 메인 그리드 상단에 공통 배치.
+function SortSelect({ value, onChange }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      title="정렬 방식"
+      style={{
+        padding: "6px 10px", borderRadius: 8,
+        border: "1px solid var(--surface-border)", background: "#fff",
+        color: "var(--text-main)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+      }}
+    >
+      <option value="date_desc">📅 최신순</option>
+      <option value="date_asc">📅 오래된순</option>
+      <option value="title_asc">🔤 이름 A→Z</option>
+      <option value="title_desc">🔤 이름 Z→A</option>
+    </select>
+  );
+}
+
 function CardTitleEditor({ card, projectSlug, actor, disabled, onSaved }) {
   const [editing, setEditing] = React.useState(false);
   const [value, setValue] = React.useState(card.title || "");
@@ -2474,8 +2520,10 @@ function CardHubCard({ card, tabId, onClick }) {
 
   // 탭별 썸네일 선택 로직
   let thumb = card.thumbnail_url;
-  if (tabId === "sheet") {
+  if (tabId === "sheet" || tabId === "completed") {
     thumb = data.concept_sheet_url || selected?.imageUrl || card.thumbnail_url;
+  } else if (tabId === "wishlist") {
+    thumb = card.thumbnail_url;
   } else {
     thumb = designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
   }
@@ -2534,9 +2582,19 @@ function CardHubCard({ card, tabId, onClick }) {
         }}>
           {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || "(설명 없음)"}
         </div>
-        {tabId === "sheet" && data.concept_sheet_url && (
+        {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
           <div style={{ marginTop: 8, fontSize: 11, color: "#22c55e", fontWeight: 600 }}>
             ✓ 컨셉시트 생성됨
+          </div>
+        )}
+        {tabId === "completed" && card.confirmed_at && (
+          <div style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+            완료 {card.confirmed_at.slice(0, 10)}
+          </div>
+        )}
+        {tabId === "wishlist" && (
+          <div style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+            추가 {card.created_at?.slice(0, 10) || "-"}
           </div>
         )}
         {tabId === "vote" && (
@@ -2788,6 +2846,7 @@ export default function InZOIConceptTool() {
   // setCompletedList(...) 호출부는 전부 cards API 로 이관됨.
   const setCompletedList = () => { /* deprecated: cards 가 SOT */ };
   const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
+  const [sortBy, setSortBy] = useState("date_desc"); // "date_desc" | "date_asc" | "title_asc" | "title_desc"
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달
@@ -3778,18 +3837,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     : tabMeta.desc}
                 </p>
               </div>
-              {activeTab === "create" && (
-                <button
-                  onClick={spawnNewJob}
-                  className="btn-primary hover-lift"
-                  style={{
-                    padding: "12px 22px", borderRadius: 12, border: "none",
-                    color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                    display: "flex", alignItems: "center", gap: 6,
-                    boxShadow: "0 4px 14px var(--primary-glow)",
-                  }}
-                >＋ 새 시안</button>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <SortSelect value={sortBy} onChange={setSortBy} />
+                {activeTab === "create" && (
+                  <button
+                    onClick={spawnNewJob}
+                    className="btn-primary hover-lift"
+                    style={{
+                      padding: "12px 22px", borderRadius: 12, border: "none",
+                      color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6,
+                      boxShadow: "0 4px 14px var(--primary-glow)",
+                    }}
+                  >＋ 새 시안</button>
+                )}
+              </div>
             </div>
 
             {totalCount > 0 ? (
@@ -3799,8 +3861,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 gap: 16,
                 marginBottom: 40,
               }}>
-                {/* 새 카드 시스템의 카드들 — 위시에서 넘어온 것 포함 */}
-                {inRangeCards.map((c) => (
+                {/* 새 카드 시스템의 카드들 — 위시에서 넘어온 것 포함. 정렬 sortBy 적용 */}
+                {sortCardArray(inRangeCards, sortBy).map((c) => (
                   <CardHubCard
                     key={`card-${c.id}`}
                     card={c}
@@ -5110,18 +5172,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>완료된 컨셉시트</h2>
               <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 에셋 컨셉시트가 완성됐습니다.</p>
             </div>
-            <button
-              onClick={() => setActiveTab("create")}
-              className="btn-primary hover-lift"
-              style={{
-                padding: "12px 24px", borderRadius: 14, border: "none",
-                color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                boxShadow: "0 4px 20px var(--primary-glow)",
-                display: "flex", alignItems: "center", gap: 8,
-              }}
-            >
-              <span>✨</span> 새 시안 생성
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <SortSelect value={sortBy} onChange={setSortBy} />
+              <button
+                onClick={() => setActiveTab("create")}
+                className="btn-primary hover-lift"
+                style={{
+                  padding: "12px 24px", borderRadius: 14, border: "none",
+                  color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                  boxShadow: "0 4px 20px var(--primary-glow)",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}
+              >
+                <span>✨</span> 새 시안 생성
+              </button>
+            </div>
           </div>
 
           {completedList.length === 0 ? (
@@ -5136,100 +5201,25 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </button>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 28 }}>
-              {completedList.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={async () => {
-                    // 새 cards 테이블 먼저 시도. item._cardId 로 실제 카드 id 사용
-                    // (comp- 접두사 중복 이슈 방지). 없으면 예전 모달로 폴백.
-                    if (projectSlug) {
-                      const cardId = item._cardId || `comp-${item.id}`;
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+              {sortCardArray(completedList, sortBy, "completedAt", "categoryLabel").map((item) => {
+                const card = cards.find((c) => c.id === item._cardId);
+                if (!card) return null;
+                return (
+                  <CardHubCard
+                    key={item._cardId}
+                    card={card}
+                    tabId="completed"
+                    onClick={async () => {
+                      if (!projectSlug) return;
                       try {
-                        const detail = await fetchCardDetail(projectSlug, cardId);
-                        if (detail) { setDetailCard(detail); return; }
-                      } catch {}
-                    }
-                    setDetailItem(item);
-                  }}
-                  className="hover-lift glass-panel"
-                  style={{
-                    borderRadius: 20, overflow: "hidden",
-                    border: "1px solid var(--surface-border)",
-                    cursor: "pointer", transition: "all 0.3s",
-                    background: "var(--surface-color)",
-                    position: "relative",
-                  }}
-                >
-                  {newItemId === item.id && (
-                    <span style={{
-                      position: "absolute", top: 14, right: 14, zIndex: 2,
-                      background: "linear-gradient(135deg, #98a6ff, #076ee8)",
-                      color: "#fff", fontSize: 10, fontWeight: 800,
-                      padding: "3px 10px", borderRadius: 8, letterSpacing: "0.05em",
-                      animation: "badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                    }}>NEW</span>
-                  )}
-                  {/* Thumbnail */}
-                  <div style={{
-                    width: "100%", height: 200, position: "relative",
-                    background: item.gradient || "linear-gradient(135deg, #1a1a2e, #2d1b4e)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    {item.imageUrl || item.conceptSheetUrl ? (
-                      <img src={item.conceptSheetUrl || item.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <span style={{ fontSize: 64, opacity: 0.5 }}>{item.categoryIcon}</span>
-                    )}
-                    <div style={{
-                      position: "absolute", bottom: 0, left: 0, right: 0,
-                      padding: "40px 16px 12px",
-                      background: "linear-gradient(transparent, rgba(0,0,0,0.65))",
-                    }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>
-                        {item.categoryIcon} {item.categoryLabel}
-                        <span style={{ fontSize: 12, fontWeight: 400, color: "rgba(255,255,255,0.6)", marginLeft: 8 }}>{item.style}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Card Body */}
-                  <div style={{ padding: "16px 18px" }}>
-                    {/* Asset code + status */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      {item.assetCode && (
-                        <code style={{ fontSize: 11, color: "var(--primary)", fontWeight: 700, letterSpacing: "0.04em", background: "rgba(7,110,232,0.07)", padding: "2px 8px", borderRadius: 6 }}>
-                          {item.assetCode}
-                        </code>
-                      )}
-                      {item.pipelineStatus && (() => {
-                        const statusColor = item.pipelineStatus.includes("완료") ? "#22c55e"
-                          : item.pipelineStatus.includes("진행") ? "#f59e0b"
-                          : item.pipelineStatus.includes("대기") ? "#94a3b8"
-                          : "var(--text-muted)";
-                        return (
-                          <span style={{ fontSize: 11, color: statusColor, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, display: "inline-block" }} />
-                            {item.pipelineStatus}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                        {item.winner} 선정 · {item.voters}명 투표{item.designer && ` · ${item.designer}`}
-                      </div>
-                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {new Date(item.completedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {item.colors.map((c, ci) => (
-                        <div key={ci} style={{ flex: 1, height: 20, borderRadius: 5, background: c, border: "1px solid rgba(0,0,0,0.06)" }} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                        const detail = await fetchCardDetail(projectSlug, card.id);
+                        if (detail) setDetailCard(detail);
+                      } catch { /* 무시 */ }
+                    }}
+                  />
+                );
+              })}
             </div>
           )}
         </main>
@@ -5400,6 +5390,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <div style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>
                   {wishlist.length}개의 아이디어
                 </div>
+                <SortSelect value={sortBy} onChange={setSortBy} />
               </div>
 
               {wishlist.length === 0 ? (
@@ -5408,82 +5399,25 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <div style={{ fontSize: 16, fontWeight: 500 }}>만들고 싶은 가구 아이디어를 왼쪽 폼에서 추가해보세요</div>
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20 }}>
-                  {wishlist.map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={async () => {
-                        if (projectSlug) {
-                          const cardId = item._cardId || `wish-${item.id}`;
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+                  {sortCardArray(wishlist, sortBy, "createdAt", "title").map((item) => {
+                    const card = cards.find((c) => c.id === item._cardId);
+                    if (!card) return null;
+                    return (
+                      <CardHubCard
+                        key={item._cardId}
+                        card={card}
+                        tabId="wishlist"
+                        onClick={async () => {
+                          if (!projectSlug) return;
                           try {
-                            const detail = await fetchCardDetail(projectSlug, cardId);
-                            if (detail) { setDetailCard(detail); return; }
-                          } catch {}
-                        }
-                        setDetailWish(item);
-                      }}
-                      className="hover-lift glass-panel"
-                      style={{
-                        borderRadius: 18, overflow: "hidden",
-                        border: "1px solid var(--surface-border)",
-                        transition: "all 0.3s",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {item.imageUrl && (
-                        <div style={{ width: "100%", height: 160, overflow: "hidden" }}>
-                          <img src={item.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        </div>
-                      )}
-                      {!item.imageUrl && (
-                        <div style={{ width: "100%", height: 80, background: item.gradient }} />
-                      )}
-                      <div style={{ padding: "16px 18px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{
-                              fontSize: 15, fontWeight: 700, color: "var(--text-main)", marginBottom: 6,
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                            }}>
-                              {item.title}
-                            </div>
-                            {item.note && (
-                              <div style={{
-                                fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6,
-                                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                              }}>{item.note}</div>
-                            )}
-                          </div>
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              // cards 테이블에서 삭제 → derived wishlist 자동 반영.
-                              if (projectSlug) {
-                                const cardId = item._cardId || `wish-${item.id}`;
-                                try {
-                                  await fetch(`/api/projects/${projectSlug}/cards/${cardId}`, { method: "DELETE" });
-                                  setCards((prev) => prev.filter((c) => c.id !== cardId));
-                                } catch (err) { console.warn("삭제 실패:", err); }
-                              }
-                            }}
-                            style={{
-                              width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                              color: "var(--text-muted)", fontSize: 13, cursor: "pointer",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              transition: "all 0.2s",
-                            }}
-                            onMouseOver={e => { e.currentTarget.style.background = "rgba(239,68,68,0.12)"; e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)"; }}
-                            onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--surface-border)"; }}
-                          >✕</button>
-                        </div>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10 }}>
-                          {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                            const detail = await fetchCardDetail(projectSlug, card.id);
+                            if (detail) setDetailCard(detail);
+                          } catch { /* 무시 */ }
+                        }}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
