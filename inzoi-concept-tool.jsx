@@ -2487,42 +2487,7 @@ export default function InZOIConceptTool() {
     conceptSheet, multiViewImages,
   } = activeJob;
 
-  // Spawn a new blank job and focus it. 상세 UI 도 자동으로 전개.
-  // [v1.4.4] '＋ 새 시안' 은 이제 새 card 를 drafting 상태로 생성하고
-  // 카드 상세 모달을 바로 열어 어셋 정보 인라인 편집으로 유도한다.
-  // projectSlug 미설정 시에만 레거시 job 경로로 폴백.
-  const spawnNewJob = useCallback(async () => {
-    if (!projectSlug) {
-      const nj = createBlankJob(Date.now());
-      setJobs((prev) => [...prev, nj]);
-      setActiveJobId(nj.id);
-      setShowWorkflowDetail(true);
-      return nj.id;
-    }
-    const cardId = `card-${Date.now()}`;
-    try {
-      const r = await fetch(`/api/projects/${projectSlug}/cards`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: cardId,
-          title: "새 작업",
-          status_key: "drafting",
-          data: {},
-          actor: actorName || null,
-        }),
-      });
-      if (!r.ok) throw new Error(`${r.status}`);
-      const created = await r.json();
-      setCards((prev) => (prev.find((c) => c.id === created.id) ? prev : [created, ...prev]));
-      const detail = await fetchCardDetail(projectSlug, created.id);
-      if (detail) setDetailCard(detail);
-    } catch (e) {
-      console.warn("새 카드 생성 실패:", e);
-      alert("카드 생성 실패: " + e.message);
-    }
-    return cardId;
-  }, [projectSlug, actorName]);
+  // spawnNewJob 은 projectSlug / actorName 선언 이후에 정의된다 (TDZ 방지).
 
   // Remove a job; invariant effect below picks a new active one.
   const removeJob = useCallback((jobId) => {
@@ -2682,6 +2647,41 @@ export default function InZOIConceptTool() {
   const actorName = useMemo(() => {
     try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
   }, []);
+
+  // [v1.4.4] '＋ 새 시안' 은 새 card 를 drafting 상태로 생성하고 상세 모달을 즉시 오픈.
+  // projectSlug 미설정 시에만 레거시 job 경로로 폴백.
+  const spawnNewJob = useCallback(async () => {
+    if (!projectSlug) {
+      const nj = createBlankJob(Date.now());
+      setJobs((prev) => [...prev, nj]);
+      setActiveJobId(nj.id);
+      setShowWorkflowDetail(true);
+      return nj.id;
+    }
+    const cardId = `card-${Date.now()}`;
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/cards`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: cardId,
+          title: "새 작업",
+          status_key: "drafting",
+          data: {},
+          actor: actorName || null,
+        }),
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const created = await r.json();
+      setCards((prev) => (prev.find((c) => c.id === created.id) ? prev : [created, ...prev]));
+      const detail = await fetchCardDetail(projectSlug, created.id);
+      if (detail) setDetailCard(detail);
+    } catch (e) {
+      console.warn("새 카드 생성 실패:", e);
+      alert("카드 생성 실패: " + e.message);
+    }
+    return cardId;
+  }, [projectSlug, actorName]);
 
   // 앱 시작 시: 팀 전체가 공유하는 단일 프로젝트 (default 슬러그) 를 사용한다.
   // 없으면 생성하고, 이어서 스냅샷을 내려받아 jobs / completedList / wishlist 를 복원한다.
