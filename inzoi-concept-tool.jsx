@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.5";
+const APP_VERSION = "1.5.6";
 const CHANGELOG = [
+  {
+    version: "1.5.6",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] 위시리스트에 같은 내용 카드가 여러개 보이던 문제 — 앱 초기화 시 list_id+title+description+thumbnail 동일한 중복 카드 자동 정리(가장 오래된 1개 유지), derived 단계에서도 내용 기준 중복 제거",
+      "완료목록 카드 상세의 시안 이력이 legacy 마이그레이션 카드(designs 없음)에서도 data.image_url / concept_sheet_url 로 fallback 해 표시",
+      "lightbox 갤러리 순환 대상에 data.image_url 포함 — 완료 카드에서도 ← → 로 확인 가능",
+    ],
+  },
   {
     version: "1.5.5",
     date: "2026-04-22",
@@ -2784,10 +2793,15 @@ export default function InZOIConceptTool() {
 
   // [Phase B-3] cards → 기존 wishlist / completedList shape 로 변환하는 derived.
   // 컴포넌트들은 계속 `wishlist` / `completedList` 변수명 그대로 사용.
+  //
+  // 중복 제거: (1) _cardId 중복 (정상적으로 없어야 하지만 안전장치),
+  // (2) 같은 title+note+imageUrl 조합은 가장 오래된 것만 남기고 나머지는 숨김
+  //     — 과거 버전의 legacy 마이그레이션이 wishlist_items 에 같은 내용을 여러번
+  //     쌓아 같은 카드가 여러개 보이는 경우가 있었음.
   const wishlist = useMemo(() => {
     const listId = lists.find((l) => l.status_key === "wishlist")?.id;
     if (!listId) return [];
-    return cards
+    const raw = cards
       .filter((c) => c.list_id === listId && !c.is_archived)
       .map((c) => {
         const d = c.data || {};
@@ -2800,14 +2814,26 @@ export default function InZOIConceptTool() {
           createdAt: c.created_at,
           _cardId: c.id,
         };
-      })
+      });
+    const seenIds = new Set();
+    const seenContent = new Map(); // content key → earliest entry
+    for (const it of raw) {
+      if (seenIds.has(it._cardId)) continue;
+      seenIds.add(it._cardId);
+      const key = `${it.title || ""}|${it.note || ""}|${it.imageUrl || ""}`;
+      const cur = seenContent.get(key);
+      if (!cur || (it.createdAt || "") < (cur.createdAt || "")) {
+        seenContent.set(key, it);
+      }
+    }
+    return [...seenContent.values()]
       .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   }, [cards, lists]);
 
   const completedList = useMemo(() => {
     const listId = lists.find((l) => l.status_key === "done")?.id;
     if (!listId) return [];
-    return cards
+    const raw = cards
       .filter((c) => c.list_id === listId && !c.is_archived)
       .map((c) => {
         const d = c.data || {};
@@ -2832,7 +2858,20 @@ export default function InZOIConceptTool() {
           completedAt: c.confirmed_at || c.updated_at || c.created_at,
           _cardId: c.id,
         };
-      })
+      });
+    // wishlist 와 동일한 방식으로 내용 중복 제거 (categoryLabel + prompt + imageUrl).
+    const seenIds = new Set();
+    const seenContent = new Map();
+    for (const it of raw) {
+      if (seenIds.has(it._cardId)) continue;
+      seenIds.add(it._cardId);
+      const key = `${it.categoryLabel || ""}|${it.prompt || ""}|${it.imageUrl || ""}`;
+      const cur = seenContent.get(key);
+      if (!cur || (it.completedAt || "") < (cur.completedAt || "")) {
+        seenContent.set(key, it);
+      }
+    }
+    return [...seenContent.values()]
       .sort((a, b) => (b.completedAt || "").localeCompare(a.completedAt || ""));
   }, [cards, lists]);
 
@@ -2993,6 +3032,34 @@ export default function InZOIConceptTool() {
         const serverCards = (data.cards || []);
         setLists(serverLists);
         setCards(serverCards);
+
+        // 과거 버전에서 legacy 마이그레이션이 같은 내용을 복제한 케이스를 정리.
+        // 같은 list_id + title + description + thumbnail_url 조합의 카드가
+        // 2개 이상이면 가장 오래된 것만 남기고 DELETE (실패해도 무시).
+        try {
+          const groups = new Map();
+          for (const c of serverCards) {
+            if (c.is_archived) continue;
+            const key = `${c.list_id}|${c.title || ""}|${c.description || ""}|${c.thumbnail_url || ""}`;
+            const arr = groups.get(key) || [];
+            arr.push(c);
+            groups.set(key, arr);
+          }
+          const toDelete = [];
+          for (const arr of groups.values()) {
+            if (arr.length <= 1) continue;
+            arr.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+            for (let i = 1; i < arr.length; i++) toDelete.push(arr[i].id);
+          }
+          if (toDelete.length > 0) {
+            console.info(`[dedupe] 중복 카드 ${toDelete.length}건 정리`);
+            for (const id of toDelete) {
+              try { await fetch(`/api/projects/${slug}/cards/${id}`, { method: "DELETE" }); } catch {}
+            }
+            // 정리 직후 상태에서도 제거
+            setCards((prev) => prev.filter((c) => !toDelete.includes(c.id)));
+          }
+        } catch (e) { console.warn("[dedupe] 실패 (무시):", e); }
       } catch (err) {
         console.warn("스냅샷 로드 실패 — 기본 상태로 시작", err);
       } finally {
@@ -5959,15 +6026,29 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   )}
 
                   {/* 시안 이력 — drafting 외 단계(sheet/done) 에서 그동안 만들어진
-                      시안들을 읽기 전용으로 보여줌. 클릭 시 lightbox 오픈. */}
-                  {statusKey !== "drafting" && Array.isArray(card.data?.designs) && card.data.designs.length > 0 && (
+                      시안들을 읽기 전용으로 보여줌. 클릭 시 lightbox 오픈.
+                      legacy 마이그레이션 카드는 designs 가 없고 data.image_url /
+                      concept_sheet_url 만 있을 수 있어 fallback 로 합성해 표시한다. */}
+                  {statusKey !== "drafting" && (() => {
+                    const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
+                    const extras = [];
+                    if (raw.length === 0) {
+                      if (card.data?.image_url) extras.push({ imageUrl: card.data.image_url, seed: card.data.seed, _legacy: true });
+                    }
+                    if (card.data?.concept_sheet_url && !raw.find((d) => d?.imageUrl === card.data.concept_sheet_url) && !extras.find((d) => d.imageUrl === card.data.concept_sheet_url)) {
+                      extras.push({ imageUrl: card.data.concept_sheet_url, seed: null, _sheet: true });
+                    }
+                    const displayDesigns = [...raw, ...extras];
+                    if (displayDesigns.length === 0) return null;
+                    const selectedIdx = card.data?.selected_design;
+                    return (
                     <div style={{
                       marginBottom: 20, padding: 14, borderRadius: 12,
                       background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
                     }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
-                          🎨 시안 이력 ({card.data.designs.length}개)
+                          🎨 시안 이력 ({displayDesigns.length}개)
                         </div>
                         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
                           그동안 생성된 시안 — 클릭해서 원본 확인
@@ -5978,8 +6059,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
                         gap: 8,
                       }}>
-                        {card.data.designs.map((d, i) => {
-                          const isSelected = card.data?.selected_design === i;
+                        {displayDesigns.map((d, i) => {
+                          const isSelected = selectedIdx === i;
+                          const badge = d._sheet ? "📑 시트" : (d._legacy ? "🗂 레거시" : `#${i + 1}`);
                           return (
                             <div key={i} style={{
                               position: "relative", borderRadius: 8, overflow: "hidden",
@@ -6001,7 +6083,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                                 padding: "1px 6px", borderRadius: 4,
                                 background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
                                 pointerEvents: "none",
-                              }}>#{i + 1}</div>
+                              }}>{badge}</div>
                               {isSelected && (
                                 <div style={{
                                   position: "absolute", top: 4, right: 4,
@@ -6015,7 +6097,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         })}
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
 
                   <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>설명</div>
                   <div style={{
@@ -7152,6 +7235,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           push(detailCard.thumbnail_url);
           (detailCard.data?.ref_images || []).forEach(push);
           (detailCard.data?.designs || []).forEach((d) => push(d?.imageUrl));
+          push(detailCard.data?.image_url);        // legacy comp_* 카드 fallback
           push(detailCard.data?.concept_sheet_url);
           if (!set.includes(previewImage)) set.push(previewImage);
           return set;
