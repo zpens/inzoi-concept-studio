@@ -250,10 +250,16 @@ app.get("/api/projects/:slug/lists", (c) => {
 });
 
 // GET /api/projects/:slug/cards — 전체 카드 (아카이브 제외)
+// ?archived=1 쿼리로 아카이브 뷰 전환.
 app.get("/api/projects/:slug/cards", (c) => {
   const p = stmts.getProjectBySlug.get(c.req.param("slug"));
   if (!p) return c.json({ error: "Not found" }, 404);
-  const rows = stmts.listCardsByProject.all(p.id).map((r) => parseJsonFields(r, ["data"]));
+  const url = new URL(c.req.url);
+  const archivedOnly = url.searchParams.get("archived") === "1";
+  const sql = archivedOnly
+    ? "SELECT * FROM cards WHERE project_id = ? AND is_archived = 1 ORDER BY updated_at DESC"
+    : "SELECT * FROM cards WHERE project_id = ? AND is_archived = 0 ORDER BY list_id, position";
+  const rows = db.prepare(sql).all(p.id).map((r) => parseJsonFields(r, ["data"]));
   return c.json(rows);
 });
 

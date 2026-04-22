@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.1.3";
+const APP_VERSION = "1.1.4";
 const CHANGELOG = [
+  {
+    version: "1.1.4",
+    date: "2026-04-22",
+    changes: [
+      "[Phase F 마무리] 카드 모달에 🔓 재오픈 / 🗄️ 아카이브 버튼 추가",
+      "헤더에 🗄️ 아카이브 버튼 — 보관된 카드 목록 모달 오픈, 카드 클릭 시 복구",
+      "컨펌된(최종 완료) 카드 재오픈 시 force:true 로 잠금 해제 + 이력 기록",
+      "활동 이력에 액션 필터 드롭다운 (모든 액션 / 상태 이동 / 필드 수정 / 댓글 / 완료·재오픈 / 생성)",
+      "서버 GET /api/projects/:slug/cards?archived=1 엔드포인트 — 아카이브 전용 조회",
+    ],
+  },
   {
     version: "1.1.3",
     date: "2026-04-22",
@@ -1717,6 +1728,9 @@ export default function InZOIConceptTool() {
   const [detailItem, setDetailItem] = useState(null);
   const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달
   const [detailWish, setDetailWish] = useState(null);     // 위시리스트 상세 모달
+  const [archiveOpen, setArchiveOpen] = useState(false);   // 아카이브 뷰 토글
+  const [archivedCards, setArchivedCards] = useState([]);  // 서버에서 가져온 아카이브 카드
+  const [activityFilter, setActivityFilter] = useState("all"); // 카드 활동 이력 필터
   const [newItemId, setNewItemId] = useState(null);
   // 워크플로우 탭 상세 전개 여부. 기본 false 라 그리드만 보이고, 카드 클릭하거나
   // ＋ 새 시안 눌렀을 때만 true 로 전환되어 입력/단계 UI 가 드러난다.
@@ -2361,6 +2375,28 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               {syncStatus === "saving" ? "저장중..." : "저장 실패"}
             </span>
           )}
+          <button
+            onClick={async () => {
+              if (projectSlug) {
+                try {
+                  const r = await fetch(`/api/projects/${projectSlug}/cards?archived=1`);
+                  if (r.ok) setArchivedCards(await r.json());
+                } catch (e) { console.warn("archive fetch failed", e); }
+              }
+              setArchiveOpen(true);
+            }}
+            className="hover-lift"
+            style={{
+              padding: "10px 14px", borderRadius: 12,
+              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+              color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+            title="아카이브된 카드 목록"
+          >
+            <span style={{ fontSize: 14 }}>🗄️</span>
+            아카이브
+          </button>
           <button
             onClick={() => setShowApiSettings(true)}
             className="hover-lift"
@@ -4277,6 +4313,94 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         </>
       )}
 
+      {/* Archive Modal — 아카이브된 카드 목록 (Phase F) */}
+      {archiveOpen && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setArchiveOpen(false)} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            width: 900, maxWidth: "94vw", maxHeight: "88vh",
+            background: "rgba(255,255,255,0.98)", backdropFilter: "blur(20px)",
+            border: "1px solid var(--surface-border)", borderRadius: 20, zIndex: 202,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.2)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+            animation: "fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+          }}>
+            <div style={{
+              padding: "16px 24px", borderBottom: "1px solid var(--surface-border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)" }}>🗄️ 아카이브</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                  보관 처리된 카드 {archivedCards.length}개. 복구하려면 카드를 열어서 상태를 변경하세요.
+                </div>
+              </div>
+              <button
+                onClick={() => setArchiveOpen(false)}
+                style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                }}
+              >✕</button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+              {archivedCards.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
+                  <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>📭</div>
+                  <div style={{ fontSize: 14 }}>아카이브된 카드가 없습니다.</div>
+                </div>
+              ) : (
+                <div style={{
+                  display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12,
+                }}>
+                  {archivedCards.map((c) => {
+                    const list = lists.find((l) => l.id === c.list_id);
+                    const meta = STATUS_META[list?.status_key || "wishlist"];
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={async () => {
+                          setArchiveOpen(false);
+                          try {
+                            await patchCard(projectSlug, c.id, { is_archived: false, force: true, actor: actorName });
+                            const detail = await fetchCardDetail(projectSlug, c.id);
+                            if (detail) setDetailCard(detail);
+                            setCards((prev) => [c, ...prev]);
+                          } catch (e) { alert("복구 실패: " + e.message); }
+                        }}
+                        className="hover-lift"
+                        style={{
+                          padding: 14, borderRadius: 12,
+                          background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
+                          cursor: "pointer", opacity: 0.85,
+                        }}
+                      >
+                        {c.thumbnail_url && (
+                          <div style={{ width: "100%", height: 100, borderRadius: 8, overflow: "hidden", marginBottom: 10, background: "#000" }}>
+                            <img src={c.thumbnail_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(40%)" }} />
+                          </div>
+                        )}
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {c.title}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          {meta?.icon} {meta?.label} · {c.updated_at?.slice(0, 10)}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--primary)", marginTop: 6, fontWeight: 600 }}>
+                          클릭하여 복구
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Card Detail Modal (Phase D) — 통합 카드 상세. 상태 이동, 댓글, 이력 */}
       {detailCard && (() => {
         const card = detailCard;
@@ -4361,6 +4485,48 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     </option>
                   ))}
                 </select>
+                {/* 재오픈 (컨펌된 카드만) */}
+                {confirmed && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm("이 카드를 재오픈하시겠어요? 잠금이 풀리고 편집 가능해집니다.")) return;
+                      try {
+                        await patchCard(projectSlug, card.id, {
+                          confirmed_at: null, confirmed_by: null,
+                          force: true, actor: actorName,
+                        });
+                        const detail = await fetchCardDetail(projectSlug, card.id);
+                        if (detail) setDetailCard(detail);
+                        setCards((prev) => prev.map((c) => c.id === card.id ? { ...c, confirmed_at: null, confirmed_by: null } : c));
+                      } catch (e) { alert("재오픈 실패: " + e.message); }
+                    }}
+                    style={{
+                      padding: "8px 12px", borderRadius: 10,
+                      background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)",
+                      color: "#d97706", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    }}
+                    title="컨펌 해제 (편집 가능 상태로 되돌리기)"
+                  >🔓 재오픈</button>
+                )}
+                {/* 아카이브 */}
+                <button
+                  onClick={async () => {
+                    if (!confirm("이 카드를 아카이브로 옮기시겠어요?")) return;
+                    try {
+                      await patchCard(projectSlug, card.id, {
+                        is_archived: true, force: true, actor: actorName,
+                      });
+                      setCards((prev) => prev.filter((c) => c.id !== card.id));
+                      setDetailCard(null);
+                    } catch (e) { alert("아카이브 실패: " + e.message); }
+                  }}
+                  style={{
+                    padding: "8px 12px", borderRadius: 10,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  }}
+                  title="목록에서 숨김 (아카이브 뷰에서 복구 가능)"
+                >🗄️ 아카이브</button>
                 <button
                   onClick={() => setDetailCard(null)}
                   style={{
@@ -4456,11 +4622,34 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
                   {/* 활동 이력 */}
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>
-                      활동 이력 ({card.activities?.length || 0})
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>
+                        활동 이력 ({card.activities?.length || 0})
+                      </div>
+                      {card.activities?.length > 0 && (
+                        <select
+                          value={activityFilter}
+                          onChange={(e) => setActivityFilter(e.target.value)}
+                          style={{
+                            marginLeft: "auto", padding: "3px 8px", borderRadius: 6,
+                            border: "1px solid var(--surface-border)", background: "#fff",
+                            color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                          }}
+                        >
+                          <option value="all">모든 액션</option>
+                          <option value="moved">상태 이동</option>
+                          <option value="field_updated">필드 수정</option>
+                          <option value="comment_added">댓글</option>
+                          <option value="confirmed">완료/재오픈</option>
+                          <option value="created">생성</option>
+                        </select>
+                      )}
                     </div>
                     <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                      {(card.activities || []).map((a) => (
+                      {(card.activities || [])
+                        .filter((a) => activityFilter === "all" || a.action === activityFilter ||
+                          (activityFilter === "confirmed" && (a.action === "confirmed" || a.action === "reopened")))
+                        .map((a) => (
                         <div key={a.id} style={{
                           fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6,
                           padding: "3px 0",
