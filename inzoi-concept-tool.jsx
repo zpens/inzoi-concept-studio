@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.1";
+const APP_VERSION = "1.4.2";
 const CHANGELOG = [
+  {
+    version: "1.4.2",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] 위시 → 시안 생성 이동 시 카드가 사라지던 문제 해결",
+      "워크플로우 탭(시안 생성/투표/컨셉시트)이 이제 새 cards 시스템 카드도 그리드에 렌더",
+      "CardHubCard 컴포넌트 추가 — 시안 개수 / 컨셉시트 생성 여부 / 스타일 등 표시",
+      "탭 카운트 뱃지가 legacy jobs + 새 카드 합산",
+      "카드 클릭 시 기존 통합 카드 모달 오픈 (Gemini 시안 생성 UI 바로 접근 가능)",
+    ],
+  },
   {
     version: "1.4.1",
     date: "2026-04-22",
@@ -2202,6 +2213,91 @@ const JOB_STEP_LABELS = ["입력", "시안 생성중", "투표", "선정", "컨�
 // 워크플로우 탭(시안 생성/투표/컨셉시트) 의 카드 허브에서 사용하는 job 카드.
 // 큐 패널 카드(JobQueueCard)는 작고 컴팩트한 사이드뷰용이고,
 // 이것은 메인 영역의 그리드용 큰 카드.
+// 새 카드 시스템용 허브 카드 (위시·completed 탭의 카드와 달리 워크플로우
+// 탭에서 쓰는 컴팩트 그리드 카드. 클릭 시 통합 카드 모달 오픈).
+function CardHubCard({ card, tabId, onClick }) {
+  const data = card.data || {};
+  const designs = Array.isArray(data.designs) ? data.designs : [];
+  const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
+  const selected = selectedIdx != null ? designs[selectedIdx] : null;
+
+  // 탭별 썸네일 선택 로직
+  let thumb = card.thumbnail_url;
+  if (tabId === "sheet") {
+    thumb = data.concept_sheet_url || selected?.imageUrl || card.thumbnail_url;
+  } else {
+    thumb = designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
+  }
+
+  const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
+  const styleInfo = data.style_preset ? STYLE_PRESETS.find((s) => s.id === data.style_preset) : null;
+
+  return (
+    <div
+      onClick={onClick}
+      className="hover-lift"
+      style={{
+        borderRadius: 16, overflow: "hidden", cursor: "pointer",
+        border: "1px solid var(--surface-border)",
+        background: "var(--surface-color)",
+        transition: "all 0.2s",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+      }}
+    >
+      <div style={{
+        width: "100%", height: 180, position: "relative",
+        background: thumb ? "#000" : "rgba(0,0,0,0.04)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {thumb ? (
+          <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <span style={{ fontSize: 56, opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
+        )}
+        {designs.length > 0 && (
+          <div style={{
+            position: "absolute", top: 10, right: 10,
+            padding: "3px 10px", borderRadius: 10,
+            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 11, fontWeight: 700,
+          }}>시안 {designs.length}</div>
+        )}
+      </div>
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+          <span style={{
+            fontSize: 15, fontWeight: 800, color: "var(--text-main)",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0,
+          }}>
+            {catInfo?.icon || ""} {card.title}
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, flexShrink: 0,
+            color: "var(--primary)", background: "rgba(7,110,232,0.1)",
+            padding: "2px 6px", borderRadius: 6,
+          }}>카드</span>
+        </div>
+        <div style={{
+          fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6,
+          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+          overflow: "hidden", minHeight: 36,
+        }}>
+          {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || "(설명 없음)"}
+        </div>
+        {tabId === "sheet" && data.concept_sheet_url && (
+          <div style={{ marginTop: 8, fontSize: 11, color: "#22c55e", fontWeight: 600 }}>
+            ✓ 컨셉시트 생성됨
+          </div>
+        )}
+        {tabId === "vote" && (
+          <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+            시안 {designs.length}개 · 투표자 {(data.voters || []).length}명
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WorkflowJobCard({ job, active, onSelect, tabId }) {
   const catInfo = FURNITURE_CATEGORIES.find((c) => c.id === job.category);
   const icon = catInfo?.icon || "🆕";
@@ -3139,11 +3235,15 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             sheet: [4, 6],
           };
           // 자연스러운 흐름: 아이디어(위시) → 시안 → 투표 → 컨셉시트 → 완료
+          // count 는 legacy jobs + 새 카드 시스템 합산.
+          const draftingListId = lists.find((l) => l.status_key === "drafting")?.id;
+          const sheetListId    = lists.find((l) => l.status_key === "sheet")?.id;
+          const cardsInList = (id) => id ? cards.filter((c) => c.list_id === id && !c.is_archived).length : 0;
           const TABS = [
             { id: "wishlist",  label: "위시리스트",    icon: "⭐", count: wishlist.length },
-            { id: "create",    label: "시안 생성",     icon: "✨", count: jobs.filter(j => j.step >= 0 && j.step <= 1).length },
+            { id: "create",    label: "시안 생성",     icon: "✨", count: jobs.filter(j => j.step >= 0 && j.step <= 1).length + cardsInList(draftingListId) },
             { id: "vote",      label: "투표 및 선정",  icon: "🗳️", count: jobs.filter(j => j.step >= 2 && j.step <= 3).length },
-            { id: "sheet",     label: "컨셉시트 생성", icon: "📑", count: jobs.filter(j => j.step >= 4 && j.step <= 6).length },
+            { id: "sheet",     label: "컨셉시트 생성", icon: "📑", count: jobs.filter(j => j.step >= 4 && j.step <= 6).length + cardsInList(sheetListId) },
             { id: "completed", label: "완료 목록",     icon: "📋", count: completedList.length },
           ];
           const switchTab = (id) => {
@@ -3276,6 +3376,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
         const [min, max] = ranges[activeTab];
         const inRangeJobs = jobs.filter((j) => j.step >= min && j.step <= max);
+
+        // 새 카드 시스템: 각 탭이 담당하는 list 의 카드도 함께 표시.
+        const TAB_TO_STATUS = { create: "drafting", vote: "drafting", sheet: "sheet" };
+        const tabStatusKey = TAB_TO_STATUS[activeTab];
+        const tabListId = lists.find((l) => l.status_key === tabStatusKey)?.id;
+        const inRangeCards = tabListId
+          ? cards.filter((c) => c.list_id === tabListId && !c.is_archived)
+          : [];
+        const totalCount = inRangeJobs.length + inRangeCards.length;
+
         const tabMeta = {
           create: { title: "시안 생성",     icon: "✨", desc: "새 어셋 시안을 만들고 갤러리에서 확인하세요." },
           vote:   { title: "투표 및 선정",  icon: "🗳️", desc: "생성된 시안 중 팀 투표로 최종안을 선정하세요." },
@@ -3290,8 +3400,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   {tabMeta.icon} {tabMeta.title}
                 </h2>
                 <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                  {inRangeJobs.length > 0
-                    ? `이 단계에 ${inRangeJobs.length}개의 작업이 있습니다. 카드를 선택해 진행하세요.`
+                  {totalCount > 0
+                    ? `이 단계에 ${totalCount}개의 작업이 있습니다. 카드를 선택해 진행하세요.`
                     : tabMeta.desc}
                 </p>
               </div>
@@ -3309,13 +3419,29 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               )}
             </div>
 
-            {inRangeJobs.length > 0 ? (
+            {totalCount > 0 ? (
               <div style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
                 gap: 16,
                 marginBottom: 40,
               }}>
+                {/* 새 카드 시스템의 카드들 — 위시에서 넘어온 것 포함 */}
+                {inRangeCards.map((c) => (
+                  <CardHubCard
+                    key={`card-${c.id}`}
+                    card={c}
+                    tabId={activeTab}
+                    onClick={async () => {
+                      if (!projectSlug) return;
+                      try {
+                        const detail = await fetchCardDetail(projectSlug, c.id);
+                        if (detail) setDetailCard(detail);
+                      } catch (e) { console.warn("카드 열기 실패", e); }
+                    }}
+                  />
+                ))}
+                {/* 레거시 jobs 기반 카드 */}
                 {inRangeJobs.map((j) => (
                   <WorkflowJobCard
                     key={j.id}
