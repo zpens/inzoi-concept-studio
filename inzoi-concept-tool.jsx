@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.4.1";
 const CHANGELOG = [
+  {
+    version: "1.4.1",
+    date: "2026-04-22",
+    changes: [
+      "위시 → 시안 생성 전환 시 자동으로 시안 생성 탭으로 이동 (이전엔 위시 탭에 머물러 카드를 못 찾음)",
+      "카드 모달에서 status_key 가 바뀌면 그 단계에 해당하는 탭으로 자동 전환",
+      "예: 시안 → 컨셉시트 → 완료 단계 이동 시 사용자도 함께 이동",
+    ],
+  },
   {
     version: "1.4.0",
     date: "2026-04-22",
@@ -1607,6 +1616,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
         projectSlug={projectSlug}
         actor={actor}
         onRefresh={onRefresh}
+        onMoveTo={onMoveTo}
       />
     );
   }
@@ -1839,7 +1849,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 }
 
 // CardActionPanel 의 wishlist 분기에서 호출. 다이얼로그 토글 state 를 분리.
-function WishlistToDraftingAction({ card, projectSlug, actor, onRefresh }) {
+function WishlistToDraftingAction({ card, projectSlug, actor, onRefresh, onMoveTo }) {
   const [open, setOpen] = React.useState(false);
   const sectionStyle = {
     marginBottom: 20, padding: 14, borderRadius: 12,
@@ -1869,17 +1879,18 @@ function WishlistToDraftingAction({ card, projectSlug, actor, onRefresh }) {
           card={card}
           onCancel={() => setOpen(false)}
           onConfirm={async (next) => {
+            // 1) 폼 데이터 먼저 저장
             await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
               method: "PATCH",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
-                status_key: "drafting",
                 data: { ...(card.data || {}), ...next },
                 actor,
               }),
             });
             setOpen(false);
-            await onRefresh();
+            // 2) status_key=drafting + 자동 탭 전환은 onMoveTo 가 처리
+            await onMoveTo("drafting");
           }}
         />
       )}
@@ -5258,6 +5269,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         const meta = STATUS_META[statusKey] || STATUS_META.wishlist;
         const confirmed = !!card.confirmed_at;
 
+        const STATUS_TO_TAB = { wishlist: "wishlist", drafting: "create", sheet: "sheet", done: "completed" };
         const moveTo = async (newStatusKey) => {
           if (!projectSlug) return;
           try {
@@ -5270,6 +5282,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             const detail = await fetchCardDetail(projectSlug, card.id);
             if (detail) setDetailCard(detail);
             setCards((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+            // 카드가 다른 단계로 이동했으면 사용자도 그 탭으로 데려간다.
+            const targetTab = STATUS_TO_TAB[newStatusKey];
+            if (targetTab && targetTab !== activeTab) setActiveTab(targetTab);
           } catch (e) {
             alert("상태 이동 실패: " + e.message);
           }
