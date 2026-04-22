@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.7";
+const APP_VERSION = "1.7.8";
 const CHANGELOG = [
+  {
+    version: "1.7.8",
+    date: "2026-04-23",
+    changes: [
+      "참조 이미지에 hover 오버레이 추가 — '☆ 대표' / '✕ 삭제' 버튼으로 카드 썸네일 지정 및 제거",
+      "현재 카드 썸네일과 일치하는 참조 이미지는 ⭐ 배지 + 노란 테두리로 구분",
+    ],
+  },
   {
     version: "1.7.7",
     date: "2026-04-23",
@@ -2425,31 +2433,93 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       <div>
         <div style={fieldLabel}>참조 이미지 ({refImages.length}/4) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal 에 함께 전송 · Ctrl+V 로 붙여넣기도 가능)</span></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {refImages.map((url, i) => (
-            <div key={i} style={{ position: "relative" }}>
-              <img
-                src={url}
-                alt=""
-                onClick={() => onOpenImage?.(url)}
-                style={{ width: 144, height: 144, objectFit: "cover", borderRadius: 10, border: "1px solid var(--surface-border)", cursor: onOpenImage ? "zoom-in" : "default" }}
-              />
-              {!disabled && (
-                <button
-                  onClick={async () => {
-                    const next = refImages.filter((_, idx) => idx !== i);
-                    setRefImages(next);
-                    await save({ ref_images: next });
-                  }}
+          {refImages.map((url, i) => {
+            const isCover = card.thumbnail_url === url;
+            return (
+              <div
+                key={i}
+                onMouseEnter={(e) => {
+                  const ov = e.currentTarget.querySelector(".ref-hover-overlay");
+                  if (ov) ov.style.opacity = 1;
+                }}
+                onMouseLeave={(e) => {
+                  const ov = e.currentTarget.querySelector(".ref-hover-overlay");
+                  if (ov) ov.style.opacity = 0;
+                }}
+                style={{ position: "relative", borderRadius: 10, overflow: "hidden" }}
+              >
+                <img
+                  src={url}
+                  alt=""
+                  onClick={() => onOpenImage?.(url)}
                   style={{
-                    position: "absolute", top: -6, right: -6,
-                    width: 18, height: 18, borderRadius: 9,
-                    background: "rgba(239,68,68,0.95)", color: "#fff",
-                    border: "1px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1,
+                    width: 144, height: 144, objectFit: "cover", display: "block",
+                    border: isCover ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+                    cursor: onOpenImage ? "zoom-in" : "default",
                   }}
-                >✕</button>
-              )}
-            </div>
-          ))}
+                />
+                {isCover && (
+                  <div style={{
+                    position: "absolute", top: 4, left: 4,
+                    padding: "2px 6px", borderRadius: 4,
+                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
+                    pointerEvents: "none",
+                  }}>⭐ 대표</div>
+                )}
+                {!disabled && (
+                  <div
+                    className="ref-hover-overlay"
+                    style={{
+                      position: "absolute", inset: 0,
+                      display: "flex", alignItems: "flex-end", justifyContent: "center",
+                      padding: 6,
+                      background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent 55%)",
+                      opacity: 0, transition: "opacity 0.2s",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          // 이 참조 이미지를 카드 대표(썸네일)로 설정.
+                          try {
+                            await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+                              method: "PATCH",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify({ thumbnail_url: url, actor }),
+                            });
+                            await onRefresh();
+                          } catch (err) { alert("대표 지정 실패: " + err.message); }
+                        }}
+                        disabled={isCover}
+                        title={isCover ? "이미 대표" : "카드 썸네일로 지정"}
+                        style={{
+                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                          background: isCover ? "#fbbf24" : "rgba(255,255,255,0.9)",
+                          border: "none", color: isCover ? "#000" : "var(--text-main)",
+                          cursor: isCover ? "default" : "pointer",
+                        }}
+                      >{isCover ? "⭐ 대표" : "☆ 대표"}</button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const next = refImages.filter((_, idx) => idx !== i);
+                          setRefImages(next);
+                          await save({ ref_images: next });
+                        }}
+                        title="참조 이미지 삭제"
+                        style={{
+                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                          background: "rgba(239,68,68,0.9)", border: "none", color: "#fff", cursor: "pointer",
+                        }}
+                      >✕ 삭제</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {!disabled && refImages.length < 4 && (
             <>
               <input
