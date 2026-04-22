@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.1.0";
 const CHANGELOG = [
+  {
+    version: "1.1.0",
+    date: "2026-04-22",
+    changes: [
+      "앱 이름 변경: inZOI Concept Studio → inZOI Asset Studio",
+      "[Phase A] 카드 기반 태스크 관리 DB 스키마 도입 (lists / cards / checklists / card_attachments / card_comments / card_activities / labels / members)",
+      "기본 리스트 4개 자동 시드: 아이디어 / 시안 생성 / 컨셉시트 / 완료",
+      "서버 API 추가: /api/projects/:slug/lists, /cards (CRUD, 댓글, 활동 이력)",
+      "컨펌된 카드는 수정 방어, 상태 이동 시 card_activities 자동 기록",
+    ],
+  },
   {
     version: "1.0.1",
     date: "2026-04-21",
@@ -1688,7 +1699,7 @@ export default function InZOIConceptTool() {
           await fetch("/api/projects", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ slug, name: "inZOI Concept Studio" }),
+            body: JSON.stringify({ slug, name: "inZOI Asset Studio" }),
           });
         }
       } catch (e) { console.warn("프로젝트 확인/생성 실패", e); }
@@ -2135,7 +2146,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span className="text-gradient" style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em" }}>
-                Concept Studio
+                Asset Studio
               </span>
               <span style={{
                 fontSize: 10, fontWeight: 700, color: "var(--accent)",
@@ -4494,7 +4505,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             }}>
               <div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-main)" }}>
-                  inZOI Concept Studio
+                  inZOI Asset Studio
                 </div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
                   버전 {APP_VERSION}

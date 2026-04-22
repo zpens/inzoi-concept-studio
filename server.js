@@ -116,18 +116,85 @@ const stmts = {
     VALUES (?, ?, ?, ?, ?, ?, ?)`),
   deleteWishlist: db.prepare("DELETE FROM wishlist_items WHERE id = ? AND project_id = ?"),
   insertActivity: db.prepare("INSERT INTO activity_log (project_id, actor, action, payload) VALUES (?, ?, ?, ?)"),
+
+  // ── 카드 시스템 (Phase A) ──
+  listLists: db.prepare("SELECT * FROM lists WHERE project_id = ? ORDER BY position ASC"),
+  getListByStatus: db.prepare("SELECT * FROM lists WHERE project_id = ? AND status_key = ?"),
+  getListById: db.prepare("SELECT * FROM lists WHERE id = ? AND project_id = ?"),
+  insertList: db.prepare("INSERT INTO lists (id, project_id, status_key, name, icon, position) VALUES (?, ?, ?, ?, ?, ?)"),
+
+  listCardsByProject: db.prepare("SELECT * FROM cards WHERE project_id = ? AND is_archived = 0 ORDER BY list_id, position"),
+  getCardById: db.prepare("SELECT * FROM cards WHERE id = ? AND project_id = ?"),
+  insertCard: db.prepare(`
+    INSERT INTO cards (
+      id, project_id, list_id, position, title, description, thumbnail_url,
+      due_date, priority, data, created_by, updated_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  updateCardField: db.prepare(`UPDATE cards SET list_id = COALESCE(?, list_id),
+    position = COALESCE(?, position), title = COALESCE(?, title),
+    description = COALESCE(?, description), thumbnail_url = COALESCE(?, thumbnail_url),
+    due_date = COALESCE(?, due_date), priority = COALESCE(?, priority),
+    data = COALESCE(?, data), confirmed_at = COALESCE(?, confirmed_at),
+    confirmed_by = COALESCE(?, confirmed_by), is_archived = COALESCE(?, is_archived),
+    updated_at = datetime('now'), updated_by = COALESCE(?, updated_by)
+    WHERE id = ? AND project_id = ?`),
+  deleteCard: db.prepare("DELETE FROM cards WHERE id = ? AND project_id = ?"),
+
+  // 카드 하위 엔티티 (조회는 단일 쿼리로 묶어서)
+  listChecklistsByCard: db.prepare("SELECT * FROM checklists WHERE card_id = ? ORDER BY position ASC"),
+  listChecklistItemsByCard: db.prepare(`SELECT ci.* FROM checklist_items ci
+    JOIN checklists cl ON cl.id = ci.checklist_id
+    WHERE cl.card_id = ? ORDER BY ci.position ASC`),
+  listAttachmentsByCard: db.prepare("SELECT * FROM card_attachments WHERE card_id = ? ORDER BY created_at DESC"),
+  listCommentsByCard: db.prepare("SELECT * FROM card_comments WHERE card_id = ? ORDER BY created_at ASC"),
+  listActivitiesByCard: db.prepare("SELECT * FROM card_activities WHERE card_id = ? ORDER BY created_at DESC LIMIT 200"),
+
+  insertComment: db.prepare("INSERT INTO card_comments (id, card_id, body, actor) VALUES (?, ?, ?, ?)"),
+  insertCardActivity: db.prepare("INSERT INTO card_activities (card_id, actor, action, payload) VALUES (?, ?, ?, ?)"),
 };
+
+// 기본 리스트 (칸반 컬럼) 4개를 프로젝트에 시드. 누락 항목만 채운다.
+const DEFAULT_LISTS = [
+  { status_key: "wishlist", name: "아이디어",   icon: "⭐", position: 0 },
+  { status_key: "drafting", name: "시안 생성",  icon: "✨", position: 1 },
+  { status_key: "sheet",    name: "컨셉시트",   icon: "📑", position: 2 },
+  { status_key: "done",     name: "완료",       icon: "✅", position: 3 },
+];
+function ensureDefaultLists(projectId) {
+  for (const l of DEFAULT_LISTS) {
+    const exists = stmts.getListByStatus.get(projectId, l.status_key);
+    if (!exists) {
+      stmts.insertList.run(randomUUID(), projectId, l.status_key, l.name, l.icon, l.position);
+    }
+  }
+}
+// 시작 시 default 프로젝트에 리스트 시드.
+try {
+  const def = stmts.getProjectBySlug.get("default");
+  if (def) ensureDefaultLists(def.id);
+} catch (e) { /* default 가 아직 없으면 POST /api/projects 시 생성됨 */ }
 
 function getProjectSnapshot(slug) {
   const project = stmts.getProjectBySlug.get(slug);
   if (!project) return null;
+  ensureDefaultLists(project.id);
   const jobsRaw = stmts.listJobs.all(project.id);
   const completedRaw = stmts.listCompleted.all(project.id);
   const wishlistRaw = stmts.listWishlist.all(project.id);
   const jobFields = ["ref_images", "designs", "votes", "voters", "current_votes", "multi_view_images"];
   const jobs = jobsRaw.map((r) => parseJsonFields(r, jobFields));
   const completed = completedRaw.map((r) => parseJsonFields(r, ["colors"]));
-  return { project, jobs, completed, wishlist: wishlistRaw };
+  // 카드 시스템 (Phase A 부터)
+  const lists = stmts.listLists.all(project.id);
+  const cards = stmts.listCardsByProject.all(project.id).map((c) => parseJsonFields(c, ["data"]));
+  return { project, jobs, completed, wishlist: wishlistRaw, lists, cards };
+}
+
+function logCardActivity(cardId, actor, action, payload) {
+  try {
+    stmts.insertCardActivity.run(cardId, actor || null, action, payload ? JSON.stringify(payload) : null);
+  } catch { /* best-effort */ }
 }
 
 function logActivity(projectId, actor, action, payload) {
@@ -160,12 +227,182 @@ app.post("/api/projects", async (c) => {
   const name = body.name || "Untitled project";
   try {
     stmts.insertProject.run(id, slug, name);
+    ensureDefaultLists(id);
     return c.json({ id, slug, name }, 201);
   } catch (err) {
     const existing = stmts.getProjectBySlug.get(slug);
-    if (existing) return c.json(existing, 200);
+    if (existing) {
+      ensureDefaultLists(existing.id);
+      return c.json(existing, 200);
+    }
     return c.json({ error: "slug conflict, retry" }, 409);
   }
+});
+
+// ─── 카드 시스템 API (Phase A) ──────────────────────────────────
+
+// GET /api/projects/:slug/lists — 리스트 (칸반 컬럼) 목록
+app.get("/api/projects/:slug/lists", (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  ensureDefaultLists(p.id);
+  return c.json(stmts.listLists.all(p.id));
+});
+
+// GET /api/projects/:slug/cards — 전체 카드 (아카이브 제외)
+app.get("/api/projects/:slug/cards", (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const rows = stmts.listCardsByProject.all(p.id).map((r) => parseJsonFields(r, ["data"]));
+  return c.json(rows);
+});
+
+// GET /api/projects/:slug/cards/:id — 카드 상세 (하위 엔티티 포함)
+app.get("/api/projects/:slug/cards/:id", (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const card = stmts.getCardById.get(c.req.param("id"), p.id);
+  if (!card) return c.json({ error: "card not found" }, 404);
+  parseJsonFields(card, ["data"]);
+  card.checklists    = stmts.listChecklistsByCard.all(card.id);
+  card.checklist_items = stmts.listChecklistItemsByCard.all(card.id);
+  card.attachments   = stmts.listAttachmentsByCard.all(card.id);
+  card.comments      = stmts.listCommentsByCard.all(card.id);
+  card.activities    = stmts.listActivitiesByCard.all(card.id)
+    .map((a) => parseJsonFields(a, ["payload"]));
+  return c.json(card);
+});
+
+// POST /api/projects/:slug/cards — 새 카드 생성
+app.post("/api/projects/:slug/cards", async (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  ensureDefaultLists(p.id);
+
+  const body = await c.req.json().catch(() => ({}));
+  if (!body.title || typeof body.title !== "string") {
+    return c.json({ error: "title required" }, 400);
+  }
+
+  // list 해석: list_id / status_key 둘 다 허용. 기본은 'wishlist'.
+  let list = null;
+  if (body.list_id) list = stmts.getListById.get(body.list_id, p.id);
+  else if (body.status_key) list = stmts.getListByStatus.get(p.id, body.status_key);
+  if (!list) list = stmts.getListByStatus.get(p.id, "wishlist");
+  if (!list) return c.json({ error: "list resolution failed" }, 500);
+
+  const id = body.id ? String(body.id) : randomUUID();
+  const data = body.data ? JSON.stringify(body.data) : "{}";
+  const pos = typeof body.position === "number" ? body.position : Date.now();
+
+  stmts.insertCard.run(
+    id, p.id, list.id, pos,
+    body.title, body.description ?? null, body.thumbnail_url ?? null,
+    body.due_date ?? null, body.priority ?? null, data,
+    body.created_by ?? body.actor ?? null,
+    body.updated_by ?? body.actor ?? null
+  );
+  logCardActivity(id, body.actor ?? null, "created", { title: body.title, list: list.status_key });
+  stmts.touchProject.run(p.id);
+
+  const created = stmts.getCardById.get(id, p.id);
+  parseJsonFields(created, ["data"]);
+  return c.json(created, 201);
+});
+
+// PATCH /api/projects/:slug/cards/:id — 부분 수정 (상태 이동 포함)
+app.patch("/api/projects/:slug/cards/:id", async (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const id = c.req.param("id");
+  const prev = stmts.getCardById.get(id, p.id);
+  if (!prev) return c.json({ error: "card not found" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+
+  // confirmed 카드 수정 방어 — 재오픈하려면 명시적으로 is_archived / confirmed_at 변경 요청 필요.
+  if (prev.confirmed_at && !body.force && body.is_archived === undefined && body.confirmed_at === undefined) {
+    return c.json({ error: "confirmed card is locked. pass { force: true } or reopen.", locked: true }, 403);
+  }
+
+  // list_id 해석 (status_key 로 넘어올 수도 있음)
+  let newListId = null;
+  if (body.list_id) {
+    const l = stmts.getListById.get(body.list_id, p.id);
+    if (!l) return c.json({ error: "invalid list_id" }, 400);
+    newListId = l.id;
+  } else if (body.status_key) {
+    const l = stmts.getListByStatus.get(p.id, body.status_key);
+    if (!l) return c.json({ error: "invalid status_key" }, 400);
+    newListId = l.id;
+  }
+
+  const dataJson = body.data !== undefined
+    ? (typeof body.data === "string" ? body.data : JSON.stringify(body.data))
+    : null;
+
+  stmts.updateCardField.run(
+    newListId,
+    body.position ?? null,
+    body.title ?? null,
+    body.description ?? null,
+    body.thumbnail_url ?? null,
+    body.due_date ?? null,
+    body.priority ?? null,
+    dataJson,
+    body.confirmed_at ?? null,
+    body.confirmed_by ?? null,
+    body.is_archived !== undefined ? (body.is_archived ? 1 : 0) : null,
+    body.updated_by ?? body.actor ?? null,
+    id, p.id
+  );
+  stmts.touchProject.run(p.id);
+
+  // 활동 이력 기록
+  if (newListId && newListId !== prev.list_id) {
+    const fromList = stmts.getListById.get(prev.list_id, p.id);
+    const toList   = stmts.getListById.get(newListId, p.id);
+    logCardActivity(id, body.actor ?? null, "moved", {
+      from: fromList?.status_key ?? null, to: toList?.status_key ?? null,
+    });
+  }
+  const changedFields = ["title", "description", "priority", "due_date", "thumbnail_url", "is_archived"]
+    .filter((f) => body[f] !== undefined && body[f] !== prev[f]);
+  if (changedFields.length) {
+    logCardActivity(id, body.actor ?? null, "field_updated", { fields: changedFields });
+  }
+  if (body.confirmed_at !== undefined && body.confirmed_at !== prev.confirmed_at) {
+    logCardActivity(id, body.actor ?? null, body.confirmed_at ? "confirmed" : "reopened", null);
+  }
+
+  const next = stmts.getCardById.get(id, p.id);
+  parseJsonFields(next, ["data"]);
+  return c.json(next);
+});
+
+// DELETE /api/projects/:slug/cards/:id — 완전 삭제 (아카이브 하려면 PATCH is_archived=true 사용)
+app.delete("/api/projects/:slug/cards/:id", (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  stmts.deleteCard.run(c.req.param("id"), p.id);
+  stmts.touchProject.run(p.id);
+  return c.json({ ok: true });
+});
+
+// POST /api/projects/:slug/cards/:id/comments — 댓글 추가
+app.post("/api/projects/:slug/cards/:id/comments", async (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const cardId = c.req.param("id");
+  const card = stmts.getCardById.get(cardId, p.id);
+  if (!card) return c.json({ error: "card not found" }, 404);
+
+  const body = await c.req.json();
+  if (!body.body || typeof body.body !== "string") return c.json({ error: "body required" }, 400);
+  const id = randomUUID();
+  stmts.insertComment.run(id, cardId, body.body, body.actor ?? null);
+  logCardActivity(cardId, body.actor ?? null, "comment_added", { preview: body.body.slice(0, 80) });
+  return c.json({ id, body: body.body, actor: body.actor ?? null, created_at: new Date().toISOString() }, 201);
 });
 
 // GET /api/projects/:slug

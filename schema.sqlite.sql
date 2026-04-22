@@ -91,3 +91,141 @@ CREATE TABLE IF NOT EXISTS activity_log (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_activity_project ON activity_log(project_id, created_at DESC);
+
+-- ─── 카드 기반 태스크 관리 (Phase A, v1.1+) ────────────────────────
+-- projects = board. lists = 상태 컬럼. cards = 어셋 카드.
+-- 프론트엔드가 자주 바뀌어도 여기 저장된 데이터는 유지된다.
+
+CREATE TABLE IF NOT EXISTS lists (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  status_key TEXT NOT NULL,         -- 'wishlist' | 'drafting' | 'sheet' | 'done' 등
+  name TEXT NOT NULL,
+  icon TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  UNIQUE (project_id, status_key)
+);
+CREATE INDEX IF NOT EXISTS idx_lists_project ON lists(project_id, position);
+
+CREATE TABLE IF NOT EXISTS cards (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  list_id TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+
+  -- 안정 컬럼 (인덱싱 대상, 자주 안 바뀜)
+  title TEXT NOT NULL,
+  description TEXT,
+  thumbnail_url TEXT,
+  due_date TEXT,
+  priority TEXT,                     -- low/normal/high/urgent
+
+  confirmed_at TEXT,
+  confirmed_by TEXT,
+  is_archived INTEGER NOT NULL DEFAULT 0,
+
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by TEXT,
+  updated_by TEXT,
+
+  -- 유연 확장 영역 (프론트엔드 튜닝의 주 대상)
+  data TEXT NOT NULL DEFAULT '{}',
+
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_cards_project ON cards(project_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cards_list ON cards(list_id, position);
+CREATE INDEX IF NOT EXISTS idx_cards_archived ON cards(project_id, is_archived);
+
+CREATE TABLE IF NOT EXISTS checklists (
+  id TEXT PRIMARY KEY,
+  card_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_checklists_card ON checklists(card_id, position);
+
+CREATE TABLE IF NOT EXISTS checklist_items (
+  id TEXT PRIMARY KEY,
+  checklist_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (checklist_id) REFERENCES checklists(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_checklist_items_list ON checklist_items(checklist_id, position);
+
+CREATE TABLE IF NOT EXISTS card_attachments (
+  id TEXT PRIMARY KEY,
+  card_id TEXT NOT NULL,
+  name TEXT,
+  url TEXT NOT NULL,
+  mime TEXT,
+  size INTEGER,
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_card_attachments_card ON card_attachments(card_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS card_comments (
+  id TEXT PRIMARY KEY,
+  card_id TEXT NOT NULL,
+  body TEXT NOT NULL,
+  actor TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_card_comments_card ON card_comments(card_id, created_at DESC);
+
+-- append-only 이력
+CREATE TABLE IF NOT EXISTS card_activities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  card_id TEXT NOT NULL,
+  actor TEXT,
+  action TEXT NOT NULL,
+  payload TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_card_activities_card ON card_activities(card_id, created_at DESC);
+
+-- 라벨/멤버는 스키마만 준비 (UI 는 추후)
+CREATE TABLE IF NOT EXISTS labels (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS card_labels (
+  card_id TEXT NOT NULL,
+  label_id TEXT NOT NULL,
+  PRIMARY KEY (card_id, label_id),
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+  FOREIGN KEY (label_id) REFERENCES labels(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS members (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  avatar_url TEXT,
+  color TEXT,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS card_members (
+  card_id TEXT NOT NULL,
+  member_id TEXT NOT NULL,
+  role TEXT,
+  PRIMARY KEY (card_id, member_id),
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+  FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+);
