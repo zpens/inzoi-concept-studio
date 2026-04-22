@@ -338,6 +338,14 @@ app.get("/api/object-meta", async (c) => {
         if (a.name && typeof a.name === "string" && a.name.trim()) nameSet.add(a.name.trim());
         if (nameSet.size >= 5) break;
       }
+      // 한글 설명 샘플 — 에셋 카탈로그의 가장 첫 의미있는 설명 하나만 (UI 인용용)
+      let sampleDesc = null;
+      for (const a of assets) {
+        if (a.desc && typeof a.desc === "string") {
+          const d = a.desc.trim();
+          if (d && d.length > 10 && d.length < 300) { sampleDesc = d; break; }
+        }
+      }
       // 태그 빈도 계산
       const tagCount = new Map();
       for (const a of assets) {
@@ -362,12 +370,18 @@ app.get("/api/object-meta", async (c) => {
       const priceRange = prices.length
         ? { min: Math.min(...prices), max: Math.max(...prices), median: prices.sort((a, b) => a - b)[Math.floor(prices.length / 2)] }
         : null;
+      // 구매 가능 / 언락 통계 — 일반 에셋인지 특수 에셋인지 파악용
+      const unlockCount = assets.filter((a) => a.unlockable).length;
+      const customCount = assets.filter((a) => a.cst).length;
       return {
         asset_count: assets.length,
         sample_names: [...nameSet],
+        sample_desc: sampleDesc,
         common_tags: commonTags,
         styles: [...styleSet],
         price_range: priceRange,
+        unlock_count: unlockCount,
+        custom_count: customCount,
       };
     };
 

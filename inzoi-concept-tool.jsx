@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.2";
+const APP_VERSION = "1.7.3";
 const CHANGELOG = [
+  {
+    version: "1.7.3",
+    date: "2026-04-23",
+    changes: [
+      "카테고리 선택 시 스펙 배너 대폭 확장 — 인용 설명(sample_desc), 예시 이름, 태그, 스타일, 가격대(min~max, 중앙값), 커스터마이즈/해금 카운트 표시",
+      "서버 /api/object-meta spec 블록에 sample_desc / unlock_count / custom_count 추가",
+      "배너 헤더에 카테고리 아이콘 + '가구 / 침실' 같은 계층 경로 노출",
+    ],
+  },
   {
     version: "1.7.2",
     date: "2026-04-23",
@@ -2134,24 +2143,57 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         const cat = category ? FURNITURE_CATEGORIES.find((c) => c.id === category) : null;
         const spec = cat?.spec;
         if (!cat || !spec) return null;
+        const pr = spec.price_range;
+        const fmtPrice = (n) => n >= 10000 ? `${(n / 10000).toFixed(1)}만` : `${n.toLocaleString()}`;
+        const hilite = { color: "var(--text-muted)", fontWeight: 600, minWidth: 60, display: "inline-block" };
         return (
           <div style={{
-            marginBottom: 10, padding: "8px 12px", borderRadius: 8,
+            marginBottom: 10, padding: "10px 12px", borderRadius: 8,
             background: "rgba(7,110,232,0.05)", border: "1px solid rgba(7,110,232,0.18)",
             fontSize: 11, color: "var(--text-lighter)", lineHeight: 1.7,
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <span style={{ color: "var(--primary)", fontWeight: 700 }}>✦ {cat.label} 스펙</span>
-              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>inzoi 카탈로그 {spec.asset_count}개 에셋 기반 · Gemini 프롬프트 자동 반영</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+              <span style={{ color: "var(--primary)", fontWeight: 700, fontSize: 12 }}>
+                {cat.icon} {cat.label} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {cat.group} / {cat.room}</span>
+              </span>
+              <span style={{ color: "var(--text-muted)", fontSize: 10, marginLeft: "auto" }}>
+                카탈로그 {spec.asset_count}개 에셋 기반 · Gemini 프롬프트 자동 반영
+              </span>
             </div>
+            {spec.sample_desc && (
+              <div style={{
+                marginBottom: 6, padding: "6px 10px", borderRadius: 6,
+                background: "rgba(0,0,0,0.03)", fontStyle: "italic",
+                color: "var(--text-main)", fontSize: 11, lineHeight: 1.5,
+              }}>
+                "{spec.sample_desc}"
+              </div>
+            )}
             {spec.sample_names?.length > 0 && (
-              <div><span style={{ color: "var(--text-muted)" }}>예시: </span>{spec.sample_names.slice(0, 3).join(" · ")}</div>
+              <div><span style={hilite}>예시 이름</span>{spec.sample_names.slice(0, 5).join(" · ")}</div>
             )}
             {spec.common_tags?.length > 0 && (
-              <div><span style={{ color: "var(--text-muted)" }}>태그: </span>{spec.common_tags.slice(0, 4).join(", ")}</div>
+              <div><span style={hilite}>태그</span>{spec.common_tags.slice(0, 6).join(", ")}</div>
             )}
             {spec.styles?.length > 0 && (
-              <div><span style={{ color: "var(--text-muted)" }}>카탈로그 스타일: </span>{spec.styles.join(", ")}</div>
+              <div><span style={hilite}>스타일</span>{spec.styles.map((s) => {
+                const sp = STYLE_PRESETS.find((p) => p.id === s);
+                return sp ? sp.label : s;
+              }).join(", ")}</div>
+            )}
+            {pr && (
+              <div>
+                <span style={hilite}>가격대</span>
+                {fmtPrice(pr.min)} ~ {fmtPrice(pr.max)}
+                <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>(중앙값 {fmtPrice(pr.median)})</span>
+              </div>
+            )}
+            {(spec.unlock_count > 0 || spec.custom_count > 0) && (
+              <div style={{ color: "var(--text-muted)", fontSize: 10, marginTop: 4 }}>
+                {spec.custom_count > 0 && `🎨 커스터마이즈 ${spec.custom_count}개`}
+                {spec.custom_count > 0 && spec.unlock_count > 0 && " · "}
+                {spec.unlock_count > 0 && `🔒 조건부 해금 ${spec.unlock_count}개`}
+              </div>
             )}
           </div>
         );
