@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.7";
+const APP_VERSION = "1.6.8";
 const CHANGELOG = [
+  {
+    version: "1.6.8",
+    date: "2026-04-22",
+    changes: [
+      "위시리스트 '새 아이디어 추가' 폼을 좌측 사이드에서 제거 — 헤더 '＋ 새 아이디어' 버튼 누르면 모달로 오픈",
+      "그리드가 전체 너비 차지, 시안 생성 / 완료 탭과 레이아웃 통일",
+      "빈 위시리스트에서 '＋ 첫 아이디어 추가' CTA 버튼 노출",
+    ],
+  },
   {
     version: "1.6.7",
     date: "2026-04-22",
@@ -3464,6 +3473,7 @@ export default function InZOIConceptTool() {
   // 위시리스트 작성 중 첨부할 이미지들 (dataURL 배열). 최대 4개.
   const [wishImages, setWishImages] = useState([]);
   const wishImageRef = useRef(null);
+  const [wishAddOpen, setWishAddOpen] = useState(false);
 
   // 클립보드 이미지 붙여넣기 — 위시리스트 탭에서만 활성. 여러번 붙여넣으면 누적.
   // detailCard 가 열려있으면 AssetInfoEditor 가 우선 처리하므로 skip.
@@ -5789,193 +5799,45 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* ═══ Wishlist Tab ═══ */}
       {activeTab === "wishlist" && (
-        <main style={{ padding: "40px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 40, alignItems: "start" }}>
-
-            {/* Left: Form */}
-            <div style={{ position: "sticky", top: 100 }}>
-              <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>위시리스트</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 28 }}>만들고 싶은 가구 아이디어를 기록하세요.</p>
-
-              <div className="glass-panel" style={{ padding: 28, borderRadius: 20 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 16 }}>새 아이디어 추가</div>
-                <input
-                  type="text"
-                  placeholder="제목 (예: 라탄 행잉 체어)"
-                  value={wishTitle}
-                  onChange={e => setWishTitle(e.target.value)}
-                  style={{
-                    width: "100%", padding: "12px 16px", borderRadius: 12,
-                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                    color: "var(--text-main)", fontSize: 14, outline: "none",
-                    marginBottom: 10, transition: "border-color 0.2s", boxSizing: "border-box",
-                  }}
-                  onFocus={e => { e.target.style.borderColor = "var(--primary)"; }}
-                  onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
-                />
-                <textarea
-                  placeholder="메모 (참고 사항, 원하는 스타일 등)"
-                  value={wishNote}
-                  onChange={e => setWishNote(e.target.value)}
-                  rows={3}
-                  style={{
-                    width: "100%", padding: "12px 16px", borderRadius: 12,
-                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                    color: "var(--text-main)", fontSize: 14, outline: "none",
-                    marginBottom: 10, resize: "vertical", lineHeight: 1.6,
-                    transition: "border-color 0.2s", boxSizing: "border-box",
-                  }}
-                  onFocus={e => { e.target.style.borderColor = "var(--primary)"; }}
-                  onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
-                />
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-                    <input
-                      ref={wishImageRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={e => {
-                        const files = Array.from(e.target.files || []);
-                        for (const file of files) {
-                          const reader = new FileReader();
-                          reader.onload = (ev) => setWishImages((prev) => prev.length >= 4 ? prev : [...prev, ev.target.result]);
-                          reader.readAsDataURL(file);
-                        }
-                        e.target.value = "";
-                      }}
-                      style={{ display: "none" }}
-                    />
-                    <button
-                      onClick={() => wishImageRef.current?.click()}
-                      disabled={wishImages.length >= 4}
-                      style={{
-                        padding: "9px 16px", borderRadius: 10,
-                        background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                        color: "var(--text-muted)", fontSize: 13, fontWeight: 600,
-                        cursor: wishImages.length >= 4 ? "not-allowed" : "pointer",
-                        display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
-                        opacity: wishImages.length >= 4 ? 0.5 : 1,
-                      }}
-                    >
-                      🖼️ 이미지 첨부 ({wishImages.length}/4)
-                    </button>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
-                      또는 <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "rgba(0,0,0,0.06)", border: "1px solid var(--surface-border)", fontFamily: "monospace", fontSize: 10 }}>Ctrl+V</kbd> 로 붙여넣기 (여러 번)
-                    </span>
-                  </div>
-                  {wishImages.length > 0 && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {wishImages.map((img, idx) => (
-                        <div key={idx} style={{ position: "relative" }}>
-                          <img src={img} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "1px solid var(--surface-border)" }} />
-                          <button
-                            onClick={() => setWishImages((prev) => prev.filter((_, i) => i !== idx))}
-                            style={{
-                              position: "absolute", top: -6, right: -6,
-                              width: 18, height: 18, borderRadius: 9,
-                              background: "rgba(239,68,68,0.95)", color: "#fff",
-                              border: "1px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1,
-                            }}
-                          >✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={async () => {
-                    if (!wishTitle.trim()) return;
-                    const gradients = [
-                      "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
-                      "linear-gradient(135deg, #2e1a2a 0%, #1a2e3e 50%, #2a2e1a 100%)",
-                      "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
-                      "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
-                    ];
-                    // 여러 이미지를 병렬 업로드. 첫번째가 썸네일, 전체는 ref_images.
-                    const uploaded = await Promise.all(wishImages.map((d) => uploadDataUrl(d)));
-                    const primary = uploaded[0] || null;
-                    const item = {
-                      id: Date.now(),
-                      title: wishTitle.trim(),
-                      note: wishNote.trim(),
-                      imageUrl: primary,
-                      gradient: gradients[Math.floor(Math.random() * gradients.length)],
-                      createdAt: new Date().toISOString(),
-                    };
-                    // [v1.5.7] legacy /wishlist POST 제거 — cards 만 SOT 로 저장.
-                    setWishlist(prev => [item, ...prev]);
-                    prevWishlistRef.current = [item, ...prevWishlistRef.current];
-
-                    if (projectSlug) {
-                      let ok = false;
-                      try {
-                        const rCard = await fetch(`/api/projects/${projectSlug}/cards`, {
-                          method: "POST",
-                          headers: { "content-type": "application/json" },
-                          body: JSON.stringify({
-                            id: `wish-${item.id}`,
-                            title: item.title,
-                            description: item.note,
-                            thumbnail_url: item.imageUrl,
-                            status_key: "wishlist",
-                            data: { source: "wishlist", gradient: item.gradient, ref_images: uploaded },
-                            actor: actorName || null,
-                          }),
-                        });
-                        if (rCard.ok) {
-                          const created = await rCard.json();
-                          setCards((prev) => {
-                            if (prev.find((c) => c.id === created.id)) return prev;
-                            return [created, ...prev];
-                          });
-                          ok = true;
-                        } else {
-                          const body = await rCard.text();
-                          console.warn("wishlist card 저장 실패:", rCard.status, body);
-                          alert(`위시리스트 저장 실패 (서버 ${rCard.status}). 잠시 후 다시 시도해주세요.\n상세: ${body.slice(0, 200)}`);
-                        }
-                      } catch (e) {
-                        console.warn("wishlist card 저장 에러:", e);
-                        alert("위시리스트 저장 실패 — 서버 연결을 확인해주세요.\n" + e.message);
-                      }
-                      if (!ok) return; // 저장 실패 시 폼 초기화하지 않음 (재시도 기회)
-                    }
-
-                    setWishTitle("");
-                    setWishNote("");
-                    setWishImages([]);
-                    if (wishImageRef.current) wishImageRef.current.value = "";
-                  }}
-                  style={{
-                    width: "100%", padding: "12px", borderRadius: 12,
-                    background: wishTitle.trim() ? "linear-gradient(135deg, #eab308, #f59e0b)" : "rgba(0,0,0,0.04)",
-                    border: "none",
-                    color: wishTitle.trim() ? "#000" : "var(--text-muted)",
-                    fontSize: 14, fontWeight: 700, cursor: wishTitle.trim() ? "pointer" : "not-allowed",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  추가하기
-                </button>
-              </div>
-            </div>
-
-            {/* Right: Grid */}
+        <main style={{ padding: "32px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <div style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>
-                  {wishlist.length}개의 아이디어
-                </div>
-                <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
-                <SortSelect value={sortBy} onChange={setSortBy} />
-              </div>
+              <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>⭐ 위시리스트</h2>
+              <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                {wishlist.length > 0 ? `${wishlist.length}개의 아이디어` : "만들고 싶은 가구 아이디어를 기록하세요."}
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+              {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
+              <SortSelect value={sortBy} onChange={setSortBy} />
+              <button
+                onClick={() => setWishAddOpen(true)}
+                className="hover-lift"
+                style={{
+                  padding: "12px 22px", borderRadius: 12, border: "none",
+                  background: "linear-gradient(135deg, #eab308, #f59e0b)",
+                  color: "#000", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 6,
+                  boxShadow: "0 4px 14px rgba(234,179,8,0.3)",
+                }}
+              >＋ 새 아이디어</button>
+            </div>
+          </div>
 
+          <div>
               {wishlist.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--text-muted)" }}>
                   <div style={{ fontSize: 56, marginBottom: 16 }}>💫</div>
-                  <div style={{ fontSize: 16, fontWeight: 500 }}>만들고 싶은 가구 아이디어를 왼쪽 폼에서 추가해보세요</div>
+                  <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 16 }}>만들고 싶은 가구 아이디어를 추가해보세요</div>
+                  <button
+                    onClick={() => setWishAddOpen(true)}
+                    style={{
+                      padding: "10px 20px", borderRadius: 10, border: "none",
+                      background: "linear-gradient(135deg, #eab308, #f59e0b)",
+                      color: "#000", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    }}
+                  >＋ 첫 아이디어 추가</button>
                 </div>
               ) : viewMode === "list" ? (
                 <div>
@@ -6024,9 +5886,189 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   })}
                 </div>
               )}
-            </div>
           </div>
         </main>
+      )}
+
+      {/* 새 아이디어 추가 모달 — 위시리스트 탭에서 헤더 버튼으로 오픈 */}
+      {wishAddOpen && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setWishAddOpen(false)} style={{ zIndex: 210 }} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            width: 560, maxWidth: "94vw", maxHeight: "92vh",
+            background: "rgba(255,255,255,0.98)", backdropFilter: "blur(20px)",
+            border: "1px solid var(--surface-border)", borderRadius: 18, zIndex: 211,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
+            <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--surface-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)" }}>⭐ 새 아이디어 추가</div>
+              <button
+                onClick={() => setWishAddOpen(false)}
+                style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 16, cursor: "pointer",
+                }}
+              >✕</button>
+            </div>
+            <div style={{ padding: "20px 22px", overflow: "auto", flex: 1 }}>
+              <input
+                type="text"
+                placeholder="제목 (예: 라탄 행잉 체어)"
+                value={wishTitle}
+                onChange={(e) => setWishTitle(e.target.value)}
+                autoFocus
+                style={{
+                  width: "100%", padding: "12px 14px", borderRadius: 10,
+                  background: "#fff", border: "1px solid var(--surface-border)",
+                  color: "var(--text-main)", fontSize: 14, outline: "none",
+                  marginBottom: 10, boxSizing: "border-box",
+                }}
+              />
+              <textarea
+                placeholder="메모 (참고 사항, 원하는 스타일 등)"
+                value={wishNote}
+                onChange={(e) => setWishNote(e.target.value)}
+                rows={3}
+                style={{
+                  width: "100%", padding: "12px 14px", borderRadius: 10,
+                  background: "#fff", border: "1px solid var(--surface-border)",
+                  color: "var(--text-main)", fontSize: 14, outline: "none",
+                  marginBottom: 14, resize: "vertical", lineHeight: 1.6, fontFamily: "inherit", boxSizing: "border-box",
+                }}
+              />
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+                <input
+                  ref={wishImageRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    for (const file of files) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => setWishImages((prev) => prev.length >= 4 ? prev : [...prev, ev.target.result]);
+                      reader.readAsDataURL(file);
+                    }
+                    e.target.value = "";
+                  }}
+                  style={{ display: "none" }}
+                />
+                <button
+                  onClick={() => wishImageRef.current?.click()}
+                  disabled={wishImages.length >= 4}
+                  style={{
+                    padding: "8px 14px", borderRadius: 8,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-muted)", fontSize: 12, fontWeight: 600,
+                    cursor: wishImages.length >= 4 ? "not-allowed" : "pointer",
+                    opacity: wishImages.length >= 4 ? 0.5 : 1,
+                  }}
+                >🖼️ 이미지 첨부 ({wishImages.length}/4)</button>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  또는 <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "rgba(0,0,0,0.06)", border: "1px solid var(--surface-border)", fontFamily: "monospace", fontSize: 10 }}>Ctrl+V</kbd> 로 붙여넣기 (여러 번)
+                </span>
+              </div>
+              {wishImages.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                  {wishImages.map((img, idx) => (
+                    <div key={idx} style={{ position: "relative" }}>
+                      <img src={img} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "1px solid var(--surface-border)" }} />
+                      <button
+                        onClick={() => setWishImages((prev) => prev.filter((_, i) => i !== idx))}
+                        style={{
+                          position: "absolute", top: -6, right: -6,
+                          width: 18, height: 18, borderRadius: 9,
+                          background: "rgba(239,68,68,0.95)", color: "#fff",
+                          border: "1px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1,
+                        }}
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "14px 22px", borderTop: "1px solid var(--surface-border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                onClick={() => setWishAddOpen(false)}
+                style={{
+                  padding: "10px 18px", borderRadius: 10,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                }}
+              >취소</button>
+              <button
+                onClick={async () => {
+                  if (!wishTitle.trim()) return;
+                  const gradients = [
+                    "linear-gradient(135deg, #2e2a1a 0%, #3d2f1e 50%, #1a2e2a 100%)",
+                    "linear-gradient(135deg, #2e1a2a 0%, #1a2e3e 50%, #2a2e1a 100%)",
+                    "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
+                    "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
+                  ];
+                  const uploaded = await Promise.all(wishImages.map((d) => uploadDataUrl(d)));
+                  const primary = uploaded[0] || null;
+                  const item = {
+                    id: Date.now(),
+                    title: wishTitle.trim(),
+                    note: wishNote.trim(),
+                    imageUrl: primary,
+                    gradient: gradients[Math.floor(Math.random() * gradients.length)],
+                    createdAt: new Date().toISOString(),
+                  };
+                  setWishlist((prev) => [item, ...prev]);
+                  prevWishlistRef.current = [item, ...prevWishlistRef.current];
+
+                  if (projectSlug) {
+                    let ok = false;
+                    try {
+                      const rCard = await fetch(`/api/projects/${projectSlug}/cards`, {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({
+                          id: `wish-${item.id}`,
+                          title: item.title,
+                          description: item.note,
+                          thumbnail_url: item.imageUrl,
+                          status_key: "wishlist",
+                          data: { source: "wishlist", gradient: item.gradient, ref_images: uploaded },
+                          actor: actorName || null,
+                        }),
+                      });
+                      if (rCard.ok) {
+                        const created = await rCard.json();
+                        setCards((prev) => (prev.find((c) => c.id === created.id) ? prev : [created, ...prev]));
+                        ok = true;
+                      } else {
+                        const body = await rCard.text();
+                        alert(`위시리스트 저장 실패 (서버 ${rCard.status}).\n${body.slice(0, 200)}`);
+                      }
+                    } catch (e) {
+                      alert("위시리스트 저장 실패 — 서버 연결 확인 필요.\n" + e.message);
+                    }
+                    if (!ok) return;
+                  }
+
+                  setWishTitle("");
+                  setWishNote("");
+                  setWishImages([]);
+                  if (wishImageRef.current) wishImageRef.current.value = "";
+                  setWishAddOpen(false);
+                }}
+                disabled={!wishTitle.trim()}
+                style={{
+                  padding: "10px 22px", borderRadius: 10, border: "none",
+                  background: wishTitle.trim() ? "linear-gradient(135deg, #eab308, #f59e0b)" : "rgba(0,0,0,0.08)",
+                  color: wishTitle.trim() ? "#000" : "var(--text-muted)",
+                  fontSize: 13, fontWeight: 700,
+                  cursor: wishTitle.trim() ? "pointer" : "not-allowed",
+                }}
+              >추가하기</button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* API Settings Modal */}
