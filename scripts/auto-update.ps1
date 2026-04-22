@@ -48,14 +48,34 @@ try {
 
   Log "HEAD advanced  $before -> $after"
 
-  if (-not (Invoke-Native "npm install --no-fund --no-audit" "npm install")) { exit 1 }
+  $rollback = {
+    Log "rolling back to $before to keep service running"
+    cmd /c "git reset --hard $before 2>&1" | Out-Null
+    cmd /c "npm install --no-fund --no-audit 2>&1" | Out-Null
+    cmd /c "npm run build 2>&1" | Out-Null
+    cmd /c "pm2 restart inzoi 2>&1" | Out-Null
+  }
+
+  if (-not (Invoke-Native "npm install --no-fund --no-audit" "npm install")) { & $rollback; exit 1 }
   Log "dependencies updated"
 
-  if (-not (Invoke-Native "npm run build" "build")) { exit 1 }
+  if (-not (Invoke-Native "npm run build" "build")) { & $rollback; exit 1 }
   Log "frontend rebuilt"
 
-  if (-not (Invoke-Native "pm2 restart inzoi" "pm2 restart")) { exit 1 }
+  if (-not (Invoke-Native "pm2 restart inzoi" "pm2 restart")) { & $rollback; exit 1 }
   Log "pm2 restart ok"
+
+  # 재시작 후 30초 안에 health 가 돌아오지 않으면 롤백.
+  Start-Sleep -Seconds 8
+  try {
+    $h = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 8
+    if (-not $h.ok) { throw "health not ok" }
+    Log "post-restart health OK: version=$($h.version)"
+  } catch {
+    Log "[!] post-restart health failed — rollback"
+    & $rollback
+    exit 1
+  }
 
   Log "auto-update done: $after"
 } catch {

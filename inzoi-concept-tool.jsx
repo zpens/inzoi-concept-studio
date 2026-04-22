@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.3.2";
+const APP_VERSION = "1.3.3";
 const CHANGELOG = [
+  {
+    version: "1.3.3",
+    date: "2026-04-22",
+    changes: [
+      "자동 복구 로직 강화 — 자동 복구가 실패해도 마지막 정상 버전으로 롤백",
+      "auto-update 가 빌드/재시작 후 health 체크 — 실패 시 이전 커밋으로 자동 롤백",
+      "health-check.ps1 이 pm2 상태까지 확인 후 필요 시 강제 rebuild + restart (4단계 복구)",
+      "pm2 max_restarts 20 → 50, exp_backoff_restart_delay 추가로 일시 오류에 더 관대",
+    ],
+  },
   {
     version: "1.3.2",
     date: "2026-04-22",

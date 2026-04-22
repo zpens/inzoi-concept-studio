@@ -12,9 +12,10 @@ module.exports = {
       exec_mode: "fork",
       instances: 1,
       autorestart: true,
-      max_restarts: 20,
+      max_restarts: 50,
       min_uptime: "10s",
       restart_delay: 5000,
+      exp_backoff_restart_delay: 3000,
       max_memory_restart: "1G",
       env: {
         NODE_ENV: "production",
