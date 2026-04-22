@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.5";
+const APP_VERSION = "1.6.6";
 const CHANGELOG = [
+  {
+    version: "1.6.6",
+    date: "2026-04-22",
+    changes: [
+      "어셋 정보의 카테고리 선택기를 검색 가능한 콤보박스로 교체 — 50+ 카테고리를 라벨/방/id 로 substring 매칭",
+      "키보드 ↑ ↓ / Enter / Esc 지원, ✕ 로 선택 초기화, 바깥 클릭으로 닫힘",
+    ],
+  },
   {
     version: "1.6.5",
     date: "2026-04-22",
@@ -1967,17 +1975,11 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               >{suggesting ? "⏳ 분석 중…" : "🤖 자동 분류"}</button>
             )}
           </div>
-          <select
+          <CategoryPicker
             value={category}
             disabled={disabled}
-            onChange={(e) => { const v = e.target.value; setCategory(v); save({ category: v }); }}
-            style={fieldBox}
-          >
-            <option value="">— 선택 —</option>
-            {FURNITURE_CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>{c.icon} {c.label} ({c.room})</option>
-            ))}
-          </select>
+            onChange={(v) => { setCategory(v); save({ category: v }); }}
+          />
           {suggestion && (() => {
             const sCat = FURNITURE_CATEGORIES.find((c) => c.id === suggestion.category_id);
             if (!sCat) return null;
@@ -2539,6 +2541,124 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") 
     cpy.sort((a, b) => (b[dateKey] || "").localeCompare(a[dateKey] || ""));
   }
   return cpy;
+}
+
+// 검색 가능한 카테고리 선택기. FURNITURE_CATEGORIES 50+ 개 중에서 라벨/방/id 로
+// substring 매칭. 포커스 시 드롭다운 오픈, 클릭으로 선택.
+function CategoryPicker({ value, onChange, disabled }) {
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [hoverIdx, setHoverIdx] = React.useState(0);
+  const inputRef = React.useRef(null);
+  const wrapRef = React.useRef(null);
+
+  const selected = FURNITURE_CATEGORIES.find((c) => c.id === value);
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return FURNITURE_CATEGORIES;
+    return FURNITURE_CATEGORIES.filter((c) =>
+      `${c.label} ${c.room} ${c.id}`.toLowerCase().includes(q)
+    );
+  }, [query]);
+
+  // 바깥 클릭으로 닫기
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  React.useEffect(() => { setHoverIdx(0); }, [query, open]);
+
+  const pick = (c) => {
+    onChange(c.id);
+    setOpen(false);
+    setQuery("");
+    inputRef.current?.blur();
+  };
+
+  const fieldStyle = {
+    width: "100%", padding: "8px 28px 8px 10px", borderRadius: 8,
+    border: `1px solid ${open ? "var(--primary)" : "var(--surface-border)"}`,
+    background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
+    fontSize: 13, color: "var(--text-main)", boxSizing: "border-box", outline: "none",
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <input
+        ref={inputRef}
+        type="text"
+        disabled={disabled}
+        value={open ? query : (selected ? `${selected.icon} ${selected.label} (${selected.room})` : "")}
+        placeholder={selected ? "" : "— 검색 또는 선택 —"}
+        onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); } }}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (!open) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); setHoverIdx((i) => Math.min(i + 1, filtered.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHoverIdx((i) => Math.max(i - 1, 0)); }
+          else if (e.key === "Enter") { e.preventDefault(); if (filtered[hoverIdx]) pick(filtered[hoverIdx]); }
+          else if (e.key === "Escape") { setOpen(false); inputRef.current?.blur(); }
+        }}
+        style={fieldStyle}
+      />
+      {value && !open && !disabled && (
+        <button
+          onClick={() => onChange("")}
+          title="초기화"
+          style={{
+            position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+            width: 20, height: 20, borderRadius: 10,
+            background: "rgba(0,0,0,0.06)", border: "none",
+            color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >✕</button>
+      )}
+      {!value && !open && (
+        <span style={{
+          position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+          color: "var(--text-muted)", fontSize: 11, pointerEvents: "none",
+        }}>▾</span>
+      )}
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+          maxHeight: 280, overflowY: "auto", zIndex: 50,
+          background: "#fff", border: "1px solid var(--surface-border)",
+          borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: 12, fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
+              일치하는 카테고리 없음
+            </div>
+          ) : filtered.map((c, i) => (
+            <button
+              key={c.id}
+              onMouseDown={(e) => { e.preventDefault(); pick(c); }}
+              onMouseEnter={() => setHoverIdx(i)}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                width: "100%", padding: "7px 10px",
+                background: hoverIdx === i ? "rgba(7,110,232,0.08)" : "transparent",
+                border: "none", cursor: "pointer", textAlign: "left",
+                fontSize: 13, color: "var(--text-main)",
+              }}
+            >
+              <span style={{ fontSize: 14 }}>{c.icon}</span>
+              <span style={{ fontWeight: value === c.id ? 700 : 500, flex: 1 }}>{c.label}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.room}</span>
+              {value === c.id && <span style={{ color: "var(--primary)", fontSize: 11 }}>✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // 카드/리스트 뷰 토글.
