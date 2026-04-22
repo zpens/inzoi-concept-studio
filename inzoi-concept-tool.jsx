@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.8";
+const APP_VERSION = "1.4.9";
 const CHANGELOG = [
+  {
+    version: "1.4.9",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] '투표 및 선정' / '컨셉시트 생성' 탭이 선택 직후 다시 '시안 생성' 으로 튕기던 문제 해결",
+      "  - legacy job step 기반 자동 탭 전환 effect 가 탭 클릭 직후 덮어쓰던 것을 showWorkflowDetail 이 켜진 경우로만 제한",
+    ],
+  },
   {
     version: "1.4.8",
     date: "2026-04-22",
@@ -2745,17 +2753,18 @@ export default function InZOIConceptTool() {
     }
   }, [jobs, activeJobId]);
 
-  // 활성 작업의 step 이 변하면 워크플로우 탭을 자동 전환한다
-  // (step 1→2 투표로, 3→4 컨셉시트로, 등). 사용자가 completed/wishlist 같은
-  // 비-워크플로우 탭에 있을 땐 건드리지 않는다.
+  // 활성 legacy job 의 step 이 변하면 워크플로우 탭 자동 전환 — 단, 사용자가
+  // 명시적으로 상세 UI(showWorkflowDetail) 를 열었을 때만. 그냥 탭 클릭만으로
+  // 선택한 경우엔 step 에 따라 강제로 되돌리지 않는다 (카드 플로우 우선).
   useEffect(() => {
+    if (!showWorkflowDetail) return;
     if (activeTab !== "create" && activeTab !== "vote" && activeTab !== "sheet") return;
     let target = null;
     if (step <= 1) target = "create";
     else if (step <= 3) target = "vote";
     else if (step <= 6) target = "sheet";
     if (target && target !== activeTab) setActiveTab(target);
-  }, [step, activeTab]);
+  }, [step, activeTab, showWorkflowDetail]);
 
   // ── 프로젝트 slug / 동기화 상태 ──
   const [projectSlug, setProjectSlug] = useState(null);
