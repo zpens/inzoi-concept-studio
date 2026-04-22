@@ -279,23 +279,38 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
 
-// /api/object-meta — inzoiObjectList 의 meta.json 을 읽어 카테고리/스타일 목록으로
-// 변환해 반환. 같은 PC 에서 object catalog 가 :8080 으로 서빙 중이라 가정.
-// 환경변수 INZOI_OBJECT_LIST_URL 로 대체 가능. 5분 간격 메모리 캐시.
+// /api/object-meta — inzoiObjectList 의 meta.json + objects.json 을 읽어
+// 카테고리(스펙 포함) / 스타일 목록으로 변환해 반환.
+// 환경변수 INZOI_OBJECT_LIST_URL 로 대체 가능. 1시간 메모리 캐시.
+// ?force=1 로 즉시 무효화.
 let _metaCache = { fetchedAt: 0, data: null };
+const META_CACHE_TTL = 60 * 60 * 1000; // 1 hour — 자주 안 바뀌는 데이터
+
 app.get("/api/object-meta", async (c) => {
   const base = process.env.INZOI_OBJECT_LIST_URL || "http://localhost:8080";
   const now = Date.now();
   const force = c.req.query("force") === "1";
-  if (!force && _metaCache.data && now - _metaCache.fetchedAt < 5 * 60 * 1000) {
+  if (!force && _metaCache.data && now - _metaCache.fetchedAt < META_CACHE_TTL) {
     return c.json(_metaCache.data);
   }
   try {
-    const r = await fetch(`${base}/data/meta.json`);
-    if (!r.ok) throw new Error(`upstream ${r.status}`);
-    const meta = await r.json();
+    const [r1, r2] = await Promise.all([
+      fetch(`${base}/data/meta.json`),
+      fetch(`${base}/data/objects.json`),
+    ]);
+    if (!r1.ok) throw new Error(`meta.json upstream ${r1.status}`);
+    const meta = await r1.json();
+    const objects = r2.ok ? await r2.json() : [];
+
     const filterKo = meta.filterKo || {};
     const catHier = meta.catHier || {};
+    const objTags = meta.objTags || {};
+
+    const styleMap = {
+      Modern: "모던", Scandinavian: "스칸디나비안", Mid_Century_Modern: "미드센추리",
+      Industrial: "인더스트리얼", Classic: "클래식", Natural: "내추럴",
+      Vintage: "빈티지", Minimal: "미니멀", Luxury: "럭셔리",
+    };
     const iconFor = (room) => ({
       "침실": "🛏️", "거실": "🛋️", "주방": "🍳", "욕실": "🚿",
       "서재": "📚", "취미": "🎨", "야외공간": "🌳", "소셜 이벤트": "🎉",
@@ -303,6 +318,59 @@ app.get("/api/object-meta", async (c) => {
       "조명": "💡", "테이블 세팅": "🍽️", "플랫폼": "🎮", "음료": "🥤", "음식": "🍜",
       "승용차": "🚗", "미래형": "🚀", "자동차": "🚙", "기타(탑승)": "🏍️",
     })[room] || "📦";
+
+    // objects 를 filter (= typeId) 별로 인덱싱. 한 번만 순회.
+    const byFilter = new Map();
+    for (const o of objects) {
+      const f = o?.filter;
+      if (!f) continue;
+      if (!byFilter.has(f)) byFilter.set(f, []);
+      byFilter.get(f).push(o);
+    }
+
+    // 카테고리별 스펙 생성 — Gemini 프롬프트 힌트로 쓸 수 있는 수준의 요약.
+    const buildSpec = (typeId) => {
+      const assets = byFilter.get(typeId) || [];
+      if (assets.length === 0) return null;
+      // 한글 이름 중복 제거, 앞 5개
+      const nameSet = new Set();
+      for (const a of assets) {
+        if (a.name && typeof a.name === "string" && a.name.trim()) nameSet.add(a.name.trim());
+        if (nameSet.size >= 5) break;
+      }
+      // 태그 빈도 계산
+      const tagCount = new Map();
+      for (const a of assets) {
+        if (typeof a.tags === "string") {
+          for (const t of a.tags.split(",").map((s) => s.trim()).filter(Boolean)) {
+            tagCount.set(t, (tagCount.get(t) || 0) + 1);
+          }
+        }
+      }
+      const commonTags = [...tagCount.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([t]) => t);
+      // 해당 카테고리 에셋에 달린 스타일 태그 (meta.objTags 교차)
+      const styleSet = new Set();
+      for (const a of assets) {
+        const tags = objTags[a.id] || [];
+        for (const t of tags) if (styleMap[t]) styleSet.add(t);
+      }
+      // 가격대
+      const prices = assets.map((a) => a.price).filter((p) => typeof p === "number" && p > 0);
+      const priceRange = prices.length
+        ? { min: Math.min(...prices), max: Math.max(...prices), median: prices.sort((a, b) => a - b)[Math.floor(prices.length / 2)] }
+        : null;
+      return {
+        asset_count: assets.length,
+        sample_names: [...nameSet],
+        common_tags: commonTags,
+        styles: [...styleSet],
+        price_range: priceRange,
+      };
+    };
+
     const categories = [];
     const seen = new Set();
     for (const [group, rooms] of Object.entries(catHier)) {
@@ -312,37 +380,38 @@ app.get("/api/object-meta", async (c) => {
           if (seen.has(typeId)) continue;
           seen.add(typeId);
           const label = filterKo[typeId] || typeId;
+          const spec = buildSpec(typeId);
           categories.push({
             id: typeId,
-            label: label,
-            room: room,
-            group: group,
+            label,
+            room,
+            group,
             icon: iconFor(room),
             preset: `${label}, furniture asset`,
+            spec, // 없을 수도 있음 (objects.json 미로드 or 에셋 없음)
           });
         }
       }
     }
-    // 스타일 — meta.objTags 에서 알려진 스타일 태그만 추출, 한글 라벨은 하드코딩.
-    const styleMap = {
-      Modern: "모던", Scandinavian: "스칸디나비안", Mid_Century_Modern: "미드센추리",
-      Industrial: "인더스트리얼", Classic: "클래식", Natural: "내추럴",
-      Vintage: "빈티지", Minimal: "미니멀", Luxury: "럭셔리",
-    };
+
+    // 전역 스타일 목록 — objTags 에 실제 등장한 것만.
     const stylePresent = new Set();
-    for (const tags of Object.values(meta.objTags || {})) {
+    for (const tags of Object.values(objTags)) {
       if (!Array.isArray(tags)) continue;
       for (const t of tags) if (styleMap[t]) stylePresent.add(t);
     }
     const styles = Object.keys(styleMap)
       .filter((id) => stylePresent.size === 0 || stylePresent.has(id))
       .map((id) => ({ id, label: styleMap[id] }));
+
     const out = {
       categories, styles,
       source: base,
       fetched_at: new Date().toISOString(),
       category_count: categories.length,
       style_count: styles.length,
+      asset_count: objects.length,
+      has_specs: objects.length > 0,
     };
     _metaCache = { fetchedAt: now, data: out };
     return c.json(out);

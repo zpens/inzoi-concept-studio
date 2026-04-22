@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.7.1";
 const CHANGELOG = [
+  {
+    version: "1.7.1",
+    date: "2026-04-23",
+    changes: [
+      "카테고리 스펙 정보 추가 — /api/object-meta 가 objects.json(5,265 에셋) 도 읽어 카테고리별 sample_names / common_tags / styles / price_range 생성",
+      "Gemini 시안 생성 프롬프트에 실제 카탈로그의 변형 이름/태그 자동 concat (기존 하드코딩 ASSET_SPECS 대신 208개 전 카테고리 커버)",
+      "어셋 정보 섹션에 '✦ <카테고리> 스펙' 배지 추가 — 카탈로그 에셋 수, 예시 이름, 태그, 스타일 표시",
+      "meta/spec 캐시 주기 5분 → 1시간 (자주 안 바뀌는 데이터, 부하 감소)",
+    ],
+  },
   {
     version: "1.7.0",
     date: "2026-04-22",
@@ -1786,9 +1796,17 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   const styleInfo = card.data?.style_preset
     ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset)
     : null;
-  const spec = catInfo ? (ASSET_SPECS[catInfo.id] || DEFAULT_SPEC) : null;
+  // 카테고리 spec — inzoiObjectList 의 objects.json 에서 생성된 실제 에셋 카탈로그 요약
+  // (sample_names / common_tags / styles). 없으면 하드코딩 ASSET_SPECS 로 fallback.
+  const apiSpec = catInfo?.spec;
+  const legacySpec = catInfo ? (ASSET_SPECS[catInfo.id] || DEFAULT_SPEC) : null;
+  const specHints = [];
+  if (apiSpec?.sample_names?.length) specHints.push(`referenced variants: ${apiSpec.sample_names.slice(0, 3).join(", ")}`);
+  if (apiSpec?.common_tags?.length) specHints.push(`tags: ${apiSpec.common_tags.slice(0, 4).join(", ")}`);
+  if (legacySpec?.hint && !apiSpec) specHints.push(legacySpec.hint);
+  const hintStr = specHints.length ? `, ${specHints.join("; ")}` : "";
   const enhancedPrompt = catInfo
-    ? `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${spec?.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`
+    ? `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${hintStr}, product design concept, white background, studio lighting, high detail, game asset reference`
     : prompt;
 
   // ref_images 가 비어있고 card.thumbnail_url 이 있으면 (위시리스트에서 넘어온
@@ -2063,6 +2081,35 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
           </select>
         </div>
       </div>
+
+      {/* 카테고리 선택 시 inzoiObjectList 에서 가져온 스펙 정보 표시.
+          sample_names / common_tags / styles 는 Gemini 프롬프트에도 자동 반영된다. */}
+      {(() => {
+        const cat = category ? FURNITURE_CATEGORIES.find((c) => c.id === category) : null;
+        const spec = cat?.spec;
+        if (!cat || !spec) return null;
+        return (
+          <div style={{
+            marginBottom: 10, padding: "8px 12px", borderRadius: 8,
+            background: "rgba(7,110,232,0.05)", border: "1px solid rgba(7,110,232,0.18)",
+            fontSize: 11, color: "var(--text-lighter)", lineHeight: 1.7,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span style={{ color: "var(--primary)", fontWeight: 700 }}>✦ {cat.label} 스펙</span>
+              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>inzoi 카탈로그 {spec.asset_count}개 에셋 기반 · Gemini 프롬프트 자동 반영</span>
+            </div>
+            {spec.sample_names?.length > 0 && (
+              <div><span style={{ color: "var(--text-muted)" }}>예시: </span>{spec.sample_names.slice(0, 3).join(" · ")}</div>
+            )}
+            {spec.common_tags?.length > 0 && (
+              <div><span style={{ color: "var(--text-muted)" }}>태그: </span>{spec.common_tags.slice(0, 4).join(", ")}</div>
+            )}
+            {spec.styles?.length > 0 && (
+              <div><span style={{ color: "var(--text-muted)" }}>카탈로그 스타일: </span>{spec.styles.join(", ")}</div>
+            )}
+          </div>
+        );
+      })()}
 
       <div style={{ marginBottom: 10 }}>
         <div style={fieldLabel}>프롬프트 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
@@ -3402,7 +3449,7 @@ export default function InZOIConceptTool() {
       } catch (e) { console.warn("object-meta 로드 실패:", e.message); }
     }
     load();
-    const t = setInterval(load, 5 * 60 * 1000); // 5분
+    const t = setInterval(load, 60 * 60 * 1000); // 1시간 — meta.json 은 자주 안 바뀜
     return () => { cancelled = true; clearInterval(t); };
   }, []);
   const [expandedItem, setExpandedItem] = useState(null);
