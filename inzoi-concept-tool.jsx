@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.1";
+const APP_VERSION = "1.6.2";
 const CHANGELOG = [
+  {
+    version: "1.6.2",
+    date: "2026-04-22",
+    changes: [
+      "카드 썸네일 비율 조정 — 이미지 높이 180→240 (33% 증가), 본문 패딩/폰트 축소로 설명 영역 압축. 설명은 1줄로 말줄임 처리.",
+      "'카드' 보조 배지 제거로 헤더 공간 절약",
+    ],
+  },
   {
     version: "1.6.1",
     date: "2026-04-22",
@@ -2631,14 +2639,14 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
       }}
     >
       <div style={{
-        width: "100%", height: Math.round(180 * scale), position: "relative",
+        width: "100%", height: Math.round(240 * scale), position: "relative",
         background: thumb ? "#000" : "rgba(0,0,0,0.04)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {thumb ? (
           <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <span style={{ fontSize: Math.round(56 * scale), opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
+          <span style={{ fontSize: Math.round(72 * scale), opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
         {designs.length > 0 && (
           <div style={{
@@ -2648,44 +2656,40 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
           }}>시안 {designs.length}</div>
         )}
       </div>
-      <div style={{ padding: `${Math.round(14 * scale)}px ${Math.round(16 * scale)}px` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+      <div style={{ padding: `${Math.round(10 * scale)}px ${Math.round(14 * scale)}px` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
           <span style={{
-            fontSize: Math.round(15 * Math.sqrt(scale)), fontWeight: 800, color: "var(--text-main)",
+            fontSize: Math.round(14 * Math.sqrt(scale)), fontWeight: 800, color: "var(--text-main)",
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0,
           }}>
             {catInfo?.icon || ""} {card.title}
           </span>
-          <span style={{
-            fontSize: Math.round(10 * Math.sqrt(scale)), fontWeight: 700, flexShrink: 0,
-            color: "var(--primary)", background: "rgba(7,110,232,0.1)",
-            padding: "2px 6px", borderRadius: 6,
-          }}>카드</span>
         </div>
-        <div style={{
-          fontSize: Math.round(12 * Math.sqrt(scale)), color: "var(--text-muted)", lineHeight: 1.6,
-          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-          overflow: "hidden", minHeight: Math.round(36 * scale),
-        }}>
-          {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || "(설명 없음)"}
-        </div>
+        {(card.description || styleInfo) && (
+          <div style={{
+            fontSize: Math.round(11 * Math.sqrt(scale)), color: "var(--text-muted)", lineHeight: 1.4,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || ""}
+          </div>
+        )}
         {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
-          <div style={{ marginTop: 8, fontSize: Math.round(11 * Math.sqrt(scale)), color: "#22c55e", fontWeight: 600 }}>
-            ✓ 컨셉시트 생성됨
+          <div style={{ marginTop: 4, fontSize: Math.round(10 * Math.sqrt(scale)), color: "#22c55e", fontWeight: 600 }}>
+            ✓ 컨셉시트
           </div>
         )}
         {tabId === "completed" && card.confirmed_at && (
-          <div style={{ marginTop: 6, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
+          <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
             완료 {card.confirmed_at.slice(0, 10)}
           </div>
         )}
         {tabId === "wishlist" && (
-          <div style={{ marginTop: 6, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
-            추가 {card.created_at?.slice(0, 10) || "-"}
+          <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
+            {card.created_at?.slice(0, 10) || "-"}
           </div>
         )}
         {tabId === "vote" && (
-          <div style={{ marginTop: 8, fontSize: Math.round(11 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
+          <div style={{ marginTop: 4, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
             시안 {designs.length}개 · 투표자 {(data.voters || []).length}명
           </div>
         )}
