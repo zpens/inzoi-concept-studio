@@ -1,6 +1,37 @@
 # Changelog
 
-inZOI Concept Studio 변경 이력. 최신 버전이 위쪽에 있습니다.
+inZOI Asset Studio 변경 이력. 최신 버전이 위쪽에 있습니다.
+
+## [1.1.2] — 2026-04-22
+
+### Phase F (부분) — 컨펌 시 snapshot 보존
+- 카드가 `confirmed_at` 설정되는 순간 `data/snapshots/{card_id}__{ts}.json` 로 JSON 스냅샷 저장.
+- 스냅샷 내용: 카드 모든 필드 + data JSON + 체크리스트/체크리스트 아이템 + 첨부 + 댓글 + 최근 200건 활동 이력.
+- 이후 카드가 수정·삭제되더라도 스냅샷은 파일시스템에 독립적으로 존재.
+- `data/snapshots/` 는 `.gitignore` 대상이며, 매일 18:30 자동 백업에 포함됨.
+
+## [1.1.1] — 2026-04-22
+
+### Phase B-2 + D — 이중 저장 + 통합 카드 모달
+- **이중 저장**: 위시리스트 / 완료 아이템 추가 시 기존 테이블과 `cards` 에 동시 저장. 기존 데이터 손실 없이 점진 이전.
+- **통합 카드 상세 모달**: 960×92vh 모달로 큰 썸네일, 설명, 상태 드롭다운, 댓글 + 입력, 활동 이력, data JSON 뷰어. 컨펌된 카드는 🔒 잠김.
+- 완료 목록 / 위시리스트 카드 클릭 시 cards 테이블에 있으면 통합 모달, 없으면 기존 모달로 자동 폴백.
+
+## [1.1.0] — 2026-04-22
+
+### Phase A — 앱 이름 변경 + 카드 데이터 모델 기반
+- **앱 이름 변경**: inZOI Concept Studio → **inZOI Asset Studio**.
+- **새 DB 테이블**: `lists` / `cards` / `checklists` / `checklist_items` / `card_attachments` / `card_comments` / `card_activities` (append-only) + 예약: `labels` / `members`.
+- **자동 시드 리스트 4개**: 아이디어 / 시안 생성 / 컨셉시트 / 완료 (status_key = wishlist / drafting / sheet / done).
+- **서버 API**: `GET/POST/PATCH/DELETE /api/projects/:slug/cards`, `/cards/:id/comments`, `GET /lists`.
+- **컨펌 보호**: `confirmed_at` 있는 카드는 수정 요청 거부 (`{ force: true }` 또는 재오픈 필요).
+- 레거시 마이그레이션: `npm run migrate:cards` — `wishlist_items` / `jobs` / `completed_items` 를 `cards` 로 복사 (원본 유지, 롤백 가능).
+
+## 이전 버전
+
+앱 이름 변경 이전 버전들은 "inZOI Concept Studio" 로 표기됨.
+
+
 
 ## [1.0.0] — 2026-04-21
 

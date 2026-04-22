@@ -373,6 +373,31 @@ app.patch("/api/projects/:slug/cards/:id", async (c) => {
   }
   if (body.confirmed_at !== undefined && body.confirmed_at !== prev.confirmed_at) {
     logCardActivity(id, body.actor ?? null, body.confirmed_at ? "confirmed" : "reopened", null);
+
+    // Phase F: 컨펌 시점 snapshot 을 data/snapshots/ 에 immutable 로 저장.
+    // 이후 수정/삭제되어도 이 파일은 남아 과거 상태 추적 가능.
+    if (body.confirmed_at) {
+      try {
+        const snapshotDir = path.join(DATA_DIR, "snapshots");
+        if (!fs.existsSync(snapshotDir)) fs.mkdirSync(snapshotDir, { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        const snapshotFile = path.join(snapshotDir, `${id}__${ts}.json`);
+        const snap = stmts.getCardById.get(id, p.id);
+        parseJsonFields(snap, ["data"]);
+        snap.checklists    = stmts.listChecklistsByCard.all(id);
+        snap.checklist_items = stmts.listChecklistItemsByCard.all(id);
+        snap.attachments   = stmts.listAttachmentsByCard.all(id);
+        snap.comments      = stmts.listCommentsByCard.all(id);
+        snap.activities    = stmts.listActivitiesByCard.all(id)
+          .map((a) => parseJsonFields(a, ["payload"]));
+        fs.writeFileSync(snapshotFile, JSON.stringify({
+          card: snap, snapshot_at: new Date().toISOString(),
+          actor: body.actor ?? null, reason: "confirmed",
+        }, null, 2));
+      } catch (err) {
+        console.warn("snapshot write failed", err.message);
+      }
+    }
   }
 
   const next = stmts.getCardById.get(id, p.id);

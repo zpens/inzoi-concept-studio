@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.1.2";
 const CHANGELOG = [
+  {
+    version: "1.1.2",
+    date: "2026-04-22",
+    changes: [
+      "[Phase F] 카드 컨펌 시점 JSON snapshot 자동 저장 (data/snapshots/)",
+      "스냅샷에는 카드 + 체크리스트 + 첨부 + 댓글 + 활동 이력 전체 포함",
+      "이후 수정/삭제되어도 snapshot 파일은 immutable 로 보존",
+      "파일명: {card_id}__{timestamp}.json",
+    ],
+  },
   {
     version: "1.1.1",
     date: "2026-04-22",
