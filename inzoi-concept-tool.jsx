@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.3.1";
 const CHANGELOG = [
+  {
+    version: "1.3.1",
+    date: "2026-04-22",
+    changes: [
+      "브라우저 연결 끊김 감지 + 자동 복구 UX 추가",
+      "폴링 실패 시 상단에 노란색 '🔄 서버 재연결 중' 배너",
+      "3회 연속 실패 시 빨간색 '⚠️ 서버 연결 실패' + 🔁 새로고침 버튼",
+      "연결 끊김 상태에서는 폴링 주기가 5초 → 2초로 단축 (빠른 복구)",
+      "복구되면 자동으로 배너 사라지고 정상 5초 주기 복귀",
+      "/api/health 가 package.json 의 version 을 동적으로 노출",
+    ],
+  },
   {
     version: "1.3.0",
     date: "2026-04-22",
@@ -2236,6 +2248,8 @@ export default function InZOIConceptTool() {
   const [projectSlug, setProjectSlug] = useState(null);
   const [projectReady, setProjectReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState("idle"); // "idle" | "saving" | "error"
+  const [connection, setConnection] = useState({ state: "connected", failStreak: 0 });
+  // state: "connected" | "reconnecting" | "offline"
   const actorName = useMemo(() => {
     try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
   }, []);
@@ -2420,13 +2434,16 @@ export default function InZOIConceptTool() {
   useEffect(() => {
     if (!projectSlug || !projectReady) return;
     let cancelled = false;
-    const pollInterval = 5000;
+    // 연결 끊겨있으면 2초 간격으로 빠르게 재시도, 정상이면 5초.
+    const pollInterval = connection.state === "connected" ? 5000 : 2000;
     const tick = async () => {
       try {
         const r = await fetch(`/api/projects/${projectSlug}`);
-        if (!r.ok) return;
+        if (!r.ok) throw new Error(`http ${r.status}`);
         const data = await r.json();
         if (cancelled) return;
+        // 성공 — 연결 상태 복구
+        setConnection((c) => c.state !== "connected" ? { state: "connected", failStreak: 0 } : c);
 
         // jobs: active 는 로컬 유지, 나머지는 서버 기준. 서버에만 있는 것 추가.
         const serverJobs = (data.jobs || []).map(dbRowToJob);
@@ -2467,11 +2484,20 @@ export default function InZOIConceptTool() {
         // cards / lists 는 서버 단일 source — 그대로 반영.
         setLists(data.lists || []);
         setCards(data.cards || []);
-      } catch (e) { /* silent */ }
+      } catch (e) {
+        // 실패 — 카운터 증가. 3회 연속이면 "offline" 으로 전환.
+        setConnection((c) => {
+          const streak = c.failStreak + 1;
+          return {
+            state: streak >= 3 ? "offline" : "reconnecting",
+            failStreak: streak,
+          };
+        });
+      }
     };
     const handle = setInterval(tick, pollInterval);
     return () => { cancelled = true; clearInterval(handle); };
-  }, [projectSlug, projectReady, activeJobId]);
+  }, [projectSlug, projectReady, activeJobId, connection.state]);
 
   const [availableModels, setAvailableModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -2699,6 +2725,40 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       color: "var(--text-main)",
     }}>
       {/* Loading is shown per-job in the floating queue panel, not as a full-screen overlay. */}
+
+      {/* 서버 연결 끊김 배너 — 폴링 실패 시 상단에 알림 */}
+      {connection.state !== "connected" && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0,
+          padding: "10px 20px", textAlign: "center",
+          background: connection.state === "offline" ? "#ef4444" : "#f59e0b",
+          color: "#fff", fontSize: 13, fontWeight: 700,
+          zIndex: 9999, boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+          animation: "fadeIn 0.2s ease",
+        }}>
+          {connection.state === "reconnecting" ? (
+            <>
+              <span style={{ fontSize: 14 }}>🔄</span>
+              서버 재연결 중... (시도 {connection.failStreak}회) — 잠시만 기다려주세요.
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 14 }}>⚠️</span>
+              서버 연결 실패 ({connection.failStreak}회 연속). 네트워크 또는 운영자 PC 확인 필요.
+              <button
+                onClick={() => location.reload()}
+                style={{
+                  marginLeft: 12, padding: "4px 12px", borderRadius: 6,
+                  background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.5)",
+                  color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                }}
+              >🔁 새로고침</button>
+            </>
+          )}
+        </div>
+      )}
+
 
       {/* Header */}
       <header className="glass-panel" style={{
