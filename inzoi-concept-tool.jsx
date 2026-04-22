@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.6.1";
 const CHANGELOG = [
+  {
+    version: "1.6.1",
+    date: "2026-04-22",
+    changes: [
+      "컨셉시트 생성 버튼이 선정된 시안이 없어 비활성화되던 문제 개선 — 선정 시안 → (미선정) 첫 시안 → 카드 썸네일 순으로 fallback, 하나라도 있으면 활성화",
+      "소스 이미지 라벨과 툴팁에 어떤 이미지로 만들지 표시",
+    ],
+  },
   {
     version: "1.6.0",
     date: "2026-04-22",
@@ -2168,9 +2176,22 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   if (statusKey === "sheet") {
     const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
     const sheetUrl = card.data?.concept_sheet_url;
+    // 소스 이미지 우선순위: 선정된 시안 → 첫 이미지 있는 시안 → 카드 썸네일.
+    // 이 중 하나라도 있으면 컨셉시트 생성 가능.
+    const fallbackDesign = !selectedDesign?.imageUrl
+      ? designs.find((d) => d?.imageUrl) || null
+      : null;
+    const sourceImageUrl = selectedDesign?.imageUrl || fallbackDesign?.imageUrl || card.thumbnail_url;
+    const sourceSeed = selectedDesign?.seed ?? fallbackDesign?.seed ?? null;
+    const canMakeSheet = !!sourceImageUrl;
+    const sourceLabel = selectedDesign?.imageUrl
+      ? `선정 시안 #${selectedIdx + 1}`
+      : fallbackDesign
+        ? `시안 #${designs.indexOf(fallbackDesign) + 1} (미선정)`
+        : card.thumbnail_url ? "카드 썸네일" : null;
 
     const makeSheet = async () => {
-      if (!selectedDesign?.imageUrl) { alert("선정된 시안 이미지가 필요합니다."); return; }
+      if (!sourceImageUrl) { alert("컨셉시트에 사용할 이미지가 없습니다. 먼저 시안을 생성하거나 카드에 이미지를 추가해주세요."); return; }
       setBusy(true);
       try {
         // 소스 이미지 로드
@@ -2179,7 +2200,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           img.crossOrigin = "anonymous";
           img.onload = () => resolve(img);
           img.onerror = () => resolve(null);
-          img.src = selectedDesign.imageUrl;
+          img.src = sourceImageUrl;
         });
         if (!sourceImg) { alert("소스 이미지 로드 실패"); return; }
 
@@ -2192,7 +2213,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           category: card.data?.category_label || card.title,
           style:    card.data?.style || "",
           prompt:   card.data?.prompt || card.description || "",
-          seed:     selectedDesign.seed,
+          seed:     sourceSeed,
           colors:   card.data?.colors || [],
           model:    selectedModel,
         });
@@ -2218,15 +2239,15 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
     return (
       <div style={sectionStyle}>
         <div style={titleStyle}>컨셉시트</div>
-        {selectedDesign?.imageUrl && (
+        {sourceImageUrl && (
           <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "rgba(0,0,0,0.03)" }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-              선정 시안 #{selectedIdx + 1} (seed: {selectedDesign.seed})
+              소스 이미지: {sourceLabel}{sourceSeed != null ? ` (seed: ${sourceSeed})` : ""}
             </div>
             <img
-              src={selectedDesign.imageUrl}
-              alt="선정 시안"
-              onClick={() => onOpenImage?.(selectedDesign.imageUrl)}
+              src={sourceImageUrl}
+              alt="소스 이미지"
+              onClick={() => onOpenImage?.(sourceImageUrl)}
               style={{ width: "100%", maxHeight: 160, objectFit: "contain", borderRadius: 6, background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
             />
           </div>
@@ -2251,14 +2272,14 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             onClick={makeSheet}
-            disabled={busy || !selectedDesign?.imageUrl}
+            disabled={busy || !canMakeSheet}
             style={{
               flex: 1, minWidth: 140, padding: "10px 14px", borderRadius: 10,
-              background: busy || !selectedDesign?.imageUrl ? "rgba(0,0,0,0.08)" : "var(--primary)",
+              background: busy || !canMakeSheet ? "rgba(0,0,0,0.08)" : "var(--primary)",
               border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: busy ? "wait" : (!selectedDesign?.imageUrl ? "not-allowed" : "pointer"),
+              cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
             }}
-            title={selectedDesign?.imageUrl ? "선정 시안으로 컨셉시트 PNG 제작" : "선정된 시안이 없습니다"}
+            title={canMakeSheet ? `${sourceLabel} 으로 컨셉시트 PNG 제작` : "시안 생성 또는 카드 이미지가 필요합니다"}
           >{busy ? "생성 중…" : sheetUrl ? "🔄 재생성" : "📑 컨셉시트 생성"}</button>
           {sheetUrl && (
             <a
