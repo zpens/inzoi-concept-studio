@@ -212,9 +212,14 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-// 헬스체크.
+// 헬스체크 — package.json 의 version 을 읽어 동적으로 노출.
+let PKG_VERSION = "unknown";
+try {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf-8"));
+  PKG_VERSION = pkg.version || "unknown";
+} catch { /* keep default */ }
 app.get("/api/health", (c) =>
-  c.json({ ok: true, version: "0.9.3", time: new Date().toISOString() })
+  c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
 
 // POST /api/projects
