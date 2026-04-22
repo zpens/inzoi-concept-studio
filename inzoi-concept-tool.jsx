@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.5.1";
 const CHANGELOG = [
+  {
+    version: "1.5.1",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] 위시리스트 이미지가 시안 단계로 넘어오면 참조이미지에서 사라지던 문제 해결 — card.thumbnail_url 로 ref_images 자동 seed & 서버 저장",
+      "Gemini multimodal 호출도 ref_images 비어있으면 thumbnail_url 로 fallback",
+    ],
+  },
   {
     version: "1.5.0",
     date: "2026-04-22",
@@ -1566,7 +1574,10 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
     ? `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${spec?.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`
     : prompt;
 
-  const refImages = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+  // ref_images 가 비어있고 card.thumbnail_url 이 있으면 (위시리스트에서 넘어온
+  // 이미지) fallback 으로 포함시켜 Gemini multimodal 에 확실히 전달.
+  let refImages = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+  if (refImages.length === 0 && card.thumbnail_url) refImages = [card.thumbnail_url];
 
   const tasks = seeds.map((s) => async () => {
     try {
@@ -1623,10 +1634,16 @@ async function uploadDataUrl(dataUrl) {
 // 카테고리 / 스타일 / 프롬프트 / 참조 이미지 4개 필드 자동 저장.
 // 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
 function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage }) {
+  // 참조 이미지 초기값: data.ref_images 가 비어있고 card.thumbnail_url 이 있으면
+  // 위시리스트에서 넘어온 이미지라 보고 자동 seed (아래 effect 에서 서버 저장).
+  const initialRefs = (card.data?.ref_images && card.data.ref_images.length)
+    ? card.data.ref_images
+    : (card.thumbnail_url ? [card.thumbnail_url] : []);
+
   const [category, setCategory] = React.useState(card.data?.category || "");
   const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
   const [prompt, setPrompt] = React.useState(card.data?.prompt || card.description || "");
-  const [refImages, setRefImages] = React.useState(card.data?.ref_images || []);
+  const [refImages, setRefImages] = React.useState(initialRefs);
   const [saving, setSaving] = React.useState(false);
   const fileRef = React.useRef(null);
 
@@ -1635,7 +1652,10 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     setCategory(card.data?.category || "");
     setStylePreset(card.data?.style_preset || "");
     setPrompt(card.data?.prompt || card.description || "");
-    setRefImages(card.data?.ref_images || []);
+    const nextRefs = (card.data?.ref_images && card.data.ref_images.length)
+      ? card.data.ref_images
+      : (card.thumbnail_url ? [card.thumbnail_url] : []);
+    setRefImages(nextRefs);
   }, [card.id, card.updated_at]);
 
   const save = async (patchFields) => {
@@ -1654,6 +1674,17 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     } catch (e) { console.warn("어셋 정보 저장 실패:", e); }
     finally { setSaving(false); }
   };
+
+  // 초기 진입 시 ref_images 가 서버에 없고 thumbnail_url 로 seed 된 상태라면
+  // 한번 서버에 저장해서 generate 시 Gemini multimodal 에 확실히 포함되도록 한다.
+  React.useEffect(() => {
+    if (disabled) return;
+    const hasServerRefs = Array.isArray(card.data?.ref_images) && card.data.ref_images.length > 0;
+    if (!hasServerRefs && card.thumbnail_url && refImages.length > 0) {
+      save({ ref_images: refImages });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id]);
 
   const addRefFile = (file) => {
     if (!file) return;
