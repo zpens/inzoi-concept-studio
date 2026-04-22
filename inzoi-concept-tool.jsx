@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.7.2";
 const CHANGELOG = [
+  {
+    version: "1.7.2",
+    date: "2026-04-23",
+    changes: [
+      "🤖 자동 분류가 카테고리 + 스타일 프리셋을 한 번에 추천 — Gemini 응답에 style_id / style_confidence 추가",
+      "추천 배지에 '· 모던 스타일 · 70%' 포맷으로 두 결과 동시 표시, [적용] 한 번으로 둘 다 반영",
+      "이미 스타일이 선택된 카드는 [적용] 시 카테고리만 교체하고 기존 스타일 유지 (배지에 '(기존 선택 유지)' 표시)",
+    ],
+  },
   {
     version: "1.7.1",
     date: "2026-04-23",
@@ -1528,13 +1537,24 @@ async function classifyCategoryWithGemini(apiKey, imageUrl) {
   const categoryList = FURNITURE_CATEGORIES
     .map((c) => `- ${c.id}: ${c.label} (${c.room})`)
     .join("\n");
+  const styleList = STYLE_PRESETS
+    .map((s) => `- ${s.id}: ${s.label}`)
+    .join("\n");
 
-  const prompt = `이 이미지에 가장 잘 맞는 가구/인테리어 카테고리를 아래 목록에서 id 하나만 고르세요.
-반드시 JSON 형식만 응답하세요: {"category_id":"<id>","confidence":0.0~1.0}.
-확신이 낮으면 confidence 를 0.5 미만으로 낮추고, 카테고리가 목록에 없으면 "other" 사용.
+  const prompt = `이 이미지를 분석해 가장 잘 맞는 카테고리와 스타일을 각각 하나씩 고르세요.
+반드시 JSON 형식만 응답:
+{"category_id":"<id>","category_confidence":0.0~1.0,"style_id":"<id>","style_confidence":0.0~1.0}
+
+규칙:
+- 카테고리와 스타일은 반드시 아래 목록의 id 중에서 고르세요.
+- 확신이 낮은 필드는 해당 confidence 를 0.5 미만으로.
+- 스타일을 특정하기 어려우면 style_id 를 "Modern" 으로.
 
 카테고리:
-${categoryList}`;
+${categoryList}
+
+스타일:
+${styleList}`;
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -1562,13 +1582,18 @@ ${categoryList}`;
   if (!m) return null;
   try {
     const obj = JSON.parse(m[0]);
-    const id = obj.category_id || obj.category || null;
-    if (!id) return null;
-    // 응답이 실제 카테고리 목록에 있는지 확인 — hallucination 방어
-    if (!FURNITURE_CATEGORIES.find((c) => c.id === id)) return null;
+    const catId = obj.category_id || obj.category || null;
+    if (!catId || !FURNITURE_CATEGORIES.find((c) => c.id === catId)) return null;
+    // 카테고리는 필수, 스타일은 선택 (검증 실패 시 null)
+    const styleId = obj.style_id || obj.style || null;
+    const validStyle = styleId && STYLE_PRESETS.find((s) => s.id === styleId) ? styleId : null;
     return {
-      category_id: id,
-      confidence: typeof obj.confidence === "number" ? obj.confidence : 0.5,
+      category_id: catId,
+      confidence: typeof obj.category_confidence === "number"
+        ? obj.category_confidence
+        : (typeof obj.confidence === "number" ? obj.confidence : 0.5),
+      style_id: validStyle,
+      style_confidence: typeof obj.style_confidence === "number" ? obj.style_confidence : null,
     };
   } catch { return null; }
 }
@@ -1904,9 +1929,15 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
 
   const applySuggestion = async () => {
     if (!suggestion?.category_id) return;
+    const patch = { category: suggestion.category_id };
     setCategory(suggestion.category_id);
+    // 스타일이 함께 추천되었으면 같이 적용. 이미 사용자가 선택한 스타일이 있으면 덮어쓰지 않음.
+    if (suggestion.style_id && !stylePreset) {
+      setStylePreset(suggestion.style_id);
+      patch.style_preset = suggestion.style_id;
+    }
     setSuggestion(null);
-    await save({ category: suggestion.category_id });
+    await save(patch);
   };
 
   // 서버에서 카드가 갱신되면 로컬 폼 상태도 동기화.
@@ -2037,16 +2068,31 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
             if (!sCat) return null;
             const pct = Math.round((suggestion.confidence || 0) * 100);
             const low = pct < 50;
+            const sStyle = suggestion.style_id
+              ? STYLE_PRESETS.find((s) => s.id === suggestion.style_id)
+              : null;
+            const stylePct = suggestion.style_confidence != null
+              ? Math.round(suggestion.style_confidence * 100)
+              : null;
+            const styleOverride = sStyle && stylePreset && stylePreset !== sStyle.id;
             return (
               <div style={{
                 marginTop: 6, padding: "6px 10px", borderRadius: 8,
                 background: low ? "rgba(245,158,11,0.08)" : "rgba(34,197,94,0.08)",
                 border: `1px solid ${low ? "rgba(245,158,11,0.3)" : "rgba(34,197,94,0.3)"}`,
-                display: "flex", alignItems: "center", gap: 8, fontSize: 11,
+                display: "flex", alignItems: "center", gap: 8, fontSize: 11, flexWrap: "wrap",
               }}>
-                <span style={{ flex: 1 }}>
+                <span style={{ flex: 1, lineHeight: 1.6 }}>
                   🤖 추천: {sCat.icon} <b>{sCat.label}</b> ({sCat.room}) · {pct}%
                   {low && <span style={{ marginLeft: 4, color: "#b45309" }}>(확신도 낮음)</span>}
+                  {sStyle && (
+                    <>
+                      <span style={{ margin: "0 6px", color: "var(--text-muted)" }}>·</span>
+                      <b>{sStyle.label}</b> 스타일
+                      {stylePct != null && ` · ${stylePct}%`}
+                      {styleOverride && <span style={{ marginLeft: 4, color: "var(--text-muted)" }}>(기존 선택 유지)</span>}
+                    </>
+                  )}
                 </span>
                 <button
                   onClick={applySuggestion}
