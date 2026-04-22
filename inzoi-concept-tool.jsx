@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const CHANGELOG = [
+  {
+    version: "1.3.0",
+    date: "2026-04-22",
+    changes: [
+      "[Phase B-3] wishlist / completedList state 를 cards 에서 derived 로 완전 전환",
+      "cards 가 single source of truth. 기존 wishlist_items / completed_items 테이블은 하위 호환으로만 유지",
+      "카드 추가 시 setCards 로 즉시 UI 반영 (폴링 기다릴 필요 없음)",
+      "위시리스트 카드 삭제 시 cards 테이블에서 삭제 (UI 즉시 갱신)",
+      "[컨셉시트 카드 내부 생성] sheet 단계 카드 모달에서 '📑 컨셉시트 생성' 버튼으로 바로 PNG 제작",
+      "생성된 컨셉시트는 썸네일 + 카드 썸네일 자동 갱신 + 다운로드 버튼 제공",
+    ],
+  },
   {
     version: "1.2.0",
     date: "2026-04-22",
@@ -1614,21 +1626,105 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
   if (statusKey === "sheet") {
     const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
+    const sheetUrl = card.data?.concept_sheet_url;
+
+    const makeSheet = async () => {
+      if (!selectedDesign?.imageUrl) { alert("선정된 시안 이미지가 필요합니다."); return; }
+      setBusy(true);
+      try {
+        // 소스 이미지 로드
+        const sourceImg = await new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = selectedDesign.imageUrl;
+        });
+        if (!sourceImg) { alert("소스 이미지 로드 실패"); return; }
+
+        // 임시 canvas 에 6개 뷰 slot 모두 같은 이미지 (transforms 로 다르게 보임)
+        const canvas = document.createElement("canvas");
+        const viewImages = {};
+        for (const v of VIEW_ANGLES) viewImages[v.id] = sourceImg;
+
+        generateConceptSheetCanvas(canvas, viewImages, {
+          category: card.data?.category_label || card.title,
+          style:    card.data?.style || "",
+          prompt:   card.data?.prompt || card.description || "",
+          seed:     selectedDesign.seed,
+          colors:   card.data?.colors || [],
+          model:    selectedModel,
+        });
+
+        const raw = canvas.toDataURL("image/png");
+        const uploaded = await uploadDataUrl(raw);
+
+        await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            data: { ...(card.data || {}), concept_sheet_url: uploaded },
+            thumbnail_url: uploaded,
+            actor,
+          }),
+        });
+        await onRefresh();
+      } catch (e) {
+        alert("컨셉시트 생성 실패: " + e.message);
+      } finally { setBusy(false); }
+    };
+
     return (
       <div style={sectionStyle}>
-        <div style={titleStyle}>컨셉시트 / 최종 완료</div>
+        <div style={titleStyle}>컨셉시트</div>
         {selectedDesign?.imageUrl && (
-          <div style={{ marginBottom: 12, textAlign: "center" }}>
-            <img src={selectedDesign.imageUrl} alt="선정 시안" style={{ maxWidth: "100%", maxHeight: 180, borderRadius: 8, background: "#fff" }} />
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+          <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "rgba(0,0,0,0.03)" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
               선정 시안 #{selectedIdx + 1} (seed: {selectedDesign.seed})
             </div>
+            <img src={selectedDesign.imageUrl} alt="선정 시안" style={{ width: "100%", maxHeight: 160, objectFit: "contain", borderRadius: 6, background: "#fff" }} />
           </div>
         )}
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 10 }}>
-          컨셉시트 PNG 제작은 기존 "시안 생성" 탭의 갤러리에서 가능합니다. 여기서는 바로 완료 처리하거나 이전 단계로 되돌릴 수 있습니다.
+
+        {sheetUrl ? (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>✓ 컨셉시트 생성됨</div>
+            <a href={sheetUrl} target="_blank" rel="noreferrer">
+              <img src={sheetUrl} alt="컨셉시트" style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, background: "#fff", cursor: "zoom-in" }} />
+            </a>
+          </div>
+        ) : (
+          <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
+            아직 컨셉시트가 없습니다. 아래 버튼으로 생성하세요.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            onClick={makeSheet}
+            disabled={busy || !selectedDesign?.imageUrl}
+            style={{
+              flex: 1, minWidth: 140, padding: "10px 14px", borderRadius: 10,
+              background: busy || !selectedDesign?.imageUrl ? "rgba(0,0,0,0.08)" : "var(--primary)",
+              border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: busy ? "wait" : (!selectedDesign?.imageUrl ? "not-allowed" : "pointer"),
+            }}
+            title={selectedDesign?.imageUrl ? "선정 시안으로 컨셉시트 PNG 제작" : "선정된 시안이 없습니다"}
+          >{busy ? "생성 중…" : sheetUrl ? "🔄 재생성" : "📑 컨셉시트 생성"}</button>
+          {sheetUrl && (
+            <a
+              href={sheetUrl}
+              download={`inzoi_sheet_${card.id}.png`}
+              style={{
+                padding: "10px 14px", borderRadius: 10,
+                background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                color: "var(--text-muted)", fontSize: 12, fontWeight: 600, textDecoration: "none",
+              }}
+            >📥 저장</a>
+          )}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+
+        <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
           <button
             onClick={() => onMoveTo("done")}
             style={{
@@ -1998,7 +2094,10 @@ export default function InZOIConceptTool() {
 
   // Completed list / wishlist — D1 가 source of truth. 초기 렌더는 빈 배열로
   // 시작하고, 아래 init effect 에서 스냅샷을 로드한다.
-  const [completedList, setCompletedList] = useState([]);
+  // [Phase B-3] completedList 는 더 이상 독립 state 아님. cards 에서 derived.
+  // 하위 호환용으로 동일한 배열 shape 를 내려주고 기존 컴포넌트는 수정 없이 작동.
+  // setCompletedList(...) 호출부는 전부 cards API 로 이관됨.
+  const setCompletedList = () => { /* deprecated: cards 가 SOT */ };
   const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
@@ -2018,7 +2117,62 @@ export default function InZOIConceptTool() {
   const [lists, setLists] = useState([]);           // wishlist / drafting / sheet / done
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
 
-  const [wishlist, setWishlist] = useState([]);
+  // [Phase B-3] cards → 기존 wishlist / completedList shape 로 변환하는 derived.
+  // 컴포넌트들은 계속 `wishlist` / `completedList` 변수명 그대로 사용.
+  const wishlist = useMemo(() => {
+    const listId = lists.find((l) => l.status_key === "wishlist")?.id;
+    if (!listId) return [];
+    return cards
+      .filter((c) => c.list_id === listId && !c.is_archived)
+      .map((c) => {
+        const d = c.data || {};
+        return {
+          id: c.id.startsWith("wish-") ? c.id.slice(5) : c.id,
+          title: c.title,
+          note: c.description,
+          imageUrl: c.thumbnail_url,
+          gradient: d.gradient,
+          createdAt: c.created_at,
+          _cardId: c.id,
+        };
+      })
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }, [cards, lists]);
+
+  const completedList = useMemo(() => {
+    const listId = lists.find((l) => l.status_key === "done")?.id;
+    if (!listId) return [];
+    return cards
+      .filter((c) => c.list_id === listId && !c.is_archived)
+      .map((c) => {
+        const d = c.data || {};
+        const selectedDesign = (typeof d.selected_design === "number" && Array.isArray(d.designs)) ? d.designs[d.selected_design] : null;
+        return {
+          id: c.id.startsWith("comp-") ? c.id.slice(5) : c.id,
+          assetCode: d.asset_code,
+          category: d.category,
+          categoryLabel: d.category_label || c.title,
+          categoryIcon: d.category_icon || "🏠",
+          style: d.style,
+          prompt: d.prompt || c.description,
+          seed: d.seed || selectedDesign?.seed,
+          colors: d.colors || [],
+          gradient: d.gradient,
+          imageUrl: d.image_url || selectedDesign?.imageUrl || c.thumbnail_url,
+          conceptSheetUrl: d.concept_sheet_url || c.thumbnail_url,
+          voters: d.voters,
+          winner: d.winner,
+          pipelineStatus: d.pipeline_status,
+          designer: d.designer,
+          completedAt: c.confirmed_at || c.updated_at || c.created_at,
+          _cardId: c.id,
+        };
+      })
+      .sort((a, b) => (b.completedAt || "").localeCompare(a.completedAt || ""));
+  }, [cards, lists]);
+
+  // [Phase B-3] wishlist 도 cards derived. 기존 shape 호환.
+  const setWishlist = () => { /* deprecated */ };
   const [wishTitle, setWishTitle] = useState("");
   const [wishNote, setWishNote] = useState("");
   const [wishImage, setWishImage] = useState(null);
@@ -3956,11 +4110,19 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                               confirmed_at: newItem.completedAt,
                               confirmed_by: newItem.designer || actorName || null,
                             };
-                            await fetch(`/api/projects/${projectSlug}/cards`, {
+                            const rCard = await fetch(`/api/projects/${projectSlug}/cards`, {
                               method: "POST",
                               headers: { "content-type": "application/json" },
                               body: JSON.stringify(cardBody),
                             });
+                            if (rCard.ok) {
+                              const created = await rCard.json();
+                              // 즉시 cards state 에 반영 → derived completedList 에 바로 나타남.
+                              setCards((prev) => {
+                                if (prev.find((c) => c.id === created.id)) return prev;
+                                return [created, ...prev];
+                              });
+                            }
                           } catch (e) { console.warn("card 이중 저장 실패 (무시):", e); }
                         }
 
@@ -4280,7 +4442,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     // Phase B-2: 새 카드 시스템에도 이중 저장.
                     if (projectSlug) {
                       try {
-                        await fetch(`/api/projects/${projectSlug}/cards`, {
+                        const rCard = await fetch(`/api/projects/${projectSlug}/cards`, {
                           method: "POST",
                           headers: { "content-type": "application/json" },
                           body: JSON.stringify({
@@ -4293,6 +4455,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             actor: actorName || null,
                           }),
                         });
+                        if (rCard.ok) {
+                          const created = await rCard.json();
+                          setCards((prev) => {
+                            if (prev.find((c) => c.id === created.id)) return prev;
+                            return [created, ...prev];
+                          });
+                        }
                       } catch (e) { console.warn("wishlist card 이중 저장 실패:", e); }
                     }
 
@@ -4376,9 +4545,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             )}
                           </div>
                           <button
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
-                              setWishlist(prev => prev.filter(w => w.id !== item.id));
+                              // cards 테이블에서 삭제 → derived wishlist 자동 반영.
+                              if (projectSlug) {
+                                const cardId = item._cardId || `wish-${item.id}`;
+                                try {
+                                  await fetch(`/api/projects/${projectSlug}/cards/${cardId}`, { method: "DELETE" });
+                                  setCards((prev) => prev.filter((c) => c.id !== cardId));
+                                } catch (err) { console.warn("삭제 실패:", err); }
+                              }
                             }}
                             style={{
                               width: 30, height: 30, borderRadius: 8, flexShrink: 0,
@@ -5760,7 +5936,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     // Phase B-2: 새 카드 시스템에도 이중 저장.
                     if (projectSlug) {
                       try {
-                        await fetch(`/api/projects/${projectSlug}/cards`, {
+                        const rCard = await fetch(`/api/projects/${projectSlug}/cards`, {
                           method: "POST",
                           headers: { "content-type": "application/json" },
                           body: JSON.stringify({
@@ -5773,6 +5949,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             actor: actorName || null,
                           }),
                         });
+                        if (rCard.ok) {
+                          const created = await rCard.json();
+                          setCards((prev) => {
+                            if (prev.find((c) => c.id === created.id)) return prev;
+                            return [created, ...prev];
+                          });
+                        }
                       } catch (e) { console.warn("wishlist card 이중 저장 실패:", e); }
                     }
 
@@ -5841,9 +6024,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             )}
                           </div>
                           <button
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
-                              setWishlist(prev => prev.filter(w => w.id !== item.id));
+                              // cards 테이블에서 삭제 → derived wishlist 자동 반영.
+                              if (projectSlug) {
+                                const cardId = item._cardId || `wish-${item.id}`;
+                                try {
+                                  await fetch(`/api/projects/${projectSlug}/cards/${cardId}`, { method: "DELETE" });
+                                  setCards((prev) => prev.filter((c) => c.id !== cardId));
+                                } catch (err) { console.warn("삭제 실패:", err); }
+                              }
                             }}
                             style={{
                               width: 28, height: 28, borderRadius: 8, flexShrink: 0,
