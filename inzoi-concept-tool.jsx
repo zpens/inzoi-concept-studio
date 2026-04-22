@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.3";
+const APP_VERSION = "1.4.4";
 const CHANGELOG = [
+  {
+    version: "1.4.4",
+    date: "2026-04-22",
+    changes: [
+      "'＋ 새 시안' 버튼이 레거시 job 대신 카드를 drafting 상태로 생성하고 상세 모달을 즉시 오픈",
+      "시안 생성 탭에서 '새 작업' 카드를 열면 어셋 정보가 모달 안 AssetInfoEditor 에서 바로 편집",
+      "기존 레거시 작업(화면 하단 전개)은 phase-out — 새로 만드는 작업은 전부 카드 모달 경로",
+    ],
+  },
   {
     version: "1.4.3",
     date: "2026-04-22",
@@ -2479,13 +2488,41 @@ export default function InZOIConceptTool() {
   } = activeJob;
 
   // Spawn a new blank job and focus it. 상세 UI 도 자동으로 전개.
-  const spawnNewJob = useCallback(() => {
-    const nj = createBlankJob(Date.now());
-    setJobs((prev) => [...prev, nj]);
-    setActiveJobId(nj.id);
-    setShowWorkflowDetail(true);
-    return nj.id;
-  }, []);
+  // [v1.4.4] '＋ 새 시안' 은 이제 새 card 를 drafting 상태로 생성하고
+  // 카드 상세 모달을 바로 열어 어셋 정보 인라인 편집으로 유도한다.
+  // projectSlug 미설정 시에만 레거시 job 경로로 폴백.
+  const spawnNewJob = useCallback(async () => {
+    if (!projectSlug) {
+      const nj = createBlankJob(Date.now());
+      setJobs((prev) => [...prev, nj]);
+      setActiveJobId(nj.id);
+      setShowWorkflowDetail(true);
+      return nj.id;
+    }
+    const cardId = `card-${Date.now()}`;
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/cards`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: cardId,
+          title: "새 작업",
+          status_key: "drafting",
+          data: {},
+          actor: actorName || null,
+        }),
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const created = await r.json();
+      setCards((prev) => (prev.find((c) => c.id === created.id) ? prev : [created, ...prev]));
+      const detail = await fetchCardDetail(projectSlug, created.id);
+      if (detail) setDetailCard(detail);
+    } catch (e) {
+      console.warn("새 카드 생성 실패:", e);
+      alert("카드 생성 실패: " + e.message);
+    }
+    return cardId;
+  }, [projectSlug, actorName]);
 
   // Remove a job; invariant effect below picks a new active one.
   const removeJob = useCallback((jobId) => {
