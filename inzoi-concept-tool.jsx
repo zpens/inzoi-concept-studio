@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.4";
+const APP_VERSION = "1.5.5";
 const CHANGELOG = [
+  {
+    version: "1.5.5",
+    date: "2026-04-22",
+    changes: [
+      "카드 상세 모달의 참조 이미지(72→144px) 및 시안 썸네일(100→200px) 크기 2배 확대 — 드래프트 패널 / 시안 이력 / AssetInfoEditor 모두 일괄",
+    ],
+  },
   {
     version: "1.5.4",
     date: "2026-04-22",
@@ -1801,7 +1808,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 src={url}
                 alt=""
                 onClick={() => onOpenImage?.(url)}
-                style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: "1px solid var(--surface-border)", cursor: onOpenImage ? "zoom-in" : "default" }}
+                style={{ width: 144, height: 144, objectFit: "cover", borderRadius: 10, border: "1px solid var(--surface-border)", cursor: onOpenImage ? "zoom-in" : "default" }}
               />
               {!disabled && (
                 <button
@@ -1832,7 +1839,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               <button
                 onClick={() => fileRef.current?.click()}
                 style={{
-                  width: 72, height: 72, borderRadius: 8,
+                  width: 144, height: 144, borderRadius: 10,
                   background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
                   color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
                 }}
@@ -1982,7 +1989,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
         {designs.length > 0 ? (
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
             gap: 8,
           }}>
             {designs.map((d, i) => (
@@ -2007,10 +2014,10 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                     src={d.imageUrl}
                     alt=""
                     onClick={() => onOpenImage?.(d.imageUrl)}
-                    style={{ width: "100%", height: 100, objectFit: "cover", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
+                    style={{ width: "100%", height: 200, objectFit: "cover", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
                   />
                 ) : (
-                  <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+                  <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
                 )}
                 {/* hover 오버레이 — pointerEvents: none 으로 이미지 클릭(zoom) 을
                     가로채지 않도록 하고, 내부 버튼에만 auto 부여 */}
@@ -5968,7 +5975,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       </div>
                       <div style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
                         gap: 8,
                       }}>
                         {card.data.designs.map((d, i) => {
@@ -5984,10 +5991,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                                   src={d.imageUrl}
                                   alt=""
                                   onClick={() => setPreviewImage(d.imageUrl)}
-                                  style={{ width: "100%", height: 100, objectFit: "cover", display: "block", cursor: "zoom-in" }}
+                                  style={{ width: "100%", height: 200, objectFit: "cover", display: "block", cursor: "zoom-in" }}
                                 />
                               ) : (
-                                <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+                                <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
                               )}
                               <div style={{
                                 position: "absolute", top: 4, left: 4,
