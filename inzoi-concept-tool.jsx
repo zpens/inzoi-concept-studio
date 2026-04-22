@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.2";
+const APP_VERSION = "1.4.3";
 const CHANGELOG = [
+  {
+    version: "1.4.3",
+    date: "2026-04-22",
+    changes: [
+      "어셋 정보(카테고리·스타일·프롬프트·참조이미지) 입력이 카드 상세 모달 안에서 인라인 자동 저장",
+      "카드 생성은 최소 정보(제목 등)만, 세부 편집은 상세에서 점진적으로",
+      "별도 '시안 생성 준비' 다이얼로그 제거 — 위시 → 시안 이동은 필수 필드 검증 후 바로 전환",
+      "[버그 수정] 아카이브에서 복구 시 카드가 다시 보이지 않던 문제 해결 + 복구된 단계 탭으로 자동 전환",
+    ],
+  },
   {
     version: "1.4.2",
     date: "2026-04-22",
