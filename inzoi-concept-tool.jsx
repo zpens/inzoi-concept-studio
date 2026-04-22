@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.8";
+const APP_VERSION = "1.7.9";
 const CHANGELOG = [
+  {
+    version: "1.7.9",
+    date: "2026-04-23",
+    changes: [
+      "Gemini 시안 생성 프롬프트 영문 일관화 — 카테고리/스타일을 id 기반 영문으로 변환(PascalCase → 'vanity table', 'mid century modern')",
+      "크기 정보가 있으면 프롬프트에 'target size: 190cm wide, 210cm deep, 50cm tall' 자동 포함",
+      "카탈로그 spec hints (referenced variants / tags) 는 프롬프트에서 제거 — 사용자 요청에 따라 참조이미지 + 프롬프트 + 스타일 + 크기만 포함",
+    ],
+  },
   {
     version: "1.7.8",
     date: "2026-04-23",
@@ -1983,24 +1992,33 @@ const STATUS_META = {
 async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress }) {
   const seeds = Array.from({ length: Math.max(1, Math.min(8, count)) }, () => generateSeed());
 
-  // prompt enhance — 기존 generateDesigns 와 동일 패턴
+  // prompt enhance — 영문 일관성 우선, 카테고리 spec hints 는 제외 (사용자 요청 v1.7.9).
   const catInfo = card.data?.category
     ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category)
     : null;
   const styleInfo = card.data?.style_preset
     ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset)
     : null;
-  // 카테고리 spec — inzoiObjectList 의 objects.json 에서 생성된 실제 에셋 카탈로그 요약
-  // (sample_names / common_tags / styles). 없으면 하드코딩 ASSET_SPECS 로 fallback.
-  const apiSpec = catInfo?.spec;
-  const legacySpec = catInfo ? (ASSET_SPECS[catInfo.id] || DEFAULT_SPEC) : null;
-  const specHints = [];
-  if (apiSpec?.sample_names?.length) specHints.push(`referenced variants: ${apiSpec.sample_names.slice(0, 3).join(", ")}`);
-  if (apiSpec?.common_tags?.length) specHints.push(`tags: ${apiSpec.common_tags.slice(0, 4).join(", ")}`);
-  if (legacySpec?.hint && !apiSpec) specHints.push(legacySpec.hint);
-  const hintStr = specHints.length ? `, ${specHints.join("; ")}` : "";
+
+  // PascalCase / snake_case id 를 영문 자연어로 변환. "VanityTable" → "vanity table",
+  // "Child_Bed" → "child bed", "Mid_Century_Modern" → "mid century modern".
+  const toEnglish = (id) => typeof id === "string"
+    ? id.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().trim()
+    : "";
+  const englishCategory = catInfo ? toEnglish(catInfo.id) : "";
+  const englishStyle = styleInfo ? toEnglish(styleInfo.id) : "modern";
+
+  // 크기 힌트 — size_info 가 있으면 "target size: WxDxHcm" 로 프롬프트에 포함.
+  const si = card.data?.size_info;
+  const dims = [
+    si?.width_cm ? `${si.width_cm}cm wide` : null,
+    si?.depth_cm ? `${si.depth_cm}cm deep` : null,
+    si?.height_cm ? `${si.height_cm}cm tall` : null,
+  ].filter(Boolean);
+  const sizeHint = dims.length ? `, target size: ${dims.join(", ")}` : "";
+
   const enhancedPrompt = catInfo
-    ? `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${hintStr}, product design concept, white background, studio lighting, high detail, game asset reference`
+    ? `${englishCategory} furniture asset, ${englishStyle} style, ${prompt}${sizeHint}, product design concept, white background, studio lighting, high detail, game asset reference`
     : prompt;
 
   // ref_images 가 비어있고 card.thumbnail_url 이 있으면 (위시리스트에서 넘어온
