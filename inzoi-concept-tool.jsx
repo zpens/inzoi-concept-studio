@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.3";
+const APP_VERSION = "1.6.4";
 const CHANGELOG = [
+  {
+    version: "1.6.4",
+    date: "2026-04-22",
+    changes: [
+      "🤖 카테고리 자동 분류 추가 — 카드 상세 모달의 카테고리 필드 옆 '자동 분류' 버튼을 누르면 첨부 이미지를 Gemini 2.5 Flash Vision 에 보내 카테고리 id + confidence 반환",
+      "자동 적용하지 않고 '추천: 🛏️ 침대 (85%)' 배지로 제안, [적용] 클릭 시 반영 — 확신도 50% 미만은 주황색으로 표시",
+      "응답이 실제 FURNITURE_CATEGORIES 에 존재하는 id 인지 검증해 hallucination 방지",
+    ],
+  },
   {
     version: "1.6.3",
     date: "2026-04-22",
@@ -1449,6 +1458,60 @@ async function generateImageWithGemini(apiKey, prompt, model, refImages = []) {
   throw new Error(`이미지 없음 (finishReason: ${blockReason || "unknown"})`);
 }
 
+// 이미지 한 장을 받아 FURNITURE_CATEGORIES 중 가장 적합한 카테고리 id 와
+// confidence(0~1) 를 돌려준다. Gemini 2.5 Flash(vision) 로 호출하고 JSON 응답만 요청.
+async function classifyCategoryWithGemini(apiKey, imageUrl) {
+  const part = await fetchImagePart(imageUrl);
+  if (!part) throw new Error("이미지 로드 실패");
+
+  const categoryList = FURNITURE_CATEGORIES
+    .map((c) => `- ${c.id}: ${c.label} (${c.room})`)
+    .join("\n");
+
+  const prompt = `이 이미지에 가장 잘 맞는 가구/인테리어 카테고리를 아래 목록에서 id 하나만 고르세요.
+반드시 JSON 형식만 응답하세요: {"category_id":"<id>","confidence":0.0~1.0}.
+확신이 낮으면 confidence 를 0.5 미만으로 낮추고, 카테고리가 목록에 없으면 "other" 사용.
+
+카테고리:
+${categoryList}`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: part.mime, data: part.base64 } },
+            { text: prompt },
+          ],
+        }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+      }),
+    }
+  );
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`gemini ${response.status}: ${errBody.slice(0, 120)}`);
+  }
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[0]);
+    const id = obj.category_id || obj.category || null;
+    if (!id) return null;
+    // 응답이 실제 카테고리 목록에 있는지 확인 — hallucination 방어
+    if (!FURNITURE_CATEGORIES.find((c) => c.id === id)) return null;
+    return {
+      category_id: id,
+      confidence: typeof obj.confidence === "number" ? obj.confidence : 0.5,
+    };
+  } catch { return null; }
+}
+
 // ─── List available Gemini image models ───
 async function listGeminiImageModels(apiKey) {
   const response = await fetch(
@@ -1736,7 +1799,7 @@ async function uploadDataUrl(dataUrl) {
 // 카드 상세 모달 안에 인라인으로 보이는 어셋 정보 에디터.
 // 카테고리 / 스타일 / 프롬프트 / 참조 이미지 4개 필드 자동 저장.
 // 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
-function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage }) {
+function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, geminiApiKey }) {
   // 참조 이미지 초기값: data.ref_images 가 비어있고 card.thumbnail_url 이 있으면
   // 위시리스트에서 넘어온 이미지라 보고 자동 seed (아래 effect 에서 서버 저장).
   const initialRefs = (card.data?.ref_images && card.data.ref_images.length)
@@ -1748,7 +1811,34 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
   const [prompt, setPrompt] = React.useState(card.data?.prompt || card.description || "");
   const [refImages, setRefImages] = React.useState(initialRefs);
   const [saving, setSaving] = React.useState(false);
+  const [suggesting, setSuggesting] = React.useState(false);
+  const [suggestion, setSuggestion] = React.useState(null); // { category_id, confidence }
   const fileRef = React.useRef(null);
+
+  // 🤖 자동 분류 — Gemini Vision 으로 카테고리 추천. 자동 적용하지 않고 제안만.
+  const runCategorySuggest = async () => {
+    if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
+    const src = refImages[0] || card.thumbnail_url;
+    if (!src) { alert("참조 이미지를 먼저 추가해주세요"); return; }
+    setSuggesting(true);
+    setSuggestion(null);
+    try {
+      const r = await classifyCategoryWithGemini(geminiApiKey, src);
+      if (!r) { alert("자동 분류 실패 — 수동으로 선택해주세요"); return; }
+      setSuggestion(r);
+    } catch (e) {
+      alert("자동 분류 실패: " + e.message);
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const applySuggestion = async () => {
+    if (!suggestion?.category_id) return;
+    setCategory(suggestion.category_id);
+    setSuggestion(null);
+    await save({ category: suggestion.category_id });
+  };
 
   // 서버에서 카드가 갱신되면 로컬 폼 상태도 동기화.
   React.useEffect(() => {
@@ -1851,7 +1941,23 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
-          <div style={fieldLabel}>카테고리</div>
+          <div style={{ ...fieldLabel, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>카테고리</span>
+            {!disabled && (
+              <button
+                onClick={runCategorySuggest}
+                disabled={suggesting || (!refImages[0] && !card.thumbnail_url)}
+                title="이미지를 분석해 카테고리 추천 (Gemini Vision)"
+                style={{
+                  padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                  background: suggesting ? "rgba(0,0,0,0.06)" : "rgba(7,110,232,0.08)",
+                  border: "1px solid rgba(7,110,232,0.3)",
+                  color: suggesting ? "var(--text-muted)" : "var(--primary)",
+                  cursor: suggesting || (!refImages[0] && !card.thumbnail_url) ? "not-allowed" : "pointer",
+                }}
+              >{suggesting ? "⏳ 분석 중…" : "🤖 자동 분류"}</button>
+            )}
+          </div>
           <select
             value={category}
             disabled={disabled}
@@ -1863,6 +1969,39 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               <option key={c.id} value={c.id}>{c.icon} {c.label} ({c.room})</option>
             ))}
           </select>
+          {suggestion && (() => {
+            const sCat = FURNITURE_CATEGORIES.find((c) => c.id === suggestion.category_id);
+            if (!sCat) return null;
+            const pct = Math.round((suggestion.confidence || 0) * 100);
+            const low = pct < 50;
+            return (
+              <div style={{
+                marginTop: 6, padding: "6px 10px", borderRadius: 8,
+                background: low ? "rgba(245,158,11,0.08)" : "rgba(34,197,94,0.08)",
+                border: `1px solid ${low ? "rgba(245,158,11,0.3)" : "rgba(34,197,94,0.3)"}`,
+                display: "flex", alignItems: "center", gap: 8, fontSize: 11,
+              }}>
+                <span style={{ flex: 1 }}>
+                  🤖 추천: {sCat.icon} <b>{sCat.label}</b> ({sCat.room}) · {pct}%
+                  {low && <span style={{ marginLeft: 4, color: "#b45309" }}>(확신도 낮음)</span>}
+                </span>
+                <button
+                  onClick={applySuggestion}
+                  style={{
+                    padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                    background: "var(--primary)", border: "none", color: "#fff", cursor: "pointer",
+                  }}
+                >적용</button>
+                <button
+                  onClick={() => setSuggestion(null)}
+                  style={{
+                    padding: "3px 6px", borderRadius: 6, fontSize: 10,
+                    background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer",
+                  }}
+                >✕</button>
+              </div>
+            );
+          })()}
         </div>
         <div>
           <div style={fieldLabel}>스타일 프리셋</div>
@@ -6056,6 +6195,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     actor={actorName}
                     disabled={confirmed}
                     onOpenImage={setPreviewImage}
+                    geminiApiKey={geminiApiKey}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
                       if (d) {
