@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.9";
+const APP_VERSION = "1.5.0";
 const CHANGELOG = [
+  {
+    version: "1.5.0",
+    date: "2026-04-22",
+    changes: [
+      "시안 썸네일 클릭 시 원본 해상도 lightbox 오픈 (hover 오버레이가 pointer-events: none 으로 더 이상 클릭을 가로채지 않음)",
+      "'☆ 대표' 버튼 추가 — 상태 이동 없이 카드 대표 이미지(썸네일)만 지정, 대표 지정된 시안은 ⭐ 배지 + 노란 테두리 표시",
+      "카드 상세 모달 크기 약 30% 확장 (960×92vh → 1250×94vh, maxWidth 96vw)",
+    ],
+  },
   {
     version: "1.4.9",
     date: "2026-04-22",
@@ -1828,6 +1837,23 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
     } catch (e) { alert("선정 실패: " + e.message); }
   };
 
+  // 대표 이미지만 지정 (상태 이동 없이 카드 썸네일 + selected_design 만 업데이트).
+  const setCoverDesign = async (idx) => {
+    try {
+      const d = designs[idx];
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), selected_design: idx },
+          thumbnail_url: d?.imageUrl || card.thumbnail_url,
+          actor,
+        }),
+      });
+      await onRefresh();
+    } catch (e) { alert("대표 지정 실패: " + e.message); }
+  };
+
   const removeDesign = async (idx) => {
     if (!confirm("이 시안을 삭제하시겠어요?")) return;
     const next = designs.filter((_, i) => i !== idx);
@@ -1896,11 +1922,22 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
             gap: 8,
           }}>
             {designs.map((d, i) => (
-              <div key={i} style={{
-                position: "relative", borderRadius: 8, overflow: "hidden",
-                border: selectedIdx === i ? "2px solid var(--primary)" : "1px solid var(--surface-border)",
-                background: "#000",
-              }}>
+              <div
+                key={i}
+                onMouseEnter={(e) => {
+                  const ov = e.currentTarget.querySelector(".design-hover-overlay");
+                  if (ov) ov.style.opacity = 1;
+                }}
+                onMouseLeave={(e) => {
+                  const ov = e.currentTarget.querySelector(".design-hover-overlay");
+                  if (ov) ov.style.opacity = 0;
+                }}
+                style={{
+                  position: "relative", borderRadius: 8, overflow: "hidden",
+                  border: selectedIdx === i ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+                  background: "#000",
+                }}
+              >
                 {d.imageUrl ? (
                   <img
                     src={d.imageUrl}
@@ -1911,26 +1948,37 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                 ) : (
                   <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
                 )}
+                {/* hover 오버레이 — pointerEvents: none 으로 이미지 클릭(zoom) 을
+                    가로채지 않도록 하고, 내부 버튼에만 auto 부여 */}
                 <div style={{
                   position: "absolute", inset: 0,
                   display: "flex", flexDirection: "column", justifyContent: "flex-end",
-                  padding: 4, background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent 60%)",
+                  padding: 4, background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent 55%)",
                   opacity: 0, transition: "opacity 0.2s",
+                  pointerEvents: "none",
                 }}
-                  onMouseOver={(e) => e.currentTarget.style.opacity = 1}
-                  onMouseOut={(e) => e.currentTarget.style.opacity = 0}
+                  className="design-hover-overlay"
                 >
-                  <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                  <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", pointerEvents: "auto" }}>
                     <button
-                      onClick={() => selectDesign(i)}
+                      onClick={(e) => { e.stopPropagation(); setCoverDesign(i); }}
+                      style={{
+                        padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                        background: selectedIdx === i ? "#fbbf24" : "rgba(255,255,255,0.9)",
+                        border: "none", color: selectedIdx === i ? "#000" : "var(--text-main)", cursor: "pointer",
+                      }}
+                      title="대표 이미지로 지정 (카드 썸네일 변경, 상태 유지)"
+                    >{selectedIdx === i ? "⭐ 대표" : "☆ 대표"}</button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); selectDesign(i); }}
                       style={{
                         padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
                         background: "var(--primary)", border: "none", color: "#fff", cursor: "pointer",
                       }}
-                      title="이 시안 선정 → 컨셉시트로 이동"
+                      title="이 시안 선정 → 컨셉시트 단계로 이동"
                     >선정 →</button>
                     <button
-                      onClick={() => removeDesign(i)}
+                      onClick={(e) => { e.stopPropagation(); removeDesign(i); }}
                       style={{
                         padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
                         background: "rgba(239,68,68,0.9)", border: "none", color: "#fff", cursor: "pointer",
@@ -1938,11 +1986,21 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                     >삭제</button>
                   </div>
                 </div>
+                {/* 인덱스 + 대표 표시 (항상 보이도록 오버레이 밖) */}
                 <div style={{
                   position: "absolute", top: 4, left: 4,
                   padding: "1px 6px", borderRadius: 4,
                   background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
+                  pointerEvents: "none",
                 }}>#{i + 1}</div>
+                {selectedIdx === i && (
+                  <div style={{
+                    position: "absolute", top: 4, right: 4,
+                    padding: "1px 6px", borderRadius: 4,
+                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
+                    pointerEvents: "none",
+                  }}>⭐ 대표</div>
+                )}
               </div>
             ))}
           </div>
@@ -5607,7 +5665,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <div style={{
               position: "fixed", top: "50%", left: "50%",
               transform: "translate(-50%, -50%)",
-              width: 960, maxWidth: "95vw", maxHeight: "92vh",
+              width: 1250, maxWidth: "96vw", maxHeight: "94vh",
               background: "rgba(255, 255, 255, 0.98)",
               backdropFilter: "blur(20px)",
               border: "1px solid var(--surface-border)",
