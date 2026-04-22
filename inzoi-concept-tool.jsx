@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.5";
+const APP_VERSION = "1.4.6";
 const CHANGELOG = [
+  {
+    version: "1.4.6",
+    date: "2026-04-22",
+    changes: [
+      "'투표 및 선정' 탭이 drafting 중 designs 가 생성된 '선정 대기' 카드만 보여주도록 필터 분리",
+      "'컨셉시트 생성' 탭은 sheet 상태 카드만 (기존 동일)",
+      "상세 모달에 🗑️ 영구 삭제 버튼 추가 — 아카이브(soft)와 구분되는 복구 불가 작업",
+    ],
+  },
   {
     version: "1.4.5",
     date: "2026-04-22",
@@ -3262,12 +3271,18 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           // count 는 legacy jobs + 새 카드 시스템 합산.
           const draftingListId = lists.find((l) => l.status_key === "drafting")?.id;
           const sheetListId    = lists.find((l) => l.status_key === "sheet")?.id;
-          const cardsInList = (id) => id ? cards.filter((c) => c.list_id === id && !c.is_archived).length : 0;
+          const activeDraftingCards = draftingListId
+            ? cards.filter((c) => c.list_id === draftingListId && !c.is_archived)
+            : [];
+          const draftingHasDesigns = activeDraftingCards.filter((c) => Array.isArray(c.data?.designs) && c.data.designs.length > 0).length;
+          const sheetCount = sheetListId
+            ? cards.filter((c) => c.list_id === sheetListId && !c.is_archived).length
+            : 0;
           const TABS = [
             { id: "wishlist",  label: "위시리스트",    icon: "⭐", count: wishlist.length },
-            { id: "create",    label: "시안 생성",     icon: "✨", count: jobs.filter(j => j.step >= 0 && j.step <= 1).length + cardsInList(draftingListId) },
-            { id: "vote",      label: "투표 및 선정",  icon: "🗳️", count: jobs.filter(j => j.step >= 2 && j.step <= 3).length },
-            { id: "sheet",     label: "컨셉시트 생성", icon: "📑", count: jobs.filter(j => j.step >= 4 && j.step <= 6).length + cardsInList(sheetListId) },
+            { id: "create",    label: "시안 생성",     icon: "✨", count: jobs.filter(j => j.step >= 0 && j.step <= 1).length + activeDraftingCards.length },
+            { id: "vote",      label: "투표 및 선정",  icon: "🗳️", count: jobs.filter(j => j.step >= 2 && j.step <= 3).length + draftingHasDesigns },
+            { id: "sheet",     label: "컨셉시트 생성", icon: "📑", count: jobs.filter(j => j.step >= 4 && j.step <= 6).length + sheetCount },
             { id: "completed", label: "완료 목록",     icon: "📋", count: completedList.length },
           ];
           const switchTab = (id) => {
@@ -3401,13 +3416,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         const [min, max] = ranges[activeTab];
         const inRangeJobs = jobs.filter((j) => j.step >= min && j.step <= max);
 
-        // 새 카드 시스템: 각 탭이 담당하는 list 의 카드도 함께 표시.
-        const TAB_TO_STATUS = { create: "drafting", vote: "drafting", sheet: "sheet" };
-        const tabStatusKey = TAB_TO_STATUS[activeTab];
-        const tabListId = lists.find((l) => l.status_key === tabStatusKey)?.id;
-        const inRangeCards = tabListId
-          ? cards.filter((c) => c.list_id === tabListId && !c.is_archived)
-          : [];
+        // 새 카드 시스템: 각 탭이 담당하는 카드 집합 필터.
+        //   create: drafting 단계 모든 카드 (입력/생성 중)
+        //   vote  : drafting 단계 중 designs 가 1개 이상 생성되어 '선정 대기' 인 카드
+        //   sheet : sheet 단계 카드 (선정 완료, 컨셉시트 생성 대기/진행)
+        const draftingLid = lists.find((l) => l.status_key === "drafting")?.id;
+        const sheetLid    = lists.find((l) => l.status_key === "sheet")?.id;
+        let inRangeCards = [];
+        if (activeTab === "create" && draftingLid) {
+          inRangeCards = cards.filter((c) => c.list_id === draftingLid && !c.is_archived);
+        } else if (activeTab === "vote" && draftingLid) {
+          inRangeCards = cards.filter((c) => c.list_id === draftingLid && !c.is_archived
+            && Array.isArray(c.data?.designs) && c.data.designs.length > 0);
+        } else if (activeTab === "sheet" && sheetLid) {
+          inRangeCards = cards.filter((c) => c.list_id === sheetLid && !c.is_archived);
+        }
         const totalCount = inRangeJobs.length + inRangeCards.length;
 
         const tabMeta = {
@@ -5560,6 +5583,25 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     title="컨펌 해제 (편집 가능 상태로 되돌리기)"
                   >🔓 재오픈</button>
                 )}
+                {/* 영구 삭제 — 아카이브와 구분되는 복구 불가 작업 */}
+                <button
+                  onClick={async () => {
+                    if (!confirm(`"${card.title}" 카드를 영구 삭제하시겠어요?\n아카이브와 달리 복구할 수 없습니다.`)) return;
+                    try {
+                      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, { method: "DELETE" });
+                      setCards((prev) => prev.filter((c) => c.id !== card.id));
+                      setArchivedCards((prev) => prev.filter((c) => c.id !== card.id));
+                      setDetailCard(null);
+                    } catch (e) { alert("삭제 실패: " + e.message); }
+                  }}
+                  style={{
+                    padding: "8px 12px", borderRadius: 10,
+                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)",
+                    color: "#dc2626", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  }}
+                  title="영구 삭제 (복구 불가)"
+                >🗑️ 삭제</button>
+
                 {/* 아카이브 토글 — 현재 상태에 따라 버튼 라벨/색상이 바뀜 */}
                 {card.is_archived ? (
                   <button
