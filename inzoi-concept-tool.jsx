@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.7";
+const APP_VERSION = "1.5.8";
 const CHANGELOG = [
+  {
+    version: "1.5.8",
+    date: "2026-04-22",
+    changes: [
+      "카드 상세 모달에서 ← → 키로 같은 탭의 이전/다음 카드로 이동",
+      "상세 모달 오픈 시 slide-in 애니메이션 제거 (바로 표시)",
+      "완료 목록 / 위시리스트 카드 클릭이 항상 새 카드 모달을 열도록 수정 — item._cardId 우선 사용해 접두사 중복 방지",
+    ],
+  },
   {
     version: "1.5.7",
     date: "2026-04-22",
@@ -2801,6 +2810,52 @@ export default function InZOIConceptTool() {
   // shape: { [cardId]: { title, thumb, done, total } }
   const [generatingCards, setGeneratingCards] = useState({});
 
+  // 상세 모달이 열려있을 때 ← → 키로 같은 탭의 이전/다음 카드로 이동.
+  // input/textarea 입력 중이거나 이미지 lightbox 가 열려있을 땐 동작 안 함.
+  useEffect(() => {
+    if (!detailCard || !projectSlug) return;
+    const handler = async (e) => {
+      if (previewImage) return;
+      const tgt = e.target;
+      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      // 현재 탭이 담당하는 카드 리스트를 계산 (listBarTabs 로직과 동일한 규칙).
+      let list = [];
+      const findByStatus = (sk) => lists.find((l) => l.status_key === sk)?.id;
+      if (activeTab === "wishlist") {
+        const lid = findByStatus("wishlist");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      } else if (activeTab === "create") {
+        const lid = findByStatus("drafting");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      } else if (activeTab === "vote") {
+        const lid = findByStatus("drafting");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived
+          && Array.isArray(c.data?.designs) && c.data.designs.length > 0);
+      } else if (activeTab === "sheet") {
+        const lid = findByStatus("sheet");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      } else if (activeTab === "completed") {
+        const lid = findByStatus("done");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      }
+      if (list.length < 2) return;
+      list = list.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      const idx = list.findIndex((c) => c.id === detailCard.id);
+      if (idx < 0) return;
+      e.preventDefault();
+      const next = e.key === "ArrowLeft"
+        ? (idx - 1 + list.length) % list.length
+        : (idx + 1) % list.length;
+      try {
+        const detail = await fetchCardDetail(projectSlug, list[next].id);
+        if (detail) setDetailCard(detail);
+      } catch { /* 무시 */ }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [detailCard, previewImage, activeTab, cards, lists, projectSlug]);
+
   // [Phase B-3] cards → 기존 wishlist / completedList shape 로 변환하는 derived.
   // 컴포넌트들은 계속 `wishlist` / `completedList` 변수명 그대로 사용.
   //
@@ -5086,10 +5141,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <div
                   key={item.id}
                   onClick={async () => {
-                    // 새 cards 테이블에 있으면 통합 카드 모달, 없으면 기존 상세 모달로 폴백.
+                    // 새 cards 테이블 먼저 시도. item._cardId 로 실제 카드 id 사용
+                    // (comp- 접두사 중복 이슈 방지). 없으면 예전 모달로 폴백.
                     if (projectSlug) {
+                      const cardId = item._cardId || `comp-${item.id}`;
                       try {
-                        const detail = await fetchCardDetail(projectSlug, `comp-${item.id}`);
+                        const detail = await fetchCardDetail(projectSlug, cardId);
                         if (detail) { setDetailCard(detail); return; }
                       } catch {}
                     }
@@ -5357,8 +5414,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       key={item.id}
                       onClick={async () => {
                         if (projectSlug) {
+                          const cardId = item._cardId || `wish-${item.id}`;
                           try {
-                            const detail = await fetchCardDetail(projectSlug, `wish-${item.id}`);
+                            const detail = await fetchCardDetail(projectSlug, cardId);
                             if (detail) { setDetailCard(detail); return; }
                           } catch {}
                         }
@@ -5764,7 +5822,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               border: "1px solid var(--surface-border)",
               borderRadius: 20, zIndex: 202,
               boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
-              animation: "fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
               display: "flex", flexDirection: "column", overflow: "hidden",
             }}>
               {/* Header */}
@@ -6750,10 +6807,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     key={item.id}
                     className="sidebar-item"
                     onClick={async () => {
-                    // 새 cards 테이블에 있으면 통합 카드 모달, 없으면 기존 상세 모달로 폴백.
+                    // 새 cards 테이블 먼저 시도. item._cardId 로 실제 카드 id 사용
+                    // (comp- 접두사 중복 이슈 방지). 없으면 예전 모달로 폴백.
                     if (projectSlug) {
+                      const cardId = item._cardId || `comp-${item.id}`;
                       try {
-                        const detail = await fetchCardDetail(projectSlug, `comp-${item.id}`);
+                        const detail = await fetchCardDetail(projectSlug, cardId);
                         if (detail) { setDetailCard(detail); return; }
                       } catch {}
                     }
