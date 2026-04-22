@@ -486,7 +486,19 @@ app.patch("/api/projects/:slug/cards/:id", async (c) => {
 app.delete("/api/projects/:slug/cards/:id", (c) => {
   const p = stmts.getProjectBySlug.get(c.req.param("slug"));
   if (!p) return c.json({ error: "Not found" }, 404);
-  stmts.deleteCard.run(c.req.param("id"), p.id);
+  const cardId = c.req.param("id");
+  stmts.deleteCard.run(cardId, p.id);
+  // 대응되는 legacy 행도 함께 제거 — 남아있으면 ensureLegacyMigration 이
+  // 다음 스냅샷에서 카드를 자동 재생성해 삭제가 되돌아가 보인다.
+  try {
+    if (cardId.startsWith("wish-")) {
+      const legacyId = cardId.slice(5);
+      db.prepare("DELETE FROM wishlist_items WHERE id = ? AND project_id = ?").run(legacyId, p.id);
+    } else if (cardId.startsWith("comp-")) {
+      const legacyId = cardId.slice(5);
+      db.prepare("DELETE FROM completed_items WHERE id = ? AND project_id = ?").run(legacyId, p.id);
+    }
+  } catch (e) { console.warn("legacy cleanup 실패 (무시):", e.message); }
   stmts.touchProject.run(p.id);
   return c.json({ ok: true });
 });

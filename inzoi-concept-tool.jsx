@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.7";
+const APP_VERSION = "1.4.8";
 const CHANGELOG = [
+  {
+    version: "1.4.8",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] 카드 삭제가 폴링 후 되돌아가 보이던 문제 해결 — 서버 DELETE 가 대응되는 legacy wishlist_items/completed_items 행도 함께 제거",
+    ],
+  },
   {
     version: "1.4.7",
     date: "2026-04-22",
