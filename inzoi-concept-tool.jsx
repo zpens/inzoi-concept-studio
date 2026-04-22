@@ -2869,51 +2869,7 @@ export default function InZOIConceptTool() {
   // shape: { [cardId]: { title, thumb, done, total } }
   const [generatingCards, setGeneratingCards] = useState({});
 
-  // 상세 모달이 열려있을 때 ← → 키로 같은 탭의 이전/다음 카드로 이동.
-  // input/textarea 입력 중이거나 이미지 lightbox 가 열려있을 땐 동작 안 함.
-  useEffect(() => {
-    if (!detailCard || !projectSlug) return;
-    const handler = async (e) => {
-      if (previewImage) return;
-      const tgt = e.target;
-      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      // 현재 탭이 담당하는 카드 리스트를 계산 (listBarTabs 로직과 동일한 규칙).
-      let list = [];
-      const findByStatus = (sk) => lists.find((l) => l.status_key === sk)?.id;
-      if (activeTab === "wishlist") {
-        const lid = findByStatus("wishlist");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
-      } else if (activeTab === "create") {
-        const lid = findByStatus("drafting");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
-      } else if (activeTab === "vote") {
-        const lid = findByStatus("drafting");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived
-          && Array.isArray(c.data?.designs) && c.data.designs.length > 0);
-      } else if (activeTab === "sheet") {
-        const lid = findByStatus("sheet");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
-      } else if (activeTab === "completed") {
-        const lid = findByStatus("done");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
-      }
-      if (list.length < 2) return;
-      list = list.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
-      const idx = list.findIndex((c) => c.id === detailCard.id);
-      if (idx < 0) return;
-      e.preventDefault();
-      const next = e.key === "ArrowLeft"
-        ? (idx - 1 + list.length) % list.length
-        : (idx + 1) % list.length;
-      try {
-        const detail = await fetchCardDetail(projectSlug, list[next].id);
-        if (detail) setDetailCard(detail);
-      } catch { /* 무시 */ }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [detailCard, previewImage, activeTab, cards, lists, projectSlug]);
+  // 상세 모달 ← → 키 네비게이션은 projectSlug 선언 이후에 정의 (TDZ 방지).
 
   // [Phase B-3] cards → 기존 wishlist / completedList shape 로 변환하는 derived.
   // 컴포넌트들은 계속 `wishlist` / `completedList` 변수명 그대로 사용.
@@ -3070,6 +3026,51 @@ export default function InZOIConceptTool() {
   const actorName = useMemo(() => {
     try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
   }, []);
+
+  // 상세 모달이 열려있을 때 ← → 키로 같은 탭의 이전/다음 카드로 이동.
+  // input/textarea 입력 중이거나 이미지 lightbox 가 열려있을 땐 동작 안 함.
+  useEffect(() => {
+    if (!detailCard || !projectSlug) return;
+    const handler = async (e) => {
+      if (previewImage) return;
+      const tgt = e.target;
+      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      let list = [];
+      const findByStatus = (sk) => lists.find((l) => l.status_key === sk)?.id;
+      if (activeTab === "wishlist") {
+        const lid = findByStatus("wishlist");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      } else if (activeTab === "create") {
+        const lid = findByStatus("drafting");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      } else if (activeTab === "vote") {
+        const lid = findByStatus("drafting");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived
+          && Array.isArray(c.data?.designs) && c.data.designs.length > 0);
+      } else if (activeTab === "sheet") {
+        const lid = findByStatus("sheet");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      } else if (activeTab === "completed") {
+        const lid = findByStatus("done");
+        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      }
+      if (list.length < 2) return;
+      list = list.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      const idx = list.findIndex((c) => c.id === detailCard.id);
+      if (idx < 0) return;
+      e.preventDefault();
+      const next = e.key === "ArrowLeft"
+        ? (idx - 1 + list.length) % list.length
+        : (idx + 1) % list.length;
+      try {
+        const detail = await fetchCardDetail(projectSlug, list[next].id);
+        if (detail) setDetailCard(detail);
+      } catch { /* 무시 */ }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [detailCard, previewImage, activeTab, cards, lists, projectSlug]);
 
   // [v1.4.4] '＋ 새 시안' 은 새 card 를 drafting 상태로 생성하고 상세 모달을 즉시 오픈.
   // projectSlug 미설정 시에만 레거시 job 경로로 폴백.
