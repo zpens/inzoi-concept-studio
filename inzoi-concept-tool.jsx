@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 const CHANGELOG = [
+  {
+    version: "1.1.1",
+    date: "2026-04-22",
+    changes: [
+      "[Phase B-2] 위시리스트/완료 아이템 추가 시 cards 테이블에도 이중 저장",
+      "[Phase D] 통합 카드 상세 모달 추가 — 상태 이동, 댓글, 활동 이력, data JSON 뷰어",
+      "완료/위시리스트 카드 클릭 시 cards 에 있으면 새 통합 모달, 없으면 기존 모달 (자동 폴백)",
+      "카드 상태 드롭다운으로 아이디어↔시안↔컨셉시트↔완료 단계 이동",
+      "컨펌(완료) 카드는 모달에서 🔒 잠김 표시 + 댓글/상태 변경 불가",
+    ],
+  },
   {
     version: "1.1.0",
     date: "2026-04-22",
@@ -1281,6 +1292,40 @@ function getSlugFromUrl() {
   return m ? m[1] : null;
 }
 
+// 카드 모달용 헬퍼들.
+async function fetchCardDetail(slug, cardId) {
+  const r = await fetch(`/api/projects/${slug}/cards/${cardId}`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+async function patchCard(slug, cardId, patch) {
+  const r = await fetch(`/api/projects/${slug}/cards/${cardId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`patch ${r.status}`);
+  return r.json();
+}
+
+async function postCardComment(slug, cardId, body, actor) {
+  const r = await fetch(`/api/projects/${slug}/cards/${cardId}/comments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body, actor }),
+  });
+  if (!r.ok) throw new Error(`comment ${r.status}`);
+  return r.json();
+}
+
+const STATUS_META = {
+  wishlist: { label: "아이디어",   icon: "⭐", color: "#f59e0b" },
+  drafting: { label: "시안 생성",  icon: "✨", color: "#7c3aed" },
+  sheet:    { label: "컨셉시트",   icon: "📑", color: "#076ee8" },
+  done:     { label: "완료",       icon: "✅", color: "#22c55e" },
+};
+
 // dataURL 을 서버에 업로드하고 /data/images/... URL 을 반환.
 // 이미 URL 이거나 업로드 실패 시 원본 반환 (fallback 으로 dataURL 유지).
 async function uploadDataUrl(dataUrl) {
@@ -1299,6 +1344,46 @@ async function uploadDataUrl(dataUrl) {
     console.warn("이미지 업로드 실패, dataURL 로 대체:", e.message);
     return dataUrl;
   }
+}
+
+// 카드 상세 모달의 댓글 입력창. ref 대신 local state 로 간단히.
+function CardCommentInput({ onSubmit, disabled }) {
+  const [val, setVal] = React.useState("");
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      <input
+        type="text"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && val.trim()) {
+            onSubmit(val);
+            setVal("");
+          }
+        }}
+        disabled={disabled}
+        placeholder={disabled ? "완료된 카드는 댓글 불가" : "댓글 작성 (Enter)"}
+        style={{
+          flex: 1, padding: "8px 12px", borderRadius: 8,
+          border: "1px solid var(--surface-border)",
+          background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
+          fontSize: 13, outline: "none",
+          color: disabled ? "var(--text-muted)" : "var(--text-main)",
+        }}
+      />
+      <button
+        onClick={() => { if (val.trim()) { onSubmit(val); setVal(""); } }}
+        disabled={disabled || !val.trim()}
+        style={{
+          padding: "8px 14px", borderRadius: 8,
+          background: (!disabled && val.trim()) ? "var(--primary)" : "rgba(0,0,0,0.08)",
+          border: "none",
+          color: (!disabled && val.trim()) ? "#fff" : "var(--text-muted)",
+          fontSize: 12, fontWeight: 700, cursor: (!disabled && val.trim()) ? "pointer" : "not-allowed",
+        }}
+      >보내기</button>
+    </div>
+  );
 }
 
 // Each in-flight concept generation is a "job". The app keeps an array of
@@ -3500,6 +3585,47 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         setCompletedList((prev) => [newItem, ...prev]);
                         // prev ref 에도 등록해서 debounce effect 가 중복 POST 하지 않도록.
                         prevCompletedRef.current = [newItem, ...prevCompletedRef.current];
+
+                        // 3) 새 카드 시스템에도 이중 저장 (Phase B-2). 실패해도
+                        //    기존 completedList 에는 이미 저장되어 UX 영향 없음.
+                        if (projectSlug) {
+                          try {
+                            const cardBody = {
+                              id: `comp-${newItem.id}`,
+                              title: newItem.categoryLabel || newItem.category || "완료 아이템",
+                              description: newItem.prompt,
+                              thumbnail_url: newItem.conceptSheetUrl || newItem.imageUrl,
+                              status_key: "done",
+                              data: {
+                                source: "completed",
+                                asset_code: newItem.assetCode,
+                                category: newItem.category,
+                                category_label: newItem.categoryLabel,
+                                category_icon: newItem.categoryIcon,
+                                style: newItem.style,
+                                prompt: newItem.prompt,
+                                seed: newItem.seed,
+                                colors: newItem.colors,
+                                gradient: newItem.gradient,
+                                voters: newItem.voters,
+                                winner: newItem.winner,
+                                pipeline_status: newItem.pipelineStatus,
+                                designer: newItem.designer,
+                                concept_sheet_url: newItem.conceptSheetUrl,
+                                image_url: newItem.imageUrl,
+                              },
+                              actor: actorName || null,
+                              confirmed_at: newItem.completedAt,
+                              confirmed_by: newItem.designer || actorName || null,
+                            };
+                            await fetch(`/api/projects/${projectSlug}/cards`, {
+                              method: "POST",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify(cardBody),
+                            });
+                          } catch (e) { console.warn("card 이중 저장 실패 (무시):", e); }
+                        }
+
                         setNewItemId(newId);
                         setStep(6);
                         setTimeout(() => {
@@ -3602,7 +3728,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               {completedList.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() => setDetailItem(item)}
+                  onClick={async () => {
+                    // 새 cards 테이블에 있으면 통합 카드 모달, 없으면 기존 상세 모달로 폴백.
+                    if (projectSlug) {
+                      try {
+                        const detail = await fetchCardDetail(projectSlug, `comp-${item.id}`);
+                        if (detail) { setDetailCard(detail); return; }
+                      } catch {}
+                    }
+                    setDetailItem(item);
+                  }}
                   className="hover-lift glass-panel"
                   style={{
                     borderRadius: 20, overflow: "hidden",
@@ -3803,6 +3938,26 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }
                     setWishlist(prev => [item, ...prev]);
                     prevWishlistRef.current = [item, ...prevWishlistRef.current];
+
+                    // Phase B-2: 새 카드 시스템에도 이중 저장.
+                    if (projectSlug) {
+                      try {
+                        await fetch(`/api/projects/${projectSlug}/cards`, {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({
+                            id: `wish-${item.id}`,
+                            title: item.title,
+                            description: item.note,
+                            thumbnail_url: item.imageUrl,
+                            status_key: "wishlist",
+                            data: { source: "wishlist", gradient: item.gradient },
+                            actor: actorName || null,
+                          }),
+                        });
+                      } catch (e) { console.warn("wishlist card 이중 저장 실패:", e); }
+                    }
+
                     setWishTitle("");
                     setWishNote("");
                     setWishImage(null);
@@ -3840,7 +3995,15 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   {wishlist.map((item) => (
                     <div
                       key={item.id}
-                      onClick={() => setDetailWish(item)}
+                      onClick={async () => {
+                        if (projectSlug) {
+                          try {
+                            const detail = await fetchCardDetail(projectSlug, `wish-${item.id}`);
+                            if (detail) { setDetailCard(detail); return; }
+                          } catch {}
+                        }
+                        setDetailWish(item);
+                      }}
                       className="hover-lift glass-panel"
                       style={{
                         borderRadius: 18, overflow: "hidden",
@@ -4087,6 +4250,223 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           </div>
         </>
       )}
+
+      {/* Card Detail Modal (Phase D) — 통합 카드 상세. 상태 이동, 댓글, 이력 */}
+      {detailCard && (() => {
+        const card = detailCard;
+        const list = lists.find((l) => l.id === card.list_id);
+        const statusKey = list?.status_key || "wishlist";
+        const meta = STATUS_META[statusKey] || STATUS_META.wishlist;
+        const confirmed = !!card.confirmed_at;
+
+        const moveTo = async (newStatusKey) => {
+          if (!projectSlug) return;
+          try {
+            const patch = { status_key: newStatusKey, actor: actorName };
+            if (newStatusKey === "done" && !card.confirmed_at) {
+              patch.confirmed_at = new Date().toISOString();
+              patch.confirmed_by = actorName;
+            }
+            const updated = await patchCard(projectSlug, card.id, patch);
+            const detail = await fetchCardDetail(projectSlug, card.id);
+            if (detail) setDetailCard(detail);
+            setCards((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+          } catch (e) {
+            alert("상태 이동 실패: " + e.message);
+          }
+        };
+
+        const submitComment = async (body) => {
+          if (!body.trim() || !projectSlug) return;
+          try {
+            await postCardComment(projectSlug, card.id, body.trim(), actorName);
+            const detail = await fetchCardDetail(projectSlug, card.id);
+            if (detail) setDetailCard(detail);
+          } catch (e) { alert("댓글 추가 실패: " + e.message); }
+        };
+
+        return (
+          <>
+            <div className="sidebar-overlay" onClick={() => setDetailCard(null)} />
+            <div style={{
+              position: "fixed", top: "50%", left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: 960, maxWidth: "95vw", maxHeight: "92vh",
+              background: "rgba(255, 255, 255, 0.98)",
+              backdropFilter: "blur(20px)",
+              border: "1px solid var(--surface-border)",
+              borderRadius: 20, zIndex: 202,
+              boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+              animation: "fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+              display: "flex", flexDirection: "column", overflow: "hidden",
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: "14px 24px", borderBottom: "1px solid var(--surface-border)",
+                display: "flex", alignItems: "center", gap: 14, flexShrink: 0,
+              }}>
+                <span style={{ fontSize: 24 }}>{meta.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {card.title}
+                    {confirmed && <span style={{ fontSize: 11, marginLeft: 8, color: "#22c55e" }}>🔒 잠김</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    {meta.label} · 수정 {card.updated_at?.slice(0, 16).replace("T", " ") || "-"}
+                  </div>
+                </div>
+                {/* 상태 드롭다운 */}
+                <select
+                  value={statusKey}
+                  onChange={(e) => moveTo(e.target.value)}
+                  disabled={confirmed}
+                  style={{
+                    padding: "8px 14px", borderRadius: 10,
+                    border: "1px solid var(--surface-border)",
+                    background: "rgba(0,0,0,0.03)",
+                    color: "var(--text-main)", fontSize: 13, fontWeight: 600,
+                    cursor: confirmed ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.status_key}>
+                      {l.icon} {l.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setDetailCard(null)}
+                  style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >✕</button>
+              </div>
+
+              {/* Body */}
+              <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 0 }}>
+                {/* 왼쪽: 썸네일 + 설명 */}
+                <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
+                  {card.thumbnail_url && (
+                    <div style={{
+                      background: "rgba(0,0,0,0.04)", padding: 16, borderRadius: 12,
+                      marginBottom: 20, textAlign: "center",
+                    }}>
+                      <img
+                        src={card.thumbnail_url}
+                        alt=""
+                        style={{
+                          maxWidth: "100%", maxHeight: 340, objectFit: "contain",
+                          borderRadius: 10, background: "#fff",
+                          boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>설명</div>
+                  <div style={{
+                    padding: 14, borderRadius: 10,
+                    background: "rgba(0,0,0,0.03)",
+                    fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.8,
+                    whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    minHeight: 80,
+                  }}>
+                    {card.description || <span style={{ color: "var(--text-muted)" }}>(설명 없음)</span>}
+                  </div>
+
+                  {card.data && Object.keys(card.data).length > 0 && (
+                    <details style={{ marginTop: 20 }}>
+                      <summary style={{
+                        cursor: "pointer", fontSize: 12, fontWeight: 700,
+                        color: "var(--text-muted)", marginBottom: 8,
+                      }}>추가 데이터 (data JSON)</summary>
+                      <pre style={{
+                        padding: 12, borderRadius: 8,
+                        background: "rgba(0,0,0,0.03)",
+                        fontSize: 11, fontFamily: "monospace", color: "var(--text-lighter)",
+                        maxHeight: 200, overflow: "auto",
+                        whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      }}>{JSON.stringify(card.data, null, 2)}</pre>
+                    </details>
+                  )}
+                </div>
+
+                {/* 오른쪽: 댓글 + 활동 이력 */}
+                <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
+                  {/* 메타 */}
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    <div>생성: {card.created_at?.slice(0, 16).replace("T", " ") || "-"} · {card.created_by || "알 수 없음"}</div>
+                    {card.confirmed_at && <div style={{ color: "#22c55e", marginTop: 4 }}>완료: {card.confirmed_at.slice(0, 16).replace("T", " ")} · {card.confirmed_by || "-"}</div>}
+                  </div>
+
+                  {/* 댓글 */}
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>
+                      댓글 ({card.comments?.length || 0})
+                    </div>
+                    <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+                      {(card.comments || []).map((cm) => (
+                        <div key={cm.id} style={{
+                          padding: "8px 12px", borderRadius: 10,
+                          background: "rgba(0,0,0,0.03)", fontSize: 13,
+                        }}>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
+                            {cm.actor || "익명"} · {cm.created_at?.slice(0, 16).replace("T", " ")}
+                          </div>
+                          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cm.body}</div>
+                        </div>
+                      ))}
+                      {(!card.comments || card.comments.length === 0) && (
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "16px 0" }}>
+                          아직 댓글이 없습니다.
+                        </div>
+                      )}
+                    </div>
+                    <CardCommentInput onSubmit={submitComment} disabled={confirmed} />
+                  </div>
+
+                  {/* 활동 이력 */}
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>
+                      활동 이력 ({card.activities?.length || 0})
+                    </div>
+                    <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                      {(card.activities || []).map((a) => (
+                        <div key={a.id} style={{
+                          fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6,
+                          padding: "3px 0",
+                        }}>
+                          <span style={{ color: "var(--text-lighter)", fontWeight: 600 }}>
+                            {a.actor || "시스템"}
+                          </span>
+                          {" · "}
+                          {a.action}
+                          {a.payload && typeof a.payload === "object" && (
+                            <span style={{ color: "var(--text-muted)" }}>
+                              {" "}({Object.entries(a.payload).slice(0, 2).map(([k, v]) => `${k}:${typeof v === "object" ? JSON.stringify(v).slice(0, 20) : String(v).slice(0, 20)}`).join(", ")})
+                            </span>
+                          )}
+                          <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
+                            {a.created_at?.slice(5, 16).replace("T", " ")}
+                          </span>
+                        </div>
+                      ))}
+                      {(!card.activities || card.activities.length === 0) && (
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "16px 0" }}>
+                          활동 이력 없음.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Wishlist Detail Modal */}
       {detailWish && (
@@ -4660,7 +5040,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <div
                     key={item.id}
                     className="sidebar-item"
-                    onClick={() => setDetailItem(item)}
+                    onClick={async () => {
+                    // 새 cards 테이블에 있으면 통합 카드 모달, 없으면 기존 상세 모달로 폴백.
+                    if (projectSlug) {
+                      try {
+                        const detail = await fetchCardDetail(projectSlug, `comp-${item.id}`);
+                        if (detail) { setDetailCard(detail); return; }
+                      } catch {}
+                    }
+                    setDetailItem(item);
+                  }}
                     style={{
                       borderRadius: 16,
                       background: "rgba(0,0,0,0.02)",
@@ -4854,6 +5243,26 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }
                     setWishlist(prev => [item, ...prev]);
                     prevWishlistRef.current = [item, ...prevWishlistRef.current];
+
+                    // Phase B-2: 새 카드 시스템에도 이중 저장.
+                    if (projectSlug) {
+                      try {
+                        await fetch(`/api/projects/${projectSlug}/cards`, {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({
+                            id: `wish-${item.id}`,
+                            title: item.title,
+                            description: item.note,
+                            thumbnail_url: item.imageUrl,
+                            status_key: "wishlist",
+                            data: { source: "wishlist", gradient: item.gradient },
+                            actor: actorName || null,
+                          }),
+                        });
+                      } catch (e) { console.warn("wishlist card 이중 저장 실패:", e); }
+                    }
+
                     setWishTitle("");
                     setWishNote("");
                     setWishImage(null);
