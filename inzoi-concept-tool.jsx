@@ -3605,17 +3605,8 @@ export default function InZOIConceptTool() {
   const [viewMode, setViewMode] = useState(() => localStorage.getItem("inzoi_view_mode") === "list" ? "list" : "card");
   useEffect(() => { try { localStorage.setItem("inzoi_view_mode", viewMode); } catch {} }, [viewMode]);
 
-  // 업데이트 일정 필터 — 빈 배열이면 전체 표시. "__unspecified" 는 미지정 카드.
+  // 업데이트 일정 필터 상태 (availableUpdates 는 cards 선언 이후에 정의 — TDZ 방지).
   const [selectedUpdates, setSelectedUpdates] = useState([]);
-  // 모든 카드에서 등장한 target_update 값 목록 (AssetInfoEditor datalist 및 chip 바에 사용)
-  const availableUpdates = useMemo(() => {
-    const set = new Set();
-    for (const c of cards) {
-      const v = c.data?.target_update?.trim?.();
-      if (v) set.add(v);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
-  }, [cards]);
 
   // inzoiObjectList 의 meta.json 을 5분 주기로 가져와 카테고리/스타일 목록을 교체.
   // 실패하면 hardcoded fallback 사용. metaVersion bump 으로 하위 컴포넌트 re-render.
@@ -3665,6 +3656,17 @@ export default function InZOIConceptTool() {
   // 카드별 Gemini 생성 진행 상황. 생성 중일 때만 작업큐에 노출하고 끝나면 제거.
   // shape: { [cardId]: { title, thumb, done, total } }
   const [generatingCards, setGeneratingCards] = useState({});
+
+  // 모든 카드에서 등장한 target_update 값 목록 (AssetInfoEditor datalist 및 chip 바에 사용).
+  // cards 선언 이후여야 함 (TDZ 방지).
+  const availableUpdates = useMemo(() => {
+    const set = new Set();
+    for (const c of cards) {
+      const v = c.data?.target_update?.trim?.();
+      if (v) set.add(v);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
+  }, [cards]);
 
   // 상세 모달 ← → 키 네비게이션은 projectSlug 선언 이후에 정의 (TDZ 방지).
 
