@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.2";
+const APP_VERSION = "1.5.3";
 const CHANGELOG = [
+  {
+    version: "1.5.3",
+    date: "2026-04-22",
+    changes: [
+      "시안 이력 섹션 추가 — 컨셉시트 / 완료 단계 카드도 상세 모달에서 그동안 생성된 시안(designs)을 그리드로 확인, 썸네일 클릭 시 lightbox 로 원본 열람",
+      "선정된 시안은 ⭐ 배지 + 노란 테두리로 표시",
+    ],
+  },
   {
     version: "1.5.2",
     date: "2026-04-22",
@@ -5912,6 +5920,65 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       }}
                       onOpenApiSettings={() => setShowApiSettings(true)}
                     />
+                  )}
+
+                  {/* 시안 이력 — drafting 외 단계(sheet/done) 에서 그동안 만들어진
+                      시안들을 읽기 전용으로 보여줌. 클릭 시 lightbox 오픈. */}
+                  {statusKey !== "drafting" && Array.isArray(card.data?.designs) && card.data.designs.length > 0 && (
+                    <div style={{
+                      marginBottom: 20, padding: 14, borderRadius: 12,
+                      background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+                          🎨 시안 이력 ({card.data.designs.length}개)
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                          그동안 생성된 시안 — 클릭해서 원본 확인
+                        </div>
+                      </div>
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+                        gap: 8,
+                      }}>
+                        {card.data.designs.map((d, i) => {
+                          const isSelected = card.data?.selected_design === i;
+                          return (
+                            <div key={i} style={{
+                              position: "relative", borderRadius: 8, overflow: "hidden",
+                              border: isSelected ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+                              background: "#000",
+                            }}>
+                              {d?.imageUrl ? (
+                                <img
+                                  src={d.imageUrl}
+                                  alt=""
+                                  onClick={() => setPreviewImage(d.imageUrl)}
+                                  style={{ width: "100%", height: 100, objectFit: "cover", display: "block", cursor: "zoom-in" }}
+                                />
+                              ) : (
+                                <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+                              )}
+                              <div style={{
+                                position: "absolute", top: 4, left: 4,
+                                padding: "1px 6px", borderRadius: 4,
+                                background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
+                                pointerEvents: "none",
+                              }}>#{i + 1}</div>
+                              {isSelected && (
+                                <div style={{
+                                  position: "absolute", top: 4, right: 4,
+                                  padding: "1px 6px", borderRadius: 4,
+                                  background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
+                                  pointerEvents: "none",
+                                }}>⭐ 선정</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
 
                   <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>설명</div>
