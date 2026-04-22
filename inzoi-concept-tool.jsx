@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.5.2";
 const CHANGELOG = [
+  {
+    version: "1.5.2",
+    date: "2026-04-22",
+    changes: [
+      "이미지 lightbox 좌/우 이동 지원 — 카드 상세에서 열린 이미지는 ← → 키 또는 ‹ › 버튼으로 해당 카드의 모든 이미지(썸네일·참조·시안·컨셉시트)를 순환",
+      "인덱스 표시(1/N) 하단 중앙에 추가",
+    ],
+  },
   {
     version: "1.5.1",
     date: "2026-04-22",
@@ -7008,53 +7016,119 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         </div>
       )}
 
-      {/* 이미지 원본 해상도 뷰어 (lightbox) — 배경 클릭 또는 ESC 로 닫힘 */}
-      {previewImage && (
-        <div
-          onClick={() => setPreviewImage(null)}
-          style={{
-            position: "fixed", inset: 0, zIndex: 300,
-            background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "zoom-out", padding: 24, animation: "fadeIn 0.2s ease",
-          }}
-        >
-          <img
-            src={previewImage}
-            alt=""
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              maxWidth: "100%", maxHeight: "100%",
-              objectFit: "contain", borderRadius: 8,
-              boxShadow: "0 20px 80px rgba(0,0,0,0.6)",
-              cursor: "default",
-            }}
-          />
-          <button
+      {/* 이미지 원본 해상도 뷰어 (lightbox) — 배경 클릭 / ESC / ← → 키 지원.
+          상세 모달이 열려 있으면 해당 카드의 모든 이미지(썸네일, 참조이미지,
+          시안, 컨셉시트) 를 묶어 좌우 이동 가능. */}
+      {previewImage && (() => {
+        const gallery = (() => {
+          if (!detailCard) return [previewImage];
+          const set = [];
+          const push = (u) => { if (u && !set.includes(u)) set.push(u); };
+          push(detailCard.thumbnail_url);
+          (detailCard.data?.ref_images || []).forEach(push);
+          (detailCard.data?.designs || []).forEach((d) => push(d?.imageUrl));
+          push(detailCard.data?.concept_sheet_url);
+          if (!set.includes(previewImage)) set.push(previewImage);
+          return set;
+        })();
+        const idx = gallery.indexOf(previewImage);
+        const hasNav = gallery.length > 1 && idx >= 0;
+        const go = (dir) => {
+          if (!hasNav) return;
+          const next = (idx + dir + gallery.length) % gallery.length;
+          setPreviewImage(gallery[next]);
+        };
+        return (
+          <div
             onClick={() => setPreviewImage(null)}
+            tabIndex={-1}
+            ref={(el) => {
+              if (el) {
+                el.focus();
+                el.onkeydown = (e) => {
+                  if (e.key === "Escape") setPreviewImage(null);
+                  else if (e.key === "ArrowLeft")  { e.preventDefault(); go(-1); }
+                  else if (e.key === "ArrowRight") { e.preventDefault(); go(1); }
+                };
+              }
+            }}
             style={{
-              position: "absolute", top: 20, right: 20,
-              width: 44, height: 44, borderRadius: 22,
-              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-              color: "#fff", fontSize: 20, cursor: "pointer",
+              position: "fixed", inset: 0, zIndex: 300,
+              background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
               display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "zoom-out", padding: 24, animation: "fadeIn 0.2s ease",
+              outline: "none",
             }}
-            title="닫기 (ESC)"
-          >✕</button>
-          <a
-            href={previewImage}
-            download
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "absolute", top: 20, right: 76,
-              padding: "10px 16px", borderRadius: 22,
-              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-              color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >📥 저장</a>
-        </div>
-      )}
+          >
+            <img
+              src={previewImage}
+              alt=""
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: "100%", maxHeight: "100%",
+                objectFit: "contain", borderRadius: 8,
+                boxShadow: "0 20px 80px rgba(0,0,0,0.6)",
+                cursor: "default",
+              }}
+            />
+            {hasNav && (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); go(-1); }}
+                  style={{
+                    position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)",
+                    width: 56, height: 56, borderRadius: 28,
+                    background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+                    color: "#fff", fontSize: 28, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                  title="이전 (←)"
+                >‹</button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); go(1); }}
+                  style={{
+                    position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)",
+                    width: 56, height: 56, borderRadius: 28,
+                    background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+                    color: "#fff", fontSize: 28, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                  title="다음 (→)"
+                >›</button>
+                <div style={{
+                  position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
+                  padding: "6px 14px", borderRadius: 14,
+                  background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+                  color: "#fff", fontSize: 12, fontWeight: 600,
+                }}>{idx + 1} / {gallery.length}</div>
+              </>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); setPreviewImage(null); }}
+              style={{
+                position: "absolute", top: 20, right: 20,
+                width: 44, height: 44, borderRadius: 22,
+                background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+                color: "#fff", fontSize: 20, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+              title="닫기 (ESC)"
+            >✕</button>
+            <a
+              href={previewImage}
+              download
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute", top: 20, right: 76,
+                padding: "10px 16px", borderRadius: 22,
+                background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+                color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
+                display: "flex", alignItems: "center", gap: 6,
+              }}
+            >📥 저장</a>
+          </div>
+        );
+      })()}
     </div>
   );
 }
