@@ -169,6 +169,62 @@ function ensureDefaultLists(projectId) {
     }
   }
 }
+
+// 레거시 wishlist_items / completed_items 가 cards 에 아직 반영 안 됐으면 자동 복사.
+// 한 번만 수행하도록 각 레거시 row 에 대해 cards 의 wish-<id> / comp-<id> 존재 여부 체크.
+function ensureLegacyMigration(projectId) {
+  try {
+    const lists = stmts.listLists.all(projectId);
+    const listByKey = Object.fromEntries(lists.map((l) => [l.status_key, l.id]));
+    if (!listByKey.wishlist || !listByKey.done) return;
+
+    const hasCard = db.prepare("SELECT 1 FROM cards WHERE id = ?");
+
+    const wishes = db.prepare("SELECT * FROM wishlist_items WHERE project_id = ?").all(projectId);
+    for (const w of wishes) {
+      const cardId = `wish-${w.id}`;
+      if (hasCard.get(cardId)) continue;
+      stmts.insertCard.run(
+        cardId, projectId, listByKey.wishlist,
+        Date.parse(w.created_at || new Date().toISOString()) || Date.now(),
+        w.title || "(제목 없음)", w.note || null, w.image_url || null,
+        null, null,
+        JSON.stringify({ source: "wishlist", gradient: w.gradient || null, auto_migrated: true }),
+        null, null
+      );
+    }
+
+    const completed = db.prepare("SELECT * FROM completed_items WHERE project_id = ?").all(projectId);
+    for (const c of completed) {
+      const cardId = `comp-${c.id}`;
+      if (hasCard.get(cardId)) continue;
+      const data = {
+        source: "completed", auto_migrated: true,
+        asset_code: c.asset_code, category: c.category,
+        category_label: c.category_label, category_icon: c.category_icon,
+        style: c.style, prompt: c.prompt, seed: c.seed,
+        colors: c.colors ? JSON.parse(c.colors) : [],
+        gradient: c.gradient, image_url: c.image_url,
+        concept_sheet_url: c.concept_sheet_url, voters: c.voters,
+        winner: c.winner, pipeline_status: c.pipeline_status, designer: c.designer,
+      };
+      stmts.insertCard.run(
+        cardId, projectId, listByKey.done,
+        Date.parse(c.completed_at || new Date().toISOString()) || Date.now(),
+        c.category_label || c.category || "완료",
+        c.prompt || null, c.concept_sheet_url || c.image_url || null,
+        null, null,
+        JSON.stringify(data),
+        c.designer || null, c.designer || null
+      );
+      // confirmed_at 설정
+      db.prepare("UPDATE cards SET confirmed_at = ?, confirmed_by = ? WHERE id = ?")
+        .run(c.completed_at || new Date().toISOString(), c.designer || null, cardId);
+    }
+  } catch (err) {
+    console.warn("legacy auto-migration failed (non-fatal):", err.message);
+  }
+}
 // 시작 시 default 프로젝트에 리스트 시드.
 try {
   const def = stmts.getProjectBySlug.get("default");
@@ -179,6 +235,7 @@ function getProjectSnapshot(slug) {
   const project = stmts.getProjectBySlug.get(slug);
   if (!project) return null;
   ensureDefaultLists(project.id);
+  ensureLegacyMigration(project.id);
   const jobsRaw = stmts.listJobs.all(project.id);
   const completedRaw = stmts.listCompleted.all(project.id);
   const wishlistRaw = stmts.listWishlist.all(project.id);

@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.3.1";
+const APP_VERSION = "1.3.2";
 const CHANGELOG = [
+  {
+    version: "1.3.2",
+    date: "2026-04-22",
+    changes: [
+      "상단 탭 순서: 위시리스트를 맨 앞으로 이동 (위시 → 시안 생성 → 투표 → 컨셉시트 → 완료)",
+      "[버그 수정] 위시리스트 저장 실패 시 alert 로 명확히 알림 + 폼 초기화 차단 (재시도 가능)",
+      "서버 기동 시 기존 wishlist_items / completed_items 자동으로 cards 로 이주 (npm run migrate:cards 불필요)",
+      "ensureLegacyMigration: 레거시 row 마다 wish-<id> / comp-<id> 존재 여부 체크 후 없는 것만 복사",
+    ],
+  },
   {
     version: "1.3.1",
     date: "2026-04-22",
@@ -2801,12 +2811,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             vote: [2, 3],
             sheet: [4, 6],
           };
+          // 자연스러운 흐름: 아이디어(위시) → 시안 → 투표 → 컨셉시트 → 완료
           const TABS = [
+            { id: "wishlist",  label: "위시리스트",    icon: "⭐", count: wishlist.length },
             { id: "create",    label: "시안 생성",     icon: "✨", count: jobs.filter(j => j.step >= 0 && j.step <= 1).length },
             { id: "vote",      label: "투표 및 선정",  icon: "🗳️", count: jobs.filter(j => j.step >= 2 && j.step <= 3).length },
             { id: "sheet",     label: "컨셉시트 생성", icon: "📑", count: jobs.filter(j => j.step >= 4 && j.step <= 6).length },
             { id: "completed", label: "완료 목록",     icon: "📋", count: completedList.length },
-            { id: "wishlist", label: "위시리스트",    icon: "⭐", count: wishlist.length },
           ];
           const switchTab = (id) => {
             setActiveTab(id);
@@ -2822,7 +2833,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: 14, border: "1px solid var(--surface-border)" }}>
               {TABS.map((tab, idx) => (
                 <React.Fragment key={tab.id}>
-                  {idx === 3 && <div style={{ width: 1, height: 20, background: "var(--surface-border)", margin: "0 2px" }} />}
+                  {(idx === 1 || idx === 4) && <div style={{ width: 1, height: 20, background: "var(--surface-border)", margin: "0 2px" }} />}
                   <button onClick={() => switchTab(tab.id)} style={{
                     padding: "8px 14px", borderRadius: 10,
                     background: activeTab === tab.id ? "#fff" : "transparent",
@@ -4499,8 +4510,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     setWishlist(prev => [item, ...prev]);
                     prevWishlistRef.current = [item, ...prevWishlistRef.current];
 
-                    // Phase B-2: 새 카드 시스템에도 이중 저장.
+                    // [Phase B-3 이후] 위시리스트는 cards 가 SOT. 저장 실패 시 사용자에게 알림.
                     if (projectSlug) {
+                      let ok = false;
                       try {
                         const rCard = await fetch(`/api/projects/${projectSlug}/cards`, {
                           method: "POST",
@@ -4521,8 +4533,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             if (prev.find((c) => c.id === created.id)) return prev;
                             return [created, ...prev];
                           });
+                          ok = true;
+                        } else {
+                          const body = await rCard.text();
+                          console.warn("wishlist card 저장 실패:", rCard.status, body);
+                          alert(`위시리스트 저장 실패 (서버 ${rCard.status}). 잠시 후 다시 시도해주세요.\n상세: ${body.slice(0, 200)}`);
                         }
-                      } catch (e) { console.warn("wishlist card 이중 저장 실패:", e); }
+                      } catch (e) {
+                        console.warn("wishlist card 저장 에러:", e);
+                        alert("위시리스트 저장 실패 — 서버 연결을 확인해주세요.\n" + e.message);
+                      }
+                      if (!ok) return; // 저장 실패 시 폼 초기화하지 않음 (재시도 기회)
                     }
 
                     setWishTitle("");
@@ -5993,8 +6014,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     setWishlist(prev => [item, ...prev]);
                     prevWishlistRef.current = [item, ...prevWishlistRef.current];
 
-                    // Phase B-2: 새 카드 시스템에도 이중 저장.
+                    // [Phase B-3 이후] 위시리스트는 cards 가 SOT. 저장 실패 시 사용자에게 알림.
                     if (projectSlug) {
+                      let ok = false;
                       try {
                         const rCard = await fetch(`/api/projects/${projectSlug}/cards`, {
                           method: "POST",
@@ -6015,8 +6037,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             if (prev.find((c) => c.id === created.id)) return prev;
                             return [created, ...prev];
                           });
+                          ok = true;
+                        } else {
+                          const body = await rCard.text();
+                          console.warn("wishlist card 저장 실패:", rCard.status, body);
+                          alert(`위시리스트 저장 실패 (서버 ${rCard.status}). 잠시 후 다시 시도해주세요.\n상세: ${body.slice(0, 200)}`);
                         }
-                      } catch (e) { console.warn("wishlist card 이중 저장 실패:", e); }
+                      } catch (e) {
+                        console.warn("wishlist card 저장 에러:", e);
+                        alert("위시리스트 저장 실패 — 서버 연결을 확인해주세요.\n" + e.message);
+                      }
+                      if (!ok) return; // 저장 실패 시 폼 초기화하지 않음 (재시도 기회)
                     }
 
                     setWishTitle("");
