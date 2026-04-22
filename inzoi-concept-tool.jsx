@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.5";
+const APP_VERSION = "1.7.6";
 const CHANGELOG = [
+  {
+    version: "1.7.6",
+    date: "2026-04-23",
+    changes: [
+      "🤖 자동 분류가 카테고리 + 스타일 + 크기(W/D/H cm) 까지 한 번에 제안 — Gemini 응답에 width_cm / depth_cm / height_cm / size_confidence / size_reason 추가",
+      "추천 배지에 '📏 180×210×50cm · 70%' 로 크기도 표시, [적용] 한 번으로 세 필드 전부 반영",
+      "카테고리 선택 즉시 ASSET_SPECS 매핑 카테고리는 카탈로그 중앙값(midpoint) 으로 size_info 자동 채움 (source='catalog') — 기존 값 있으면 건드리지 않음",
+      "SizeInfoPanel 의 개별 AI 추정 버튼 제거 — 통합 '자동 분류' 로 일원화, 입력 상태 배지(🤖 AI 추정 / 📚 카탈로그 기준 / ✏️ 수동 입력) 추가",
+    ],
+  },
   {
     version: "1.7.5",
     date: "2026-04-23",
@@ -1072,6 +1082,27 @@ function findLegacySpec(categoryId) {
   return ASSET_SPECS[key] || null;
 }
 
+// "160–220cm" 또는 "50cm" 또는 "40-60cm (매트리스)" 에서 숫자 중앙값 추출.
+function parseRangeToMid(s) {
+  if (typeof s !== "string") return null;
+  const m = s.match(/(\d+)\s*[–\-~]\s*(\d+)/);
+  if (m) return Math.round((Number(m[1]) + Number(m[2])) / 2);
+  const m2 = s.match(/(\d+)/);
+  return m2 ? Number(m2[1]) : null;
+}
+
+// 카테고리 id 에서 ASSET_SPECS 의 W/D/H 범위 중앙값을 cm 숫자로 변환.
+// 매핑 없거나 TBD 면 null.
+function categoryToDefaultSize(categoryId) {
+  const spec = findLegacySpec(categoryId);
+  if (!spec?.size) return null;
+  const w = parseRangeToMid(spec.size.W);
+  const d = parseRangeToMid(spec.size.D);
+  const h = parseRangeToMid(spec.size.H);
+  if (!w && !d && !h) return null;
+  return { width_cm: w, depth_cm: d, height_cm: h };
+}
+
 // ─── Utility Functions ───
 function generateSeed() {
   return Math.floor(Math.random() * 2147483647);
@@ -1588,14 +1619,26 @@ async function classifyCategoryWithGemini(apiKey, imageUrl) {
     .map((s) => `- ${s.id}: ${s.label}`)
     .join("\n");
 
-  const prompt = `이 이미지를 분석해 가장 잘 맞는 카테고리와 스타일을 각각 하나씩 고르세요.
+  const prompt = `이 이미지를 분석해 카테고리, 스타일, 실제 크기(cm)를 모두 추정하세요.
 반드시 JSON 형식만 응답:
-{"category_id":"<id>","category_confidence":0.0~1.0,"style_id":"<id>","style_confidence":0.0~1.0}
+{
+  "category_id":"<id>",
+  "category_confidence":0.0~1.0,
+  "style_id":"<id>",
+  "style_confidence":0.0~1.0,
+  "width_cm":<정수>,
+  "depth_cm":<정수>,
+  "height_cm":<정수>,
+  "size_confidence":0.0~1.0,
+  "size_reason":"<짧은 근거>"
+}
 
 규칙:
-- 카테고리와 스타일은 반드시 아래 목록의 id 중에서 고르세요.
-- 확신이 낮은 필드는 해당 confidence 를 0.5 미만으로.
-- 스타일을 특정하기 어려우면 style_id 를 "Modern" 으로.
+- category_id / style_id 는 반드시 아래 목록 id 중에서.
+- 스타일 특정 어려우면 "Modern".
+- width = 정면 기준 좌우 길이(cm), depth = 앞뒤, height = 바닥→꼭대기.
+- 해당 카테고리의 일반적 크기 범위 기반으로 실제 cm 단위 추정.
+- 크기 판단 어려우면 size_confidence < 0.5.
 
 카테고리:
 ${categoryList}
@@ -1634,6 +1677,14 @@ ${styleList}`;
     // 카테고리는 필수, 스타일은 선택 (검증 실패 시 null)
     const styleId = obj.style_id || obj.style || null;
     const validStyle = styleId && STYLE_PRESETS.find((s) => s.id === styleId) ? styleId : null;
+    const pickDim = (v) => typeof v === "number" && v > 0 && v < 2000 ? Math.round(v) : null;
+    const sizeInfo = (obj.width_cm || obj.depth_cm || obj.height_cm) ? {
+      width_cm: pickDim(obj.width_cm),
+      depth_cm: pickDim(obj.depth_cm),
+      height_cm: pickDim(obj.height_cm),
+      confidence: typeof obj.size_confidence === "number" ? obj.size_confidence : 0.5,
+      reason: typeof obj.size_reason === "string" ? obj.size_reason.slice(0, 200) : null,
+    } : null;
     return {
       category_id: catId,
       confidence: typeof obj.category_confidence === "number"
@@ -1641,6 +1692,7 @@ ${styleList}`;
         : (typeof obj.confidence === "number" ? obj.confidence : 0.5),
       style_id: validStyle,
       style_confidence: typeof obj.style_confidence === "number" ? obj.style_confidence : null,
+      size_info: sizeInfo,
     };
   } catch { return null; }
 }
@@ -2036,6 +2088,20 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       setStylePreset(suggestion.style_id);
       patch.style_preset = suggestion.style_id;
     }
+    // 크기 정보도 AI 추정 결과가 있으면 같이 적용. 기존 size_info 가 manual 일 땐 덮어쓰지 않음.
+    const existing = card.data?.size_info;
+    const userTouched = existing?.source === "manual" && (existing.width_cm || existing.depth_cm || existing.height_cm);
+    if (suggestion.size_info && !userTouched) {
+      patch.size_info = {
+        width_cm: suggestion.size_info.width_cm,
+        depth_cm: suggestion.size_info.depth_cm,
+        height_cm: suggestion.size_info.height_cm,
+        source: "ai",
+        confidence: suggestion.size_info.confidence,
+        reason: suggestion.size_info.reason,
+        updated_at: new Date().toISOString(),
+      };
+    }
     setSuggestion(null);
     await save(patch);
   };
@@ -2067,6 +2133,26 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     } catch (e) { console.warn("어셋 정보 저장 실패:", e); }
     finally { setSaving(false); }
   };
+
+  // 카테고리 선택 시 카탈로그 기준 기본 크기로 size_info 자동 채움.
+  // 사용자가 manual 로 값을 입력했거나 AI 가 채운 경우엔 건드리지 않음.
+  React.useEffect(() => {
+    if (disabled) return;
+    if (!category) return;
+    const existing = card.data?.size_info;
+    const hasValue = existing && (existing.width_cm || existing.depth_cm || existing.height_cm);
+    if (hasValue) return; // 이미 값이 있으면 건드리지 않음
+    const def = categoryToDefaultSize(category);
+    if (!def) return;
+    save({
+      size_info: {
+        ...def,
+        source: "catalog",
+        updated_at: new Date().toISOString(),
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, card.id]);
 
   // 초기 진입 시 ref_images 가 서버에 없고 thumbnail_url 로 seed 된 상태라면
   // 한번 서버에 저장해서 generate 시 Gemini multimodal 에 확실히 포함되도록 한다.
@@ -2175,6 +2261,9 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               ? Math.round(suggestion.style_confidence * 100)
               : null;
             const styleOverride = sStyle && stylePreset && stylePreset !== sStyle.id;
+            const sSize = suggestion.size_info;
+            const sizePct = sSize?.confidence != null ? Math.round(sSize.confidence * 100) : null;
+            const sizeOverride = sSize && card.data?.size_info?.source === "manual" && (card.data.size_info.width_cm || card.data.size_info.depth_cm || card.data.size_info.height_cm);
             return (
               <div style={{
                 marginTop: 6, padding: "6px 10px", borderRadius: 8,
@@ -2191,6 +2280,14 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                       <b>{sStyle.label}</b> 스타일
                       {stylePct != null && ` · ${stylePct}%`}
                       {styleOverride && <span style={{ marginLeft: 4, color: "var(--text-muted)" }}>(기존 선택 유지)</span>}
+                    </>
+                  )}
+                  {sSize && (sSize.width_cm || sSize.depth_cm || sSize.height_cm) && (
+                    <>
+                      <span style={{ margin: "0 6px", color: "var(--text-muted)" }}>·</span>
+                      📏 <b>{sSize.width_cm || "?"}×{sSize.depth_cm || "?"}×{sSize.height_cm || "?"}cm</b>
+                      {sizePct != null && ` · ${sizePct}%`}
+                      {sizeOverride && <span style={{ marginLeft: 4, color: "var(--text-muted)" }}>(수동 입력 유지)</span>}
                     </>
                   )}
                 </span>
@@ -2290,13 +2387,12 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         );
       })()}
 
-      {/* 📏 크기 정보 — 중요 정보로 강조해 별도 패널에 분리. 수동 입력 + AI 추정 + 카탈로그 참고. */}
+      {/* 📏 크기 정보 — 강조된 박스. 수동 입력 + '🤖 자동 분류' 버튼이 AI 추정까지 통합 처리.
+          카테고리 선택 시 카탈로그 기본 크기로 자동 채움(source='catalog'). */}
       <SizeInfoPanel
         card={card}
         disabled={disabled}
-        geminiApiKey={geminiApiKey}
         categoryId={category}
-        refImageUrl={refImages[0] || card.thumbnail_url}
         onSave={async (sizeInfo) => { await save({ size_info: sizeInfo }); }}
       />
 
@@ -2866,54 +2962,34 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
   );
 }
 
-// 📏 크기 정보 패널 — 수동 입력 + AI 추정 + 카탈로그 참고. 별도 강조된 박스.
-function SizeInfoPanel({ card, disabled, geminiApiKey, categoryId, refImageUrl, onSave }) {
+// 📏 크기 정보 패널 — 수동 입력 + 카탈로그 참고. AI 추정은 통합 '자동 분류' 버튼이 대신함.
+function SizeInfoPanel({ card, disabled, categoryId, onSave }) {
   const si = card.data?.size_info || {};
   const [w, setW] = React.useState(si.width_cm ?? "");
   const [d, setD] = React.useState(si.depth_cm ?? "");
   const [h, setH] = React.useState(si.height_cm ?? "");
-  const [estimating, setEstimating] = React.useState(false);
-  const [note, setNote] = React.useState(si.source === "ai" && si.reason ? si.reason : (si.source === "ai" ? "AI 추정" : null));
+  const sourceLabel = si.source === "ai" ? `🤖 AI 추정${si.confidence != null ? ` · ${Math.round(si.confidence * 100)}%` : ""}`
+                    : si.source === "catalog" ? "📚 카탈로그 기준 자동 적용"
+                    : si.source === "manual" ? "✏️ 수동 입력"
+                    : null;
+  const note = si.source === "ai" && si.reason ? si.reason : sourceLabel;
 
   React.useEffect(() => {
     const s = card.data?.size_info || {};
     setW(s.width_cm ?? "");
     setD(s.depth_cm ?? "");
     setH(s.height_cm ?? "");
-    setNote(s.source === "ai" && s.reason ? s.reason : (s.source === "ai" ? "AI 추정" : null));
   }, [card.id, card.updated_at]);
 
-  const commit = (source = "manual", extra = {}) => {
+  const commit = () => {
     const next = {
       width_cm: w === "" ? null : Number(w),
       depth_cm: d === "" ? null : Number(d),
       height_cm: h === "" ? null : Number(h),
-      source,
+      source: "manual",
       updated_at: new Date().toISOString(),
-      ...extra,
     };
     onSave?.(next);
-  };
-
-  const runEstimate = async () => {
-    if (!geminiApiKey) { alert("Gemini API 키가 필요합니다"); return; }
-    if (!refImageUrl) { alert("참조 이미지 또는 카드 이미지가 필요합니다"); return; }
-    const cat = FURNITURE_CATEGORIES.find((c) => c.id === categoryId);
-    setEstimating(true);
-    try {
-      const r = await estimateSizeWithGemini(geminiApiKey, refImageUrl, cat?.label || null);
-      if (!r) { alert("크기 추정 실패"); return; }
-      setW(r.width_cm ?? "");
-      setD(r.depth_cm ?? "");
-      setH(r.height_cm ?? "");
-      setNote(r.reason || `AI 추정 · ${Math.round((r.confidence || 0) * 100)}%`);
-      commit("ai", {
-        width_cm: r.width_cm, depth_cm: r.depth_cm, height_cm: r.height_cm,
-        confidence: r.confidence, reason: r.reason,
-      });
-    } catch (e) {
-      alert("크기 추정 실패: " + e.message);
-    } finally { setEstimating(false); }
   };
 
   const legacySpec = findLegacySpec(categoryId);
@@ -2935,20 +3011,16 @@ function SizeInfoPanel({ card, disabled, geminiApiKey, categoryId, refImageUrl, 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: "#047857" }}>📏 크기 정보</span>
         <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>(중요)</span>
-        {!disabled && (
-          <button
-            onClick={runEstimate}
-            disabled={estimating || !refImageUrl}
-            title="이미지에서 가로/세로/높이 자동 추정 (Gemini Vision)"
-            style={{
-              marginLeft: "auto",
-              padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-              background: estimating ? "rgba(0,0,0,0.06)" : "rgba(16,185,129,0.12)",
-              border: "1px solid rgba(16,185,129,0.4)",
-              color: estimating ? "var(--text-muted)" : "#047857",
-              cursor: estimating || !refImageUrl ? "not-allowed" : "pointer",
-            }}
-          >{estimating ? "⏳ 추정 중…" : "🔍 이미지로 AI 추정"}</button>
+        {si.source && (
+          <span style={{
+            fontSize: 10, fontWeight: 600,
+            marginLeft: "auto",
+            padding: "2px 8px", borderRadius: 10,
+            background: si.source === "ai" ? "rgba(7,110,232,0.12)" : si.source === "catalog" ? "rgba(234,179,8,0.15)" : "rgba(0,0,0,0.06)",
+            color: si.source === "ai" ? "var(--primary)" : si.source === "catalog" ? "#b45309" : "var(--text-muted)",
+          }}>
+            {sourceLabel}
+          </span>
         )}
       </div>
 
@@ -2957,7 +3029,7 @@ function SizeInfoPanel({ card, disabled, geminiApiKey, categoryId, refImageUrl, 
           <span style={labelStyle}>W · 가로</span>
           <input type="number" min="0" value={w} disabled={disabled}
             onChange={(e) => setW(e.target.value)}
-            onBlur={() => commit("manual")}
+            onBlur={commit}
             style={inputStyle} />
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>cm</span>
         </div>
@@ -2965,7 +3037,7 @@ function SizeInfoPanel({ card, disabled, geminiApiKey, categoryId, refImageUrl, 
           <span style={labelStyle}>D · 깊이</span>
           <input type="number" min="0" value={d} disabled={disabled}
             onChange={(e) => setD(e.target.value)}
-            onBlur={() => commit("manual")}
+            onBlur={commit}
             style={inputStyle} />
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>cm</span>
         </div>
@@ -2973,15 +3045,15 @@ function SizeInfoPanel({ card, disabled, geminiApiKey, categoryId, refImageUrl, 
           <span style={labelStyle}>H · 높이</span>
           <input type="number" min="0" value={h} disabled={disabled}
             onChange={(e) => setH(e.target.value)}
-            onBlur={() => commit("manual")}
+            onBlur={commit}
             style={inputStyle} />
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>cm</span>
         </div>
       </div>
 
-      {note && (
-        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
-          🤖 {note}
+      {si.source === "ai" && si.reason && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5, fontStyle: "italic" }}>
+          🤖 {si.reason}
         </div>
       )}
       {catalogSize && (catalogSize.W !== "TBD" || catalogSize.D !== "TBD" || catalogSize.H !== "TBD") && (
