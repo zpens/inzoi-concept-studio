@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.8";
+const APP_VERSION = "1.6.9";
 const CHANGELOG = [
+  {
+    version: "1.6.9",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] 시안 생성 / 투표 탭의 카드 썸네일이 '대표 이미지' 변경을 반영하지 않던 문제 — 첫 시안 이미지를 무조건 쓰던 로직을 '선정 시안 > 첫 시안 > 카드 썸네일' 우선순위로 교체 (CardHubCard / CardListRow 모두)",
+    ],
+  },
   {
     version: "1.6.8",
     date: "2026-04-22",
@@ -2717,7 +2724,7 @@ function CardListRow({ card, tabId, onClick }) {
   if (tabId === "sheet" || tabId === "completed") {
     thumb = data.concept_sheet_url || selected?.imageUrl || card.thumbnail_url;
   } else if (tabId !== "wishlist") {
-    thumb = designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
+    thumb = selected?.imageUrl || designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
   }
 
   const date = tabId === "completed" ? card.confirmed_at : card.created_at;
@@ -3025,14 +3032,14 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
   const selected = selectedIdx != null ? designs[selectedIdx] : null;
 
-  // 탭별 썸네일 선택 로직
+  // 탭별 썸네일 선택 로직. 대표(selected_design) 가 있으면 항상 우선.
   let thumb = card.thumbnail_url;
   if (tabId === "sheet" || tabId === "completed") {
     thumb = data.concept_sheet_url || selected?.imageUrl || card.thumbnail_url;
   } else if (tabId === "wishlist") {
     thumb = card.thumbnail_url;
   } else {
-    thumb = designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
+    thumb = selected?.imageUrl || designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
   }
 
   const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
