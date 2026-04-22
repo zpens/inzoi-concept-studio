@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.1.2";
+const APP_VERSION = "1.1.3";
 const CHANGELOG = [
+  {
+    version: "1.1.3",
+    date: "2026-04-22",
+    changes: [
+      "[핫픽스] 서버가 UNIQUE 제약 위반으로 로그 폭주하던 문제 해결",
+      "원인: 폴링으로 받은 서버 아이템을 debounce effect 가 '새 추가'로 오인해 중복 POST",
+      "서버 측 POST /wishlist, /completed, /cards 가 중복 id 시 조용히 200 반환 (idempotent)",
+      "클라이언트 측 폴링 merge 시 prevRef 도 동기화 → 다음 diff 가 재POST 하지 않음",
+    ],
+  },
   {
     version: "1.1.2",
     date: "2026-04-22",
@@ -1989,11 +1999,15 @@ export default function InZOIConceptTool() {
         });
 
         // completed: 서버 기준 목록에 "로컬에만 있는" 아이템을 merge.
+        // 중요: 폴링으로 받아온 서버 아이템은 prev ref 에도 반영해서,
+        // 다음 debounce 사이클이 "새로 추가됨" 으로 오인해 재POST 하지 않게 한다.
         const serverCompleted = (data.completed || []).map(dbRowToCompleted);
         setCompletedList((local) => {
           const serverIds = new Set(serverCompleted.map((c) => String(c.id)));
           const localOnly = local.filter((c) => !serverIds.has(String(c.id)));
-          return [...localOnly, ...serverCompleted];
+          const merged = [...localOnly, ...serverCompleted];
+          prevCompletedRef.current = merged;
+          return merged;
         });
 
         // wishlist: 동일한 전략.
@@ -2001,7 +2015,9 @@ export default function InZOIConceptTool() {
         setWishlist((local) => {
           const serverIds = new Set(serverWishlist.map((c) => String(c.id)));
           const localOnly = local.filter((c) => !serverIds.has(String(c.id)));
-          return [...localOnly, ...serverWishlist];
+          const merged = [...localOnly, ...serverWishlist];
+          prevWishlistRef.current = merged;
+          return merged;
         });
 
         // cards / lists 는 서버 단일 source — 그대로 반영.

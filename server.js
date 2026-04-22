@@ -295,13 +295,22 @@ app.post("/api/projects/:slug/cards", async (c) => {
   const data = body.data ? JSON.stringify(body.data) : "{}";
   const pos = typeof body.position === "number" ? body.position : Date.now();
 
-  stmts.insertCard.run(
-    id, p.id, list.id, pos,
-    body.title, body.description ?? null, body.thumbnail_url ?? null,
-    body.due_date ?? null, body.priority ?? null, data,
-    body.created_by ?? body.actor ?? null,
-    body.updated_by ?? body.actor ?? null
-  );
+  try {
+    stmts.insertCard.run(
+      id, p.id, list.id, pos,
+      body.title, body.description ?? null, body.thumbnail_url ?? null,
+      body.due_date ?? null, body.priority ?? null, data,
+      body.created_by ?? body.actor ?? null,
+      body.updated_by ?? body.actor ?? null
+    );
+  } catch (err) {
+    if (err.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
+      // 동일 id 로 재시도 — 이미 존재하면 기존 반환.
+      const existing = stmts.getCardById.get(id, p.id);
+      if (existing) { parseJsonFields(existing, ["data"]); return c.json(existing, 200); }
+    }
+    throw err;
+  }
   logCardActivity(id, body.actor ?? null, "created", { title: body.title, list: list.status_key });
   stmts.touchProject.run(p.id);
 
@@ -491,15 +500,23 @@ app.post("/api/projects/:slug/completed", async (c) => {
   if (!row) return c.json({ error: "Not found" }, 404);
   const b = await c.req.json();
   const id = String(b.id ?? Date.now());
-  stmts.insertCompleted.run(
-    id, row.id, b.job_id ?? null, b.asset_code ?? null,
-    b.category ?? null, b.category_label ?? null, b.category_icon ?? null,
-    b.style ?? null, b.prompt ?? null, b.seed ?? null,
-    b.colors ? JSON.stringify(b.colors) : null,
-    b.gradient ?? null, b.image_url ?? null, b.concept_sheet_url ?? null,
-    b.voters ?? null, b.winner ?? null, b.pipeline_status ?? null,
-    b.designer ?? null, b.completed_at ?? new Date().toISOString()
-  );
+  try {
+    stmts.insertCompleted.run(
+      id, row.id, b.job_id ?? null, b.asset_code ?? null,
+      b.category ?? null, b.category_label ?? null, b.category_icon ?? null,
+      b.style ?? null, b.prompt ?? null, b.seed ?? null,
+      b.colors ? JSON.stringify(b.colors) : null,
+      b.gradient ?? null, b.image_url ?? null, b.concept_sheet_url ?? null,
+      b.voters ?? null, b.winner ?? null, b.pipeline_status ?? null,
+      b.designer ?? null, b.completed_at ?? new Date().toISOString()
+    );
+  } catch (err) {
+    // 중복 POST (폴링·retry 동반) 은 조용히 무시해 서버 로그 폭주 방지.
+    if (err.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
+      return c.json({ ok: true, duplicate: true, id }, 200);
+    }
+    throw err;
+  }
   stmts.touchProject.run(row.id);
   logActivity(row.id, b.updated_by, "completed_added", { id, label: b.category_label });
   return c.json({ ok: true, id }, 201);
@@ -522,11 +539,18 @@ app.post("/api/projects/:slug/wishlist", async (c) => {
   if (!row) return c.json({ error: "Not found" }, 404);
   const b = await c.req.json();
   const id = String(b.id ?? Date.now());
-  stmts.insertWishlist.run(
-    id, row.id, b.title ?? "Untitled", b.note ?? null,
-    b.image_url ?? null, b.gradient ?? null,
-    b.created_at ?? new Date().toISOString()
-  );
+  try {
+    stmts.insertWishlist.run(
+      id, row.id, b.title ?? "Untitled", b.note ?? null,
+      b.image_url ?? null, b.gradient ?? null,
+      b.created_at ?? new Date().toISOString()
+    );
+  } catch (err) {
+    if (err.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
+      return c.json({ ok: true, duplicate: true, id }, 200);
+    }
+    throw err;
+  }
   stmts.touchProject.run(row.id);
   return c.json({ ok: true, id }, 201);
 });
