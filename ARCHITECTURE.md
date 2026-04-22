@@ -68,17 +68,63 @@ wishlist → drafting → sheet → done
 `claude-sonnet-4-20250514` 로 프롬프트 enhance. Claude 키 없으면 기본 프롬프트 그대로 전송.
 
 ### inzoiObjectList 연동 (1.7.0+)
-카테고리/스타일 목록이 외부 프로젝트(`D:\Project_ai\inzoiObjectList`)의 `data/meta.json` 과 자동 동기.
+카테고리/스타일 목록이 외부 프로젝트(`D:\Project_ai\inzoiObjectList`)의 `data/meta.json` + `data/objects.json` 과 자동 동기.
 ```
 브라우저 → /api/object-meta → [concept-studio :3000]
-                                  ↓ fetch
-                             http://localhost:8080/data/meta.json
+                                  ↓ fetch (meta.json + objects.json 병렬)
+                             http://localhost:8080/data/*.json
                              (inzoiObjectList 내장 server.py)
 ```
-- 서버 5분 메모리 캐시, `?force=1` 로 즉시 무효화
+- 서버 1시간 메모리 캐시, `?force=1` 로 즉시 무효화
 - 다른 호스트는 `INZOI_OBJECT_LIST_URL` 환경변수로 override
 - 실패 시 코드에 하드코딩된 fallback 목록 사용 (앱은 정상 동작)
-- 클라이언트는 5분 주기 재조회 → `let FURNITURE_CATEGORIES` / `let STYLE_PRESETS` 교체 + `metaVersion` bump 으로 강제 re-render
+- 클라이언트는 1시간 주기 재조회 → `let FURNITURE_CATEGORIES` / `let STYLE_PRESETS` 교체 + `metaVersion` bump 으로 강제 re-render
+
+#### /api/object-meta 응답 구조 (1.7.1+)
+```jsonc
+{
+  "categories": [
+    {
+      "id": "Bed",             // meta.catHier 의 type id
+      "label": "침대",         // meta.filterKo
+      "room": "침실",          // 상위 room
+      "group": "가구",         // 최상위 그룹
+      "icon": "🛏️",            // room 기반 이모지
+      "preset": "침대, furniture asset",
+      "spec": {                // objects.json 에서 집계 (없을 수 있음)
+        "asset_count": 25,
+        "sample_names": ["싱글 침대", "더블 침대", "네추럴 드림 침대", ...],
+        "common_tags": ["Bed_Single", "Bed_Double", "Cheap_Bed", ...],
+        "styles": ["Modern", "Scandinavian", "Industrial"],
+        "price_range": { "min": 100, "max": 5000, "median": 800 }
+      }
+    }
+    // ~208 카테고리
+  ],
+  "styles": [
+    { "id": "Modern", "label": "모던" }, ...  // 9개, objTags 에 실제 등장하는 것만
+  ],
+  "source": "http://localhost:8080",
+  "fetched_at": "2026-04-23T...",
+  "category_count": 208,
+  "style_count": 9,
+  "asset_count": 5265,
+  "has_specs": true
+}
+```
+
+#### spec 의 Gemini 프롬프트 반영
+`generateCardVariants` 에서 `catInfo.spec.sample_names` 와 `catInfo.spec.common_tags` 를 프롬프트에 concat:
+```
+"<preset>, <style> style, <user prompt>,
+ referenced variants: 싱글 침대, 더블 침대, 네추럴 드림 침대;
+ tags: Bed_Single, Bed_Double, Cheap_Bed, Bed,
+ product design concept, white background, ..."
+```
+이전(1.6.x 이하)의 하드코딩 `ASSET_SPECS` 는 10개 카테고리만 커버했지만 이제 208개 전 카테고리에 카탈로그 기반 힌트가 자동 적용.
+
+#### AssetInfoEditor UI
+카테고리 선택 시 `✦ <카테고리> 스펙` 배너 노출 — `asset_count`, `sample_names`, `common_tags`, `styles` 표시. 사용자는 어떤 정보가 Gemini 에 전달되는지 시각적으로 확인 가능.
 
 ---
 
