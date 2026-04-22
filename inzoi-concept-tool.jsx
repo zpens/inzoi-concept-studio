@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.6";
+const APP_VERSION = "1.4.7";
 const CHANGELOG = [
+  {
+    version: "1.4.7",
+    date: "2026-04-22",
+    changes: [
+      "카드 상세 모달 제목 인라인 편집 — 제목 클릭 시 input 전환, Enter/blur 로 저장, ESC 취소",
+    ],
+  },
   {
     version: "1.4.6",
     date: "2026-04-22",
@@ -2112,6 +2119,74 @@ function WishlistToDraftingAction({ card, onMoveTo }) {
   );
 }
 
+
+// 카드 제목 인라인 에디터. 클릭(또는 포커스)하면 input 로 전환,
+// blur / Enter 로 저장, ESC 로 취소.
+function CardTitleEditor({ card, projectSlug, actor, disabled, onSaved }) {
+  const [editing, setEditing] = React.useState(false);
+  const [value, setValue] = React.useState(card.title || "");
+  const [saving, setSaving] = React.useState(false);
+  const inputRef = React.useRef(null);
+
+  React.useEffect(() => { setValue(card.title || ""); }, [card.id, card.title]);
+  React.useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+
+  const commit = async () => {
+    const next = value.trim();
+    if (!next) { setValue(card.title || ""); setEditing(false); return; }
+    if (next === card.title) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: next, actor }),
+      });
+      setEditing(false);
+      await onSaved?.();
+    } catch (e) { alert("제목 저장 실패: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (editing && !disabled) {
+    return (
+      <input
+        ref={inputRef}
+        value={value}
+        disabled={saving}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          else if (e.key === "Escape") { setValue(card.title || ""); setEditing(false); }
+        }}
+        style={{
+          fontSize: 18, fontWeight: 800, color: "var(--text-main)",
+          padding: "2px 8px", borderRadius: 6,
+          border: "1px solid var(--primary)", outline: "none",
+          background: "#fff", width: "100%",
+        }}
+      />
+    );
+  }
+  return (
+    <div
+      onClick={() => !disabled && setEditing(true)}
+      title={disabled ? "잠긴 카드는 제목 수정 불가" : "클릭하여 제목 수정"}
+      style={{
+        fontSize: 18, fontWeight: 800, color: "var(--text-main)",
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        padding: "2px 8px", borderRadius: 6,
+        cursor: disabled ? "not-allowed" : "text",
+        border: "1px solid transparent",
+      }}
+      onMouseOver={(e) => { if (!disabled) e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+      onMouseOut={(e) => { e.currentTarget.style.background = "transparent"; }}
+    >
+      {card.title || <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(제목 없음)</span>}
+    </div>
+  );
+}
 
 // 카드 상세 모달의 댓글 입력창. ref 대신 local state 로 간단히.
 function CardCommentInput({ onSubmit, disabled }) {
@@ -5532,12 +5607,23 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               }}>
                 <span style={{ fontSize: 24 }}>{meta.icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {card.title}
-                    {confirmed && <span style={{ fontSize: 11, marginLeft: 8, color: "#22c55e" }}>🔒 잠김</span>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <CardTitleEditor
+                      card={card}
+                      projectSlug={projectSlug}
+                      actor={actorName}
+                      disabled={confirmed}
+                      onSaved={async () => {
+                        const d = await fetchCardDetail(projectSlug, card.id);
+                        if (d) {
+                          setDetailCard(d);
+                          setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                        }
+                      }}
+                    />
+                    {confirmed && <span style={{ fontSize: 11, color: "#22c55e", whiteSpace: "nowrap" }}>🔒 잠김</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", paddingLeft: 8 }}>
                     {meta.label} · 수정 {card.updated_at?.slice(0, 16).replace("T", " ") || "-"}
                   </div>
                 </div>
