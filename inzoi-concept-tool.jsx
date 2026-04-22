@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.2";
+const APP_VERSION = "1.6.3";
 const CHANGELOG = [
+  {
+    version: "1.6.3",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] 위시리스트 / 상세 모달에서 입력창에 포커스된 상태로 Ctrl+V 하면 이미지 붙여넣기가 동작하지 않던 문제 해결 — 클립보드에 이미지가 있을 때만 기본 동작을 가로채고, 텍스트 붙여넣기는 그대로 유지",
+    ],
+  },
   {
     version: "1.6.2",
     date: "2026-04-22",
@@ -1798,13 +1805,11 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     reader.readAsDataURL(file);
   };
 
-  // 카드 상세 모달이 열린 상태에서 Ctrl+V (또는 맥 Cmd+V) 로 이미지 붙여넣기.
-  // input/textarea 에 포커스가 있으면 텍스트 붙여넣기를 우선하도록 무시.
+  // 카드 상세 모달이 열린 상태에서 Ctrl+V 로 이미지 붙여넣기. 이미지 항목만
+  // 가로채고 입력창 텍스트 붙여넣기는 방해하지 않는다.
   React.useEffect(() => {
     if (disabled) return;
     const onPaste = (e) => {
-      const t = e.target;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const it of items) {
@@ -3060,14 +3065,15 @@ export default function InZOIConceptTool() {
   const wishImageRef = useRef(null);
 
   // 클립보드 이미지 붙여넣기 — 위시리스트 탭에서만 활성. 여러번 붙여넣으면 누적.
-  // detailCard(카드 상세 모달) 가 열려있으면 AssetInfoEditor 가 처리하므로 건너뛴다.
+  // detailCard 가 열려있으면 AssetInfoEditor 가 우선 처리하므로 skip.
+  // 입력창에 포커스 되어 있어도 "이미지" 가 있으면 처리한다 (텍스트 붙여넣기는 방해 없음).
   useEffect(() => {
     if (activeTab !== "wishlist" || detailCard) return;
     const onPaste = (e) => {
-      const t = e.target;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const items = e.clipboardData?.items;
       if (!items) return;
+      // 이미지 항목만 가로채고 텍스트는 입력창 기본 동작 유지.
+      let handled = false;
       for (const it of items) {
         if (it.type && it.type.startsWith("image/")) {
           const file = it.getAsFile();
@@ -3075,10 +3081,11 @@ export default function InZOIConceptTool() {
           const reader = new FileReader();
           reader.onload = (ev) => setWishImages((prev) => prev.length >= 4 ? prev : [...prev, ev.target.result]);
           reader.readAsDataURL(file);
-          e.preventDefault();
-          return;
+          handled = true;
+          break;
         }
       }
+      if (handled) e.preventDefault();
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
