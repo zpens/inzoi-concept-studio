@@ -1551,6 +1551,171 @@ async function uploadDataUrl(dataUrl) {
   }
 }
 
+// 카드 상세 모달 안에 인라인으로 보이는 어셋 정보 에디터.
+// 카테고리 / 스타일 / 프롬프트 / 참조 이미지 4개 필드 자동 저장.
+// 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
+function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled }) {
+  const [category, setCategory] = React.useState(card.data?.category || "");
+  const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
+  const [prompt, setPrompt] = React.useState(card.data?.prompt || card.description || "");
+  const [refImages, setRefImages] = React.useState(card.data?.ref_images || []);
+  const [saving, setSaving] = React.useState(false);
+  const fileRef = React.useRef(null);
+
+  // 서버에서 카드가 갱신되면 로컬 폼 상태도 동기화.
+  React.useEffect(() => {
+    setCategory(card.data?.category || "");
+    setStylePreset(card.data?.style_preset || "");
+    setPrompt(card.data?.prompt || card.description || "");
+    setRefImages(card.data?.ref_images || []);
+  }, [card.id, card.updated_at]);
+
+  const save = async (patchFields) => {
+    if (disabled) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), ...patchFields },
+          actor,
+        }),
+      });
+      await onRefresh();
+    } catch (e) { console.warn("어셋 정보 저장 실패:", e); }
+    finally { setSaving(false); }
+  };
+
+  const addRefFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const url = await uploadDataUrl(ev.target.result);
+      const next = [...refImages, url];
+      setRefImages(next);
+      await save({ ref_images: next });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const fieldLabel = { fontSize: 11, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 5 };
+  const fieldBox = {
+    width: "100%", padding: "8px 10px", borderRadius: 8,
+    border: "1px solid var(--surface-border)", background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
+    fontSize: 13, color: "var(--text-main)", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{
+      marginBottom: 20, padding: 14, borderRadius: 12,
+      background: "rgba(7,110,232,0.03)", border: "1px solid rgba(7,110,232,0.15)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)" }}>
+          📝 어셋 정보
+        </div>
+        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+          {saving ? "저장 중…" : "자동 저장"}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div>
+          <div style={fieldLabel}>카테고리</div>
+          <select
+            value={category}
+            disabled={disabled}
+            onChange={(e) => { const v = e.target.value; setCategory(v); save({ category: v }); }}
+            style={fieldBox}
+          >
+            <option value="">— 선택 —</option>
+            {FURNITURE_CATEGORIES.map((c) => (
+              <option key={c.id} value={c.id}>{c.icon} {c.label} ({c.room})</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div style={fieldLabel}>스타일 프리셋</div>
+          <select
+            value={stylePreset}
+            disabled={disabled}
+            onChange={(e) => { const v = e.target.value; setStylePreset(v); save({ style_preset: v }); }}
+            style={fieldBox}
+          >
+            <option value="">— 자동 (modern) —</option>
+            {STYLE_PRESETS.map((s) => (
+              <option key={s.id} value={s.id}>{s.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={fieldLabel}>프롬프트 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
+        <textarea
+          value={prompt}
+          disabled={disabled}
+          onChange={(e) => setPrompt(e.target.value)}
+          onBlur={() => {
+            if (prompt !== (card.data?.prompt || card.description || "")) {
+              save({ prompt: prompt.trim() });
+            }
+          }}
+          rows={4}
+          placeholder="원하는 어셋을 자세히 적어주세요 (blur 시 자동 저장)"
+          style={{ ...fieldBox, fontSize: 13, lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
+        />
+      </div>
+
+      <div>
+        <div style={fieldLabel}>참조 이미지 ({refImages.length}/4) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal 에 함께 전송)</span></div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {refImages.map((url, i) => (
+            <div key={i} style={{ position: "relative" }}>
+              <img src={url} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: "1px solid var(--surface-border)" }} />
+              {!disabled && (
+                <button
+                  onClick={async () => {
+                    const next = refImages.filter((_, idx) => idx !== i);
+                    setRefImages(next);
+                    await save({ ref_images: next });
+                  }}
+                  style={{
+                    position: "absolute", top: -6, right: -6,
+                    width: 18, height: 18, borderRadius: 9,
+                    background: "rgba(239,68,68,0.95)", color: "#fff",
+                    border: "1px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1,
+                  }}
+                >✕</button>
+              )}
+            </div>
+          ))}
+          {!disabled && refImages.length < 4 && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => { addRefFile(e.target.files?.[0]); e.target.value = ""; }}
+                style={{ display: "none" }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                style={{
+                  width: 72, height: 72, borderRadius: 8,
+                  background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                }}
+              >+ 추가</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 카드 상태별 액션 패널 (Phase E):
 //   wishlist → "시안 생성 시작"
 //   drafting → Gemini 시안 추가 생성 + 그리드 + 선정
@@ -1620,16 +1785,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
 
   if (statusKey === "wishlist") {
-    // hooks 규칙상 분기 안에서 useState 못 씀 → wrapper 컴포넌트로 분리.
-    return (
-      <WishlistToDraftingAction
-        card={card}
-        projectSlug={projectSlug}
-        actor={actor}
-        onRefresh={onRefresh}
-        onMoveTo={onMoveTo}
-      />
-    );
+    return <WishlistToDraftingAction card={card} onMoveTo={onMoveTo} />;
   }
 
   if (statusKey === "drafting") {
@@ -1859,255 +2015,48 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   return null;
 }
 
-// CardActionPanel 의 wishlist 분기에서 호출. 다이얼로그 토글 state 를 분리.
-function WishlistToDraftingAction({ card, projectSlug, actor, onRefresh, onMoveTo }) {
-  const [open, setOpen] = React.useState(false);
+// 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 에서 이미 편집됨.
+// 여기서는 필수 필드(카테고리, 프롬프트) 검증 후 바로 상태 이동.
+function WishlistToDraftingAction({ card, onMoveTo }) {
+  const hasCategory = !!(card.data?.category);
+  const hasPrompt = !!(card.data?.prompt || card.description);
+  const ready = hasCategory && hasPrompt;
   const sectionStyle = {
     marginBottom: 20, padding: 14, borderRadius: 12,
     background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
     border: "1px solid rgba(7,110,232,0.18)",
   };
   return (
-    <>
-      <div style={sectionStyle}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
-          아이디어 → 시안 생성
-        </div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
-          이 아이디어로 AI 시안 생성을 시작합니다. 다음 단계에서 카테고리·스타일·프롬프트·참조이미지를 확정하세요.
-        </div>
-        <button
-          onClick={() => setOpen(true)}
-          className="btn-primary"
-          style={{
-            padding: "10px 18px", borderRadius: 10, border: "none",
-            color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
-          }}
-        >✨ 시안 생성 준비…</button>
+    <div style={sectionStyle}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
+        아이디어 → 시안 생성
       </div>
-      {open && (
-        <DraftingSetupDialog
-          card={card}
-          onCancel={() => setOpen(false)}
-          onConfirm={async (next) => {
-            // 1) 폼 데이터 먼저 저장
-            await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                data: { ...(card.data || {}), ...next },
-                actor,
-              }),
-            });
-            setOpen(false);
-            // 2) status_key=drafting + 자동 탭 전환은 onMoveTo 가 처리
-            await onMoveTo("drafting");
-          }}
-        />
-      )}
-    </>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
+        위 어셋 정보를 채운 뒤 시안 생성 단계로 넘기세요.
+        {!ready && (
+          <div style={{ marginTop: 6, color: "#d97706", fontWeight: 600 }}>
+            ⚠ {!hasCategory && "카테고리"}{!hasCategory && !hasPrompt && " · "}{!hasPrompt && "프롬프트"} 필요
+          </div>
+        )}
+      </div>
+      <button
+        onClick={async () => {
+          if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
+          await onMoveTo("drafting");
+        }}
+        className={ready ? "btn-primary" : ""}
+        disabled={!ready}
+        style={{
+          padding: "10px 18px", borderRadius: 10, border: "none",
+          background: ready ? undefined : "rgba(0,0,0,0.08)",
+          color: ready ? "#fff" : "var(--text-muted)",
+          fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
+        }}
+      >✨ 시안 생성 단계로 이동</button>
+    </div>
   );
 }
 
-// 위시 → 시안 생성 전환 다이얼로그.
-// 카테고리 / 스타일 / 프롬프트 / 참조이미지를 확정 후 status_key=drafting 으로 PATCH.
-function DraftingSetupDialog({ card, onCancel, onConfirm }) {
-  const [category, setCategory]     = React.useState(card.data?.category || "");
-  const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
-  const [prompt, setPrompt]         = React.useState(card.description || card.title || "");
-  const initialRefs = card.data?.ref_images && card.data.ref_images.length
-    ? card.data.ref_images
-    : (card.thumbnail_url ? [card.thumbnail_url] : []);
-  const [refImages, setRefImages]   = React.useState(initialRefs);
-  const [busy, setBusy]             = React.useState(false);
-  const fileRef = React.useRef(null);
-
-  const addRefFile = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const dataUrl = ev.target.result;
-      const url = await uploadDataUrl(dataUrl);
-      setRefImages((prev) => [...prev, url]);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleConfirm = async () => {
-    if (!prompt.trim()) { alert("프롬프트를 입력해주세요"); return; }
-    if (!category)      { alert("카테고리를 선택해주세요"); return; }
-    setBusy(true);
-    try {
-      await onConfirm({
-        category,
-        style_preset: stylePreset || null,
-        prompt: prompt.trim(),
-        ref_images: refImages,
-      });
-    } catch (e) { alert("저장 실패: " + e.message); }
-    finally { setBusy(false); }
-  };
-
-  // 카테고리를 room/topTab 별로 분류 — 너무 많으니 그냥 정렬된 리스트
-  return (
-    <>
-      <div className="sidebar-overlay" onClick={onCancel} style={{ zIndex: 210 }} />
-      <div style={{
-        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        width: 720, maxWidth: "94vw", maxHeight: "92vh",
-        background: "rgba(255,255,255,0.98)", backdropFilter: "blur(20px)",
-        border: "1px solid var(--surface-border)", borderRadius: 18, zIndex: 211,
-        boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
-      }}>
-        <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--surface-border)" }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)" }}>
-            ✨ 시안 생성 준비
-          </div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
-            카드: {card.title}
-          </div>
-        </div>
-
-        <div style={{ flex: 1, overflow: "auto", padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>
-          {/* 카테고리 */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
-              카테고리 <span style={{ color: "#ef4444" }}>*</span>
-            </div>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              style={{
-                width: "100%", padding: "10px 12px", borderRadius: 10,
-                border: "1px solid var(--surface-border)", background: "#fff",
-                fontSize: 14, color: "var(--text-main)",
-              }}
-            >
-              <option value="">— 선택 —</option>
-              {FURNITURE_CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>{c.icon} {c.label} ({c.room})</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 스타일 */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
-              스타일 프리셋
-            </div>
-            <select
-              value={stylePreset}
-              onChange={(e) => setStylePreset(e.target.value)}
-              style={{
-                width: "100%", padding: "10px 12px", borderRadius: 10,
-                border: "1px solid var(--surface-border)", background: "#fff",
-                fontSize: 14, color: "var(--text-main)",
-              }}
-            >
-              <option value="">— 자동 (modern) —</option>
-              {STYLE_PRESETS.map((s) => (
-                <option key={s.id} value={s.id}>{s.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 프롬프트 */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
-              프롬프트 <span style={{ color: "#ef4444" }}>*</span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, marginLeft: 8 }}>
-                (위시 메모 기반, Gemini 호출 시 자동 enhance 됨)
-              </span>
-            </div>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={5}
-              placeholder="원하는 어셋의 재질·색상·디테일·치수 등을 자세히 적어주세요"
-              style={{
-                width: "100%", padding: "10px 12px", borderRadius: 10,
-                border: "1px solid var(--surface-border)", background: "#fff",
-                fontSize: 13, color: "var(--text-main)", lineHeight: 1.6,
-                resize: "vertical", fontFamily: "inherit", boxSizing: "border-box",
-              }}
-            />
-          </div>
-
-          {/* 참조 이미지 */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
-              참조 이미지 ({refImages.length})
-              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, marginLeft: 8 }}>
-                (Gemini multimodal 로 함께 전송됨, 최대 4개)
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-              {refImages.map((url, i) => (
-                <div key={i} style={{ position: "relative" }}>
-                  <img src={url} alt="" style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 8, border: "1px solid var(--surface-border)" }} />
-                  <button
-                    onClick={() => setRefImages(refImages.filter((_, idx) => idx !== i))}
-                    style={{
-                      position: "absolute", top: -6, right: -6,
-                      width: 20, height: 20, borderRadius: 10,
-                      background: "rgba(239,68,68,0.95)", color: "#fff",
-                      border: "1px solid #fff", fontSize: 11, cursor: "pointer", lineHeight: 1,
-                    }}
-                  >✕</button>
-                </div>
-              ))}
-              {refImages.length < 4 && (
-                <>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => { addRefFile(e.target.files?.[0]); e.target.value = ""; }}
-                    style={{ display: "none" }}
-                  />
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    style={{
-                      width: 84, height: 84, borderRadius: 8,
-                      background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
-                      color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
-                    }}
-                  >+ 추가</button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{
-          padding: "14px 22px", borderTop: "1px solid var(--surface-border)",
-          display: "flex", justifyContent: "flex-end", gap: 8,
-        }}>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: "10px 18px", borderRadius: 10,
-              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-              color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer",
-            }}
-          >취소</button>
-          <button
-            onClick={handleConfirm}
-            disabled={busy}
-            className="btn-primary"
-            style={{
-              padding: "10px 22px", borderRadius: 10, border: "none",
-              color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: busy ? "wait" : "pointer",
-              boxShadow: "0 4px 14px var(--primary-glow)",
-            }}
-          >{busy ? "저장 중…" : "✨ 시안 생성 시작"}</button>
-        </div>
-      </div>
-    </>
-  );
-}
 
 // 카드 상세 모달의 댓글 입력창. ref 대신 local state 로 간단히.
 function CardCommentInput({ onSubmit, disabled }) {
@@ -5352,8 +5301,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           try {
                             await patchCard(projectSlug, c.id, { is_archived: false, force: true, actor: actorName });
                             const detail = await fetchCardDetail(projectSlug, c.id);
+                            const restored = detail || { ...c, is_archived: 0 };
+                            setCards((prev) => {
+                              const without = prev.filter((x) => x.id !== restored.id);
+                              return [restored, ...without];
+                            });
+                            setArchivedCards((prev) => prev.filter((x) => x.id !== restored.id));
+                            const restoredList = lists.find((l) => l.id === restored.list_id);
+                            const tabMap = { wishlist: "wishlist", drafting: "create", sheet: "sheet", done: "completed" };
+                            setActiveTab(tabMap[restoredList?.status_key] || "wishlist");
                             if (detail) setDetailCard(detail);
-                            setCards((prev) => [c, ...prev]);
                           } catch (e) { alert("복구 실패: " + e.message); }
                         }}
                         className="hover-lift"
@@ -5548,6 +5505,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       />
                     </div>
                   )}
+
+                  {/* 어셋 정보 인라인 편집 (자동 저장) — 카드 생성은 최소 정보, 편집은 여기서 */}
+                  <AssetInfoEditor
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                    onRefresh={async () => {
+                      const d = await fetchCardDetail(projectSlug, card.id);
+                      if (d) {
+                        setDetailCard(d);
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      }
+                    }}
+                  />
 
                   {/* === Phase E: 상태별 카드 액션 === */}
                   {!confirmed && (
