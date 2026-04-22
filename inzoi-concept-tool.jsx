@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.4.4";
+const APP_VERSION = "1.4.5";
 const CHANGELOG = [
+  {
+    version: "1.4.5",
+    date: "2026-04-22",
+    changes: [
+      "상세 모달의 아카이브 버튼이 상태 토글(🗄️ 아카이브 / 📤 복구)로 구분 표시",
+      "이미지 클릭 시 원본 해상도 lightbox 뷰어 오픈 (상세 썸네일, 시안 그리드, 컨셉시트, 참조이미지)",
+      "기존 레거시 '새 작업' (빈) 카드 클릭 시 자동으로 card 마이그레이션 + 상세 모달 오픈",
+    ],
+  },
   {
     version: "1.4.4",
     date: "2026-04-22",
@@ -1573,7 +1582,7 @@ async function uploadDataUrl(dataUrl) {
 // 카드 상세 모달 안에 인라인으로 보이는 어셋 정보 에디터.
 // 카테고리 / 스타일 / 프롬프트 / 참조 이미지 4개 필드 자동 저장.
 // 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
-function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled }) {
+function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage }) {
   const [category, setCategory] = React.useState(card.data?.category || "");
   const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
   const [prompt, setPrompt] = React.useState(card.data?.prompt || card.description || "");
@@ -1692,7 +1701,12 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled }) {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {refImages.map((url, i) => (
             <div key={i} style={{ position: "relative" }}>
-              <img src={url} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: "1px solid var(--surface-border)" }} />
+              <img
+                src={url}
+                alt=""
+                onClick={() => onOpenImage?.(url)}
+                style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: "1px solid var(--surface-border)", cursor: onOpenImage ? "zoom-in" : "default" }}
+              />
               {!disabled && (
                 <button
                   onClick={async () => {
@@ -1740,7 +1754,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled }) {
 //   drafting → Gemini 시안 추가 생성 + 그리드 + 선정
 //   sheet    → "최종 완료" 버튼 (시트 생성은 기존 흐름 혹은 간단화)
 //   done     → (confirmed 잠금, 이 패널은 렌더 안 함)
-function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedModel, actor, onMoveTo, onRefresh, onOpenApiSettings }) {
+function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedModel, actor, onMoveTo, onRefresh, onOpenApiSettings, onOpenImage }) {
   const [count, setCount] = React.useState(1);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(null);
@@ -1857,7 +1871,12 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                 background: "#000",
               }}>
                 {d.imageUrl ? (
-                  <img src={d.imageUrl} alt="" style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
+                  <img
+                    src={d.imageUrl}
+                    alt=""
+                    onClick={() => onOpenImage?.(d.imageUrl)}
+                    style={{ width: "100%", height: 100, objectFit: "cover", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
+                  />
                 ) : (
                   <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
                 )}
@@ -1967,16 +1986,24 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
               선정 시안 #{selectedIdx + 1} (seed: {selectedDesign.seed})
             </div>
-            <img src={selectedDesign.imageUrl} alt="선정 시안" style={{ width: "100%", maxHeight: 160, objectFit: "contain", borderRadius: 6, background: "#fff" }} />
+            <img
+              src={selectedDesign.imageUrl}
+              alt="선정 시안"
+              onClick={() => onOpenImage?.(selectedDesign.imageUrl)}
+              style={{ width: "100%", maxHeight: 160, objectFit: "contain", borderRadius: 6, background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
+            />
           </div>
         )}
 
         {sheetUrl ? (
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>✓ 컨셉시트 생성됨</div>
-            <a href={sheetUrl} target="_blank" rel="noreferrer">
-              <img src={sheetUrl} alt="컨셉시트" style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, background: "#fff", cursor: "zoom-in" }} />
-            </a>
+            <img
+              src={sheetUrl}
+              alt="컨셉시트"
+              onClick={() => onOpenImage?.(sheetUrl)}
+              style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
+            />
           </div>
         ) : (
           <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
@@ -2522,6 +2549,7 @@ export default function InZOIConceptTool() {
   const [cards, setCards] = useState([]);           // 프로젝트 내 모든 카드 (is_archived=0)
   const [lists, setLists] = useState([]);           // wishlist / drafting / sheet / done
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
+  const [previewImage, setPreviewImage] = useState(null); // 이미지 원본 해상도 뷰어
 
   // [Phase B-3] cards → 기존 wishlist / completedList shape 로 변환하는 derived.
   // 컴포넌트들은 계속 `wishlist` / `completedList` 변수명 그대로 사용.
@@ -3437,16 +3465,46 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   />
                 ))}
-                {/* 레거시 jobs 기반 카드 */}
-                {inRangeJobs.map((j) => (
-                  <WorkflowJobCard
-                    key={j.id}
-                    job={j}
-                    active={j.id === activeJobId && showWorkflowDetail}
-                    tabId={activeTab}
-                    onSelect={() => { setActiveJobId(j.id); setShowWorkflowDetail(true); }}
-                  />
-                ))}
+                {/* 레거시 jobs 기반 카드 — 빈 '새작업' 은 클릭 시 card 로 마이그레이션해 모달 오픈 */}
+                {inRangeJobs.map((j) => {
+                  const isBlank = !j.category && (!j.designs || j.designs.length === 0) && !j.prompt;
+                  return (
+                    <WorkflowJobCard
+                      key={j.id}
+                      job={j}
+                      active={j.id === activeJobId && showWorkflowDetail}
+                      tabId={activeTab}
+                      onSelect={async () => {
+                        if (isBlank && projectSlug) {
+                          // 빈 레거시 job → 대응되는 card 를 drafting 상태로 새로 만들고 상세 모달 오픈
+                          try {
+                            const cardId = `card-${Date.now()}`;
+                            const r = await fetch(`/api/projects/${projectSlug}/cards`, {
+                              method: "POST",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify({
+                                id: cardId, title: "새 작업",
+                                status_key: "drafting", data: {}, actor: actorName || null,
+                              }),
+                            });
+                            if (r.ok) {
+                              const created = await r.json();
+                              setCards((prev) => (prev.find((c) => c.id === created.id) ? prev : [created, ...prev]));
+                              const detail = await fetchCardDetail(projectSlug, created.id);
+                              if (detail) setDetailCard(detail);
+                              // 레거시 빈 job 제거 (혼란 방지)
+                              setJobs((prev) => prev.filter((x) => x.id !== j.id));
+                              return;
+                            }
+                          } catch (e) { console.warn("카드 마이그레이션 실패", e); }
+                        }
+                        // 데이터가 있는 레거시 job 은 기존 UI 유지
+                        setActiveJobId(j.id);
+                        setShowWorkflowDetail(true);
+                      }}
+                    />
+                  );
+                })}
               </div>
             ) : (
               <div style={{
@@ -5502,25 +5560,47 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     title="컨펌 해제 (편집 가능 상태로 되돌리기)"
                   >🔓 재오픈</button>
                 )}
-                {/* 아카이브 */}
-                <button
-                  onClick={async () => {
-                    if (!confirm("이 카드를 아카이브로 옮기시겠어요?")) return;
-                    try {
-                      await patchCard(projectSlug, card.id, {
-                        is_archived: true, force: true, actor: actorName,
-                      });
-                      setCards((prev) => prev.filter((c) => c.id !== card.id));
-                      setDetailCard(null);
-                    } catch (e) { alert("아카이브 실패: " + e.message); }
-                  }}
-                  style={{
-                    padding: "8px 12px", borderRadius: 10,
-                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                    color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                  }}
-                  title="목록에서 숨김 (아카이브 뷰에서 복구 가능)"
-                >🗄️ 아카이브</button>
+                {/* 아카이브 토글 — 현재 상태에 따라 버튼 라벨/색상이 바뀜 */}
+                {card.is_archived ? (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await patchCard(projectSlug, card.id, { is_archived: false, force: true, actor: actorName });
+                        const detail = await fetchCardDetail(projectSlug, card.id);
+                        const restored = detail || { ...card, is_archived: 0 };
+                        setCards((prev) => {
+                          const without = prev.filter((x) => x.id !== restored.id);
+                          return [restored, ...without];
+                        });
+                        setArchivedCards((prev) => prev.filter((x) => x.id !== restored.id));
+                        if (detail) setDetailCard(detail);
+                      } catch (e) { alert("복구 실패: " + e.message); }
+                    }}
+                    style={{
+                      padding: "8px 12px", borderRadius: 10,
+                      background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.4)",
+                      color: "#15803d", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    }}
+                    title="아카이브에서 꺼내 원래 단계로 복구"
+                  >📤 복구</button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      if (!confirm("이 카드를 아카이브로 옮기시겠어요?")) return;
+                      try {
+                        await patchCard(projectSlug, card.id, { is_archived: true, force: true, actor: actorName });
+                        setCards((prev) => prev.filter((c) => c.id !== card.id));
+                        setDetailCard(null);
+                      } catch (e) { alert("아카이브 실패: " + e.message); }
+                    }}
+                    style={{
+                      padding: "8px 12px", borderRadius: 10,
+                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                      color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    }}
+                    title="목록에서 숨김 (아카이브 뷰에서 복구 가능)"
+                  >🗄️ 아카이브</button>
+                )}
                 <button
                   onClick={() => setDetailCard(null)}
                   style={{
@@ -5544,10 +5624,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       <img
                         src={card.thumbnail_url}
                         alt=""
+                        onClick={() => setPreviewImage(card.thumbnail_url)}
                         style={{
                           maxWidth: "100%", maxHeight: 340, objectFit: "contain",
                           borderRadius: 10, background: "#fff",
                           boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+                          cursor: "zoom-in",
                         }}
                       />
                     </div>
@@ -5559,6 +5641,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     projectSlug={projectSlug}
                     actor={actorName}
                     disabled={confirmed}
+                    onOpenImage={setPreviewImage}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
                       if (d) {
@@ -5578,6 +5661,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       selectedModel={selectedModel}
                       actor={actorName}
                       onMoveTo={moveTo}
+                      onOpenImage={setPreviewImage}
                       onRefresh={async () => {
                         const d = await fetchCardDetail(projectSlug, card.id);
                         if (d) {
@@ -6688,6 +6772,54 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 이미지 원본 해상도 뷰어 (lightbox) — 배경 클릭 또는 ESC 로 닫힘 */}
+      {previewImage && (
+        <div
+          onClick={() => setPreviewImage(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 300,
+            background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "zoom-out", padding: 24, animation: "fadeIn 0.2s ease",
+          }}
+        >
+          <img
+            src={previewImage}
+            alt=""
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "100%", maxHeight: "100%",
+              objectFit: "contain", borderRadius: 8,
+              boxShadow: "0 20px 80px rgba(0,0,0,0.6)",
+              cursor: "default",
+            }}
+          />
+          <button
+            onClick={() => setPreviewImage(null)}
+            style={{
+              position: "absolute", top: 20, right: 20,
+              width: 44, height: 44, borderRadius: 22,
+              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 20, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+            title="닫기 (ESC)"
+          >✕</button>
+          <a
+            href={previewImage}
+            download
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute", top: 20, right: 76,
+              padding: "10px 16px", borderRadius: 22,
+              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >📥 저장</a>
         </div>
       )}
     </div>
