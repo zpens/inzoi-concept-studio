@@ -197,11 +197,30 @@ git add . && git commit -m "..." && git push origin main
 
 | 함정 | 증상 | 대처 |
 |------|------|------|
-| **TDZ (Temporal Dead Zone)** | 빈 화면 | `useEffect` / `useCallback` 의 deps 배열이 같은 컴포넌트 본문 더 아래에서 선언된 `const` 를 참조할 때 발생. 관련 훅을 선언 이후로 옮긴다. 과거 1.4.4 / 1.5.8 에서 재발. |
+| **TDZ (Temporal Dead Zone) — ⚠️ 재발 상습** | 빈 화면 (콘솔 열어야 원인 보임) | `useEffect` / `useCallback` / `useMemo` 의 deps 배열 또는 본문이 같은 컴포넌트 함수 본문 더 아래에서 선언된 `const` 를 참조할 때 발생. 이미 **1.4.4 / 1.5.8 / 1.7.4** 에서 재발. **새 hook 을 추가할 때는 반드시 기존 hook 들의 마지막 아래** (return 바로 위) 에 붙여 선언 순서 깨뜨리지 말 것. 아래 체크리스트 참조. |
 | **legacy 싱크 루프** | 같은 카드 2개 (`wish-…` + `comp-wish-…`) | 1.5.7 에서 완료/위시리스트 싱크 effect 전부 제거. 새 기능 추가 시 legacy 테이블에 역복사 금지. |
 | **ensureLegacyMigration** | DELETE 해도 폴링 후 카드 부활 | 서버 `DELETE /cards/:id` 에서 `wish-` / `comp-` 접두사 확인 후 legacy 행도 함께 삭제 (1.4.8). |
 | **붙여넣기 가드 과잉** | input 포커스 시 이미지 Ctrl+V 차단 | 클립보드에 이미지가 있을 때만 `preventDefault`, 텍스트 붙여넣기는 기본 동작 유지 (1.6.3). |
 | **Cover 우선순위** | ☆ 대표 눌러도 그리드 썸네일 안 바뀜 | `CardHubCard` / `CardListRow` 의 thumb 선택에 `selected?.imageUrl` 를 항상 최우선으로. 1.6.9 에서 수정. |
+
+### TDZ 재발 방지 체크리스트
+
+새 `useState` / `useEffect` / `useCallback` / `useMemo` 를 **App** 함수 안에 추가하기 전:
+
+1. **Deps 배열과 함수 본문에 쓰인 모든 식별자** 를 grep 해서 파일 내 선언 위치 확인. 새 hook 위치보다 **아래에서 선언**되었으면 TDZ 위험.
+
+2. **자주 엮이는 state 의 대략 선언 위치** (이동하지 말 것, 대신 새 hook 을 적절한 위치에 놓기):
+   - `cards`, `lists`, `detailCard`, `previewImage`, `generatingCards` — ~3650 줄대
+   - `projectSlug`, `projectReady`, `actorName` — ~3700 줄대
+   - 필터/뷰 state (`sortBy`, `viewMode`, `selectedUpdates`) — ~3600 줄대
+
+3. **안전 패턴**: 새 hook 은 기본적으로 기존 hook 들의 **마지막 아래** (`return` JSX 바로 위)에 붙이기. 이렇게 하면 deps 가 참조 가능한 위치에 자동으로 들어감.
+
+4. **빌드 성공 ≠ 안전**. TDZ 는 런타임에만 발생. push 전 로컬 브라우저에서 한 번 로드해 흰 화면이 안 뜨는지 확인.
+
+5. 증상 "화면이 흰색" / "또 안 보인다" → 최근 커밋의 훅 위치 diff 부터 확인. 대부분 5분 안에 찾아짐.
+
+6. Hotfix 는 **문제 hook 만 이동**. state useState 자체는 절대 옮기지 말 것 (다른 수십 군데의 참조가 깨짐).
 
 ---
 
