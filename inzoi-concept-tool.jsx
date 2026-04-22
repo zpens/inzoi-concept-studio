@@ -1,8 +1,21 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.1.4";
+const APP_VERSION = "1.2.0";
 const CHANGELOG = [
+  {
+    version: "1.2.0",
+    date: "2026-04-22",
+    changes: [
+      "[Phase E] Gemini 시안 생성을 카드 내부 액션으로 통합",
+      "카드 모달에 상태별 액션 패널: 아이디어 → 시안 생성 → 컨셉시트 → 완료",
+      "아이디어 카드: '✨ 시안 생성 시작' 버튼으로 drafting 단계 진입",
+      "시안 생성 카드: 카드 내부에서 Gemini로 1/2/4/8개 시안 추가 생성, 썸네일 그리드, 개별 삭제/선정",
+      "시안 선정 시 자동으로 썸네일 갱신 + 컨셉시트 단계로 이동",
+      "컨셉시트 카드: '✅ 최종 완료' 버튼으로 컨펌 + 잠금",
+      "선정된 시안은 카드의 thumbnail_url 로 기록되어 그리드에서 바로 보임",
+    ],
+  },
   {
     version: "1.1.4",
     date: "2026-04-22",
@@ -1357,6 +1370,38 @@ const STATUS_META = {
   done:     { label: "완료",       icon: "✅", color: "#22c55e" },
 };
 
+// 카드 내부 "시안 생성" 액션. 기존 generateImageWithGemini 를 재사용하되
+// 결과를 card.data.designs 배열에 append 하고 PATCH 로 저장.
+async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress }) {
+  const seeds = Array.from({ length: Math.max(1, Math.min(8, count)) }, () => generateSeed());
+  const tasks = seeds.map((s) => async () => {
+    try {
+      const raw = await generateImageWithGemini(geminiApiKey, prompt, selectedModel);
+      const uploaded = await uploadDataUrl(raw);
+      return { seed: s, imageUrl: uploaded, createdAt: new Date().toISOString() };
+    } catch (err) {
+      return { seed: s, imageUrl: null, error: err.message, createdAt: new Date().toISOString() };
+    }
+  });
+  const results = await runWithConcurrencyLimit(tasks, 4, onProgress);
+  const valid = results.filter((r) => r && r.imageUrl);
+  const existing = Array.isArray(card.data?.designs) ? card.data.designs : [];
+  const nextData = {
+    ...(card.data || {}),
+    prompt,
+    designs: [...existing, ...valid],
+  };
+  // 첫 시안 생성이면 썸네일도 갱신.
+  const patch = { data: nextData, actor };
+  if (!card.thumbnail_url && valid[0]?.imageUrl) patch.thumbnail_url = valid[0].imageUrl;
+  await fetch(`/api/projects/${slug}/cards/${card.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return { added: valid.length, failed: results.length - valid.length };
+}
+
 // dataURL 을 서버에 업로드하고 /data/images/... URL 을 반환.
 // 이미 URL 이거나 업로드 실패 시 원본 반환 (fallback 으로 dataURL 유지).
 async function uploadDataUrl(dataUrl) {
@@ -1375,6 +1420,237 @@ async function uploadDataUrl(dataUrl) {
     console.warn("이미지 업로드 실패, dataURL 로 대체:", e.message);
     return dataUrl;
   }
+}
+
+// 카드 상태별 액션 패널 (Phase E):
+//   wishlist → "시안 생성 시작"
+//   drafting → Gemini 시안 추가 생성 + 그리드 + 선정
+//   sheet    → "최종 완료" 버튼 (시트 생성은 기존 흐름 혹은 간단화)
+//   done     → (confirmed 잠금, 이 패널은 렌더 안 함)
+function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedModel, actor, onMoveTo, onRefresh, onOpenApiSettings }) {
+  const [count, setCount] = React.useState(1);
+  const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState(null);
+
+  const designs = Array.isArray(card.data?.designs) ? card.data.designs : [];
+  const selectedIdx = card.data?.selected_design;
+
+  const doGenerate = async () => {
+    if (!geminiApiKey) { onOpenApiSettings(); return; }
+    const prompt = card.data?.prompt || card.description || card.title;
+    if (!prompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
+    setBusy(true);
+    setProgress({ done: 0, total: count });
+    try {
+      const r = await generateCardVariants({
+        card, count, prompt, geminiApiKey, selectedModel,
+        slug: projectSlug, actor,
+        onProgress: (done, total) => setProgress({ done, total }),
+      });
+      if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
+      await onRefresh();
+    } catch (e) { alert("생성 실패: " + e.message); }
+    finally { setBusy(false); setProgress(null); }
+  };
+
+  const selectDesign = async (idx) => {
+    try {
+      const d = designs[idx];
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), selected_design: idx },
+          thumbnail_url: d?.imageUrl || card.thumbnail_url,
+          status_key: "sheet",
+          actor,
+        }),
+      });
+      await onRefresh();
+    } catch (e) { alert("선정 실패: " + e.message); }
+  };
+
+  const removeDesign = async (idx) => {
+    if (!confirm("이 시안을 삭제하시겠어요?")) return;
+    const next = designs.filter((_, i) => i !== idx);
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: { ...(card.data || {}), designs: next }, actor }),
+      });
+      await onRefresh();
+    } catch (e) { alert("삭제 실패: " + e.message); }
+  };
+
+  const sectionStyle = {
+    marginBottom: 20, padding: 14, borderRadius: 12,
+    background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
+    border: "1px solid rgba(7,110,232,0.18)",
+  };
+  const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
+
+  if (statusKey === "wishlist") {
+    return (
+      <div style={sectionStyle}>
+        <div style={titleStyle}>아이디어 → 시안 생성</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 10 }}>
+          이 아이디어로 AI 시안 생성을 시작할 준비가 됐나요? 상태를 "시안 생성" 으로 옮기고
+          카드 내부에서 바로 Gemini 호출이 가능해집니다.
+        </div>
+        <button
+          onClick={() => onMoveTo("drafting")}
+          className="btn-primary"
+          style={{
+            padding: "10px 18px", borderRadius: 10, border: "none",
+            color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+          }}
+        >✨ 시안 생성 시작 →</button>
+      </div>
+    );
+  }
+
+  if (statusKey === "drafting") {
+    return (
+      <div style={sectionStyle}>
+        <div style={titleStyle}>시안 생성 ({designs.length}개)</div>
+        {/* 개수 선택 + 생성 버튼 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          {[1, 2, 4, 8].map((n) => (
+            <button
+              key={n}
+              onClick={() => setCount(n)}
+              disabled={busy}
+              style={{
+                padding: "6px 12px", borderRadius: 8,
+                background: count === n ? "var(--primary)" : "rgba(0,0,0,0.04)",
+                border: count === n ? "none" : "1px solid var(--surface-border)",
+                color: count === n ? "#fff" : "var(--text-muted)",
+                fontSize: 12, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
+              }}
+            >{n}</button>
+          ))}
+          <button
+            onClick={doGenerate}
+            disabled={busy}
+            style={{
+              marginLeft: "auto", padding: "8px 14px", borderRadius: 10,
+              background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, var(--primary), var(--secondary))",
+              border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: busy ? "not-allowed" : "pointer",
+            }}
+          >
+            {busy
+              ? `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`
+              : `🎨 ${count}개 생성`}
+          </button>
+        </div>
+
+        {/* 시안 썸네일 그리드 */}
+        {designs.length > 0 ? (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+            gap: 8,
+          }}>
+            {designs.map((d, i) => (
+              <div key={i} style={{
+                position: "relative", borderRadius: 8, overflow: "hidden",
+                border: selectedIdx === i ? "2px solid var(--primary)" : "1px solid var(--surface-border)",
+                background: "#000",
+              }}>
+                {d.imageUrl ? (
+                  <img src={d.imageUrl} alt="" style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+                )}
+                <div style={{
+                  position: "absolute", inset: 0,
+                  display: "flex", flexDirection: "column", justifyContent: "flex-end",
+                  padding: 4, background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent 60%)",
+                  opacity: 0, transition: "opacity 0.2s",
+                }}
+                  onMouseOver={(e) => e.currentTarget.style.opacity = 1}
+                  onMouseOut={(e) => e.currentTarget.style.opacity = 0}
+                >
+                  <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                    <button
+                      onClick={() => selectDesign(i)}
+                      style={{
+                        padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                        background: "var(--primary)", border: "none", color: "#fff", cursor: "pointer",
+                      }}
+                      title="이 시안 선정 → 컨셉시트로 이동"
+                    >선정 →</button>
+                    <button
+                      onClick={() => removeDesign(i)}
+                      style={{
+                        padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                        background: "rgba(239,68,68,0.9)", border: "none", color: "#fff", cursor: "pointer",
+                      }}
+                    >삭제</button>
+                  </div>
+                </div>
+                <div style={{
+                  position: "absolute", top: 4, left: 4,
+                  padding: "1px 6px", borderRadius: 4,
+                  background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
+                }}>#{i + 1}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            padding: 20, textAlign: "center", borderRadius: 10,
+            background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
+            color: "var(--text-muted)", fontSize: 12,
+          }}>
+            아직 생성된 시안이 없습니다. 위 "🎨 N개 생성" 버튼을 눌러 시작하세요.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (statusKey === "sheet") {
+    const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
+    return (
+      <div style={sectionStyle}>
+        <div style={titleStyle}>컨셉시트 / 최종 완료</div>
+        {selectedDesign?.imageUrl && (
+          <div style={{ marginBottom: 12, textAlign: "center" }}>
+            <img src={selectedDesign.imageUrl} alt="선정 시안" style={{ maxWidth: "100%", maxHeight: 180, borderRadius: 8, background: "#fff" }} />
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              선정 시안 #{selectedIdx + 1} (seed: {selectedDesign.seed})
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 10 }}>
+          컨셉시트 PNG 제작은 기존 "시안 생성" 탭의 갤러리에서 가능합니다. 여기서는 바로 완료 처리하거나 이전 단계로 되돌릴 수 있습니다.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => onMoveTo("done")}
+            style={{
+              flex: 1, padding: "10px 14px", borderRadius: 10,
+              background: "linear-gradient(135deg, #10b981, #059669)",
+              border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+            }}
+          >✅ 최종 완료로 이동</button>
+          <button
+            onClick={() => onMoveTo("drafting")}
+            style={{
+              padding: "10px 14px", borderRadius: 10,
+              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+              color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}
+          >← 시안으로</button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 // 카드 상세 모달의 댓글 입력창. ref 대신 local state 로 간단히.
@@ -4540,7 +4816,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
               {/* Body */}
               <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 0 }}>
-                {/* 왼쪽: 썸네일 + 설명 */}
+                {/* 왼쪽: 썸네일 + 액션 + 설명 */}
                 <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
                   {card.thumbnail_url && (
                     <div style={{
@@ -4558,6 +4834,28 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       />
                     </div>
                   )}
+
+                  {/* === Phase E: 상태별 카드 액션 === */}
+                  {!confirmed && (
+                    <CardActionPanel
+                      card={card}
+                      statusKey={statusKey}
+                      projectSlug={projectSlug}
+                      geminiApiKey={geminiApiKey}
+                      selectedModel={selectedModel}
+                      actor={actorName}
+                      onMoveTo={moveTo}
+                      onRefresh={async () => {
+                        const d = await fetchCardDetail(projectSlug, card.id);
+                        if (d) {
+                          setDetailCard(d);
+                          setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                        }
+                      }}
+                      onOpenApiSettings={() => setShowApiSettings(true)}
+                    />
+                  )}
+
                   <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>설명</div>
                   <div style={{
                     padding: 14, borderRadius: 10,
