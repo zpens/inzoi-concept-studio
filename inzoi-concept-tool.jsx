@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.6";
+const APP_VERSION = "1.7.7";
 const CHANGELOG = [
+  {
+    version: "1.7.7",
+    date: "2026-04-23",
+    changes: [
+      "리스트 뷰에 스타일 / 크기 컬럼 추가 — 총 7컬럼(썸네일 · 제목 · 카테고리 · 스타일 · 크기 · 상태 · 날짜)",
+      "크기는 '180×210×50 cm' 모노스페이스 + source 아이콘(🤖/📚/✏️) 으로 출처 표시",
+      "스타일은 라운드 배지(모던/스칸디나비안 등) 로 강조",
+    ],
+  },
   {
     version: "1.7.6",
     date: "2026-04-23",
@@ -3278,6 +3287,9 @@ function ViewModeToggle({ value, onChange }) {
 }
 
 // 리스트 뷰 한 줄 — 썸네일 + 제목 + 카테고리/스타일 + 탭별 메타 + 날짜.
+// 리스트 뷰 공통 grid 템플릿 — CardListRow 와 CardListHeader 가 같은 비율 공유.
+const LIST_GRID = "90px 1fr 150px 80px 130px 95px 100px";
+
 function CardListRow({ card, tabId, onClick }) {
   const data = card.data || {};
   const designs = Array.isArray(data.designs) ? data.designs : [];
@@ -3295,14 +3307,26 @@ function CardListRow({ card, tabId, onClick }) {
 
   const date = tabId === "completed" ? card.confirmed_at : card.created_at;
 
+  const size = data.size_info;
+  const hasSize = size && (size.width_cm || size.depth_cm || size.height_cm);
+  const sizeLabel = hasSize
+    ? `${size.width_cm || "?"}×${size.depth_cm || "?"}×${size.height_cm || "?"}`
+    : null;
+  const sizeSrcColor = size?.source === "ai" ? "var(--primary)"
+                     : size?.source === "catalog" ? "#b45309"
+                     : size?.source === "manual" ? "var(--text-main)" : "var(--text-muted)";
+  const sizeSrcIcon = size?.source === "ai" ? "🤖"
+                    : size?.source === "catalog" ? "📚"
+                    : size?.source === "manual" ? "✏️" : "";
+
   return (
     <div
       onClick={onClick}
       className="hover-lift"
       style={{
         display: "grid",
-        gridTemplateColumns: "90px 1fr 180px 120px 110px",
-        gap: 18, alignItems: "center",
+        gridTemplateColumns: LIST_GRID,
+        gap: 14, alignItems: "center",
         padding: "15px 18px", borderRadius: 12,
         border: "1px solid var(--surface-border)",
         background: "var(--surface-color)",
@@ -3327,27 +3351,46 @@ function CardListRow({ card, tabId, onClick }) {
         }}>
           {catInfo?.icon || ""} {card.title || "(제목 없음)"}
         </div>
-        {(card.description || styleInfo) && (
+        {card.description && (
           <div style={{
             fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           }}>
-            {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || ""}
+            {card.description}
           </div>
         )}
       </div>
-      <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-        {catInfo ? `${catInfo.label} · ${catInfo.room}` : "— 카테고리 없음 —"}
+      <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {catInfo ? `${catInfo.label} · ${catInfo.room}` : "—"}
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        {tabId === "vote" && `시안 ${designs.length}개`}
-        {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
-          <span style={{ color: "#22c55e", fontWeight: 600 }}>✓ 시트</span>
+      <div style={{ fontSize: 11 }}>
+        {styleInfo ? (
+          <span style={{
+            padding: "2px 8px", borderRadius: 10,
+            background: "rgba(7,110,232,0.08)", color: "var(--primary)", fontWeight: 600,
+          }}>{styleInfo.label}</span>
+        ) : <span style={{ color: "var(--text-muted)" }}>—</span>}
+      </div>
+      <div style={{ fontSize: 11, color: sizeSrcColor, fontFamily: "monospace", display: "flex", alignItems: "center", gap: 4 }}>
+        {sizeLabel ? (
+          <>
+            <span style={{ fontSize: 10 }}>{sizeSrcIcon}</span>
+            <span>{sizeLabel}</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 10 }}>cm</span>
+          </>
+        ) : <span style={{ color: "var(--text-muted)", fontFamily: "inherit" }}>—</span>}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+        {tabId === "vote" && (designs.length > 0 ? `시안 ${designs.length}` : "—")}
+        {(tabId === "sheet" || tabId === "completed") && (
+          data.concept_sheet_url
+            ? <span style={{ color: "#22c55e", fontWeight: 600 }}>✓ 시트</span>
+            : <span>—</span>
         )}
-        {tabId === "create" && designs.length > 0 && `시안 ${designs.length}개`}
-        {tabId === "wishlist" && ""}
+        {tabId === "create" && (designs.length > 0 ? `시안 ${designs.length}` : "—")}
+        {tabId === "wishlist" && "—"}
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "right" }}>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
         {date ? date.slice(0, 10) : "-"}
       </div>
     </div>
@@ -3360,13 +3403,15 @@ function CardListHeader({ tabId }) {
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "90px 1fr 180px 120px 110px",
-      gap: 18, alignItems: "center",
+      gridTemplateColumns: LIST_GRID,
+      gap: 14, alignItems: "center",
       padding: "6px 18px",
     }}>
       <div />
       <div style={cell}>제목</div>
       <div style={cell}>카테고리</div>
+      <div style={cell}>스타일</div>
+      <div style={cell}>크기 (W×D×H)</div>
       <div style={cell}>{tabId === "completed" ? "결과" : "상태"}</div>
       <div style={{ ...cell, textAlign: "right" }}>{tabId === "completed" ? "완료일" : "생성일"}</div>
     </div>
