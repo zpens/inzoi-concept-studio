@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.3";
+const APP_VERSION = "1.7.4";
 const CHANGELOG = [
+  {
+    version: "1.7.4",
+    date: "2026-04-23",
+    changes: [
+      "업데이트 일정 필드 + 필터 추가 — 카드 상세 어셋 정보에 🗓️ 업데이트 일정 자유 입력 (card.data.target_update), 기존 값 datalist 자동완성",
+      "모든 메인 탭(위시 / 시안 생성 / 투표 / 컨셉시트 / 완료) 상단에 chip 바 노출 — '[전체] [2026-Q2] [미지정]' 다중 토글",
+      "chip 은 탭에 보이는 카드 내 값만 집계 · 빈 값은 '미지정' 으로 묶임 · 한글 정렬",
+    ],
+  },
   {
     version: "1.7.3",
     date: "2026-04-23",
@@ -1902,7 +1911,7 @@ async function uploadDataUrl(dataUrl) {
 // 카드 상세 모달 안에 인라인으로 보이는 어셋 정보 에디터.
 // 카테고리 / 스타일 / 프롬프트 / 참조 이미지 4개 필드 자동 저장.
 // 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
-function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, geminiApiKey }) {
+function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, geminiApiKey, availableUpdates = [] }) {
   // 참조 이미지 초기값: data.ref_images 가 비어있고 card.thumbnail_url 이 있으면
   // 위시리스트에서 넘어온 이미지라 보고 자동 seed (아래 effect 에서 서버 저장).
   const initialRefs = (card.data?.ref_images && card.data.ref_images.length)
@@ -1911,6 +1920,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
 
   const [category, setCategory] = React.useState(card.data?.category || "");
   const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
+  const [targetUpdate, setTargetUpdate] = React.useState(card.data?.target_update || "");
   const [prompt, setPrompt] = React.useState(card.data?.prompt || card.description || "");
   const [refImages, setRefImages] = React.useState(initialRefs);
   const [saving, setSaving] = React.useState(false);
@@ -1953,6 +1963,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
   React.useEffect(() => {
     setCategory(card.data?.category || "");
     setStylePreset(card.data?.style_preset || "");
+    setTargetUpdate(card.data?.target_update || "");
     setPrompt(card.data?.prompt || card.description || "");
     const nextRefs = (card.data?.ref_images && card.data.ref_images.length)
       ? card.data.ref_images
@@ -2198,6 +2209,29 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
           </div>
         );
       })()}
+
+      {/* 업데이트 일정 — 자유 입력. datalist 로 기존 값 자동완성. */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={fieldLabel}>🗓️ 업데이트 일정 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(예: 2026-Q2 업데이트, 1.2 봄 패치) · 완료 목록 필터에 노출</span></div>
+        <input
+          type="text"
+          value={targetUpdate}
+          disabled={disabled}
+          onChange={(e) => setTargetUpdate(e.target.value)}
+          onBlur={() => {
+            const next = targetUpdate.trim();
+            if (next !== (card.data?.target_update || "")) save({ target_update: next || null });
+          }}
+          list="inzoi-update-options"
+          placeholder="미지정"
+          style={fieldBox}
+        />
+        {availableUpdates.length > 0 && (
+          <datalist id="inzoi-update-options">
+            {availableUpdates.map((u) => <option key={u} value={u} />)}
+          </datalist>
+        )}
+      </div>
 
       <div style={{ marginBottom: 10 }}>
         <div style={fieldLabel}>프롬프트 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
@@ -2827,6 +2861,64 @@ function CategoryPicker({ value, onChange, disabled }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// 업데이트 일정 필터링 헬퍼. selected 가 비어있으면 전체 통과.
+// "__unspecified" 는 target_update 가 비어있는 카드.
+function matchesUpdateFilter(card, selected) {
+  if (!selected || selected.length === 0) return true;
+  const v = card?.data?.target_update?.trim?.() || "";
+  return v ? selected.includes(v) : selected.includes("__unspecified");
+}
+
+// 현재 보이는 카드들에서 target_update 값과 카운트 집계.
+function collectUpdateChips(cards) {
+  const counts = new Map();
+  let unspecified = 0;
+  for (const c of cards) {
+    if (c.is_archived) continue;
+    const v = c.data?.target_update?.trim?.() || "";
+    if (v) counts.set(v, (counts.get(v) || 0) + 1);
+    else unspecified++;
+  }
+  const chips = [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], "ko"))
+    .map(([value, count]) => ({ value, label: value, count }));
+  if (unspecified > 0) chips.push({ value: "__unspecified", label: "미지정", count: unspecified });
+  return chips;
+}
+
+// 업데이트 일정 chip 필터 바. 다중 선택, 전체 chip 으로 선택 초기화.
+function UpdateChipBar({ chips, selected, onChange, totalCount }) {
+  if (chips.length === 0) return null;
+  const toggle = (value) => {
+    if (selected.includes(value)) onChange(selected.filter((v) => v !== value));
+    else onChange([...selected, value]);
+  };
+  const chipStyle = (active, faded) => ({
+    padding: "4px 10px", borderRadius: 14,
+    background: active ? "var(--primary)" : (faded ? "rgba(0,0,0,0.04)" : "rgba(7,110,232,0.08)"),
+    border: `1px solid ${active ? "var(--primary)" : "rgba(7,110,232,0.18)"}`,
+    color: active ? "#fff" : (faded ? "var(--text-muted)" : "var(--primary)"),
+    fontSize: 11, fontWeight: 700, cursor: "pointer",
+    transition: "all 0.15s",
+  });
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginRight: 4 }}>🗓️ 업데이트:</span>
+      <button
+        onClick={() => onChange([])}
+        style={chipStyle(selected.length === 0, false)}
+      >전체 · {totalCount}</button>
+      {chips.map((c) => (
+        <button
+          key={c.value}
+          onClick={() => toggle(c.value)}
+          style={chipStyle(selected.includes(c.value), c.value === "__unspecified")}
+        >{c.label} · {c.count}</button>
+      ))}
     </div>
   );
 }
@@ -3512,6 +3604,18 @@ export default function InZOIConceptTool() {
   // "card" (기본) | "list" — 메인 페이지 보기 방식
   const [viewMode, setViewMode] = useState(() => localStorage.getItem("inzoi_view_mode") === "list" ? "list" : "card");
   useEffect(() => { try { localStorage.setItem("inzoi_view_mode", viewMode); } catch {} }, [viewMode]);
+
+  // 업데이트 일정 필터 — 빈 배열이면 전체 표시. "__unspecified" 는 미지정 카드.
+  const [selectedUpdates, setSelectedUpdates] = useState([]);
+  // 모든 카드에서 등장한 target_update 값 목록 (AssetInfoEditor datalist 및 chip 바에 사용)
+  const availableUpdates = useMemo(() => {
+    const set = new Set();
+    for (const c of cards) {
+      const v = c.data?.target_update?.trim?.();
+      if (v) set.add(v);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
+  }, [cards]);
 
   // inzoiObjectList 의 meta.json 을 5분 주기로 가져와 카테고리/스타일 목록을 교체.
   // 실패하면 hardcoded fallback 사용. metaVersion bump 으로 하위 컴포넌트 re-render.
@@ -4556,12 +4660,24 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </div>
             </div>
 
+            {(() => {
+              const chips = collectUpdateChips(inRangeCards);
+              return (
+                <UpdateChipBar
+                  chips={chips}
+                  selected={selectedUpdates}
+                  onChange={setSelectedUpdates}
+                  totalCount={inRangeCards.length}
+                />
+              );
+            })()}
+
             {totalCount > 0 ? (
               viewMode === "list" ? (
                 <div style={{ marginBottom: 40 }}>
                   <CardListHeader tabId={activeTab} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {sortCardArray(inRangeCards, sortBy).map((c) => (
+                    {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
                       <CardListRow
                         key={`card-${c.id}`}
                         card={c}
@@ -4585,7 +4701,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 marginBottom: 40,
               }}>
                 {/* 새 카드 시스템의 카드들 — 위시에서 넘어온 것 포함. 정렬 sortBy 적용 */}
-                {sortCardArray(inRangeCards, sortBy).map((c) => (
+                {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
                   <CardHubCard
                     key={`card-${c.id}`}
                     card={c}
@@ -5927,34 +6043,52 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 첫 시안 생성하기
               </button>
             </div>
-          ) : (
-            viewMode === "list" ? (
-              <div>
-                <CardListHeader tabId="completed" />
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {sortCardArray(completedList, sortBy, "completedAt", "categoryLabel").map((item) => {
-                    const card = cards.find((c) => c.id === item._cardId);
-                    if (!card) return null;
-                    return (
-                      <CardListRow
-                        key={item._cardId}
-                        card={card}
-                        tabId="completed"
-                        onClick={async () => {
-                          if (!projectSlug) return;
-                          try {
-                            const detail = await fetchCardDetail(projectSlug, card.id);
-                            if (detail) setDetailCard(detail);
-                          } catch { /* 무시 */ }
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
-                {sortCardArray(completedList, sortBy, "completedAt", "categoryLabel").map((item) => {
+          ) : (() => {
+            // 완료 탭은 업데이트 일정 필터가 가장 중요한 곳. 상단에 chip 바 항상 노출.
+            const completedCards = completedList
+              .map((item) => cards.find((c) => c.id === item._cardId))
+              .filter(Boolean);
+            const chips = collectUpdateChips(completedCards);
+            const filterItem = (item) => {
+              const card = cards.find((c) => c.id === item._cardId);
+              return card && matchesUpdateFilter(card, selectedUpdates);
+            };
+            const visibleList = completedList.filter(filterItem);
+            return (
+              <>
+                <UpdateChipBar
+                  chips={chips}
+                  selected={selectedUpdates}
+                  onChange={setSelectedUpdates}
+                  totalCount={completedList.length}
+                />
+                {viewMode === "list" ? (
+                  <div>
+                    <CardListHeader tabId="completed" />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {sortCardArray(visibleList, sortBy, "completedAt", "categoryLabel").map((item) => {
+                        const card = cards.find((c) => c.id === item._cardId);
+                        if (!card) return null;
+                        return (
+                          <CardListRow
+                            key={item._cardId}
+                            card={card}
+                            tabId="completed"
+                            onClick={async () => {
+                              if (!projectSlug) return;
+                              try {
+                                const detail = await fetchCardDetail(projectSlug, card.id);
+                                if (detail) setDetailCard(detail);
+                              } catch { /* 무시 */ }
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
+                    {sortCardArray(visibleList, sortBy, "completedAt", "categoryLabel").map((item) => {
                   const card = cards.find((c) => c.id === item._cardId);
                   if (!card) return null;
                   return (
@@ -5973,9 +6107,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     />
                   );
                 })}
-              </div>
-            )
-          )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </main>
       )}
 
@@ -6021,33 +6157,51 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   >＋ 첫 아이디어 추가</button>
                 </div>
-              ) : viewMode === "list" ? (
-                <div>
-                  <CardListHeader tabId="wishlist" />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {sortCardArray(wishlist, sortBy, "createdAt", "title").map((item) => {
-                      const card = cards.find((c) => c.id === item._cardId);
-                      if (!card) return null;
-                      return (
-                        <CardListRow
-                          key={item._cardId}
-                          card={card}
-                          tabId="wishlist"
-                          onClick={async () => {
-                            if (!projectSlug) return;
-                            try {
-                              const detail = await fetchCardDetail(projectSlug, card.id);
-                              if (detail) setDetailCard(detail);
-                            } catch { /* 무시 */ }
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
-                  {sortCardArray(wishlist, sortBy, "createdAt", "title").map((item) => {
+              ) : (() => {
+                const wishCards = wishlist
+                  .map((item) => cards.find((c) => c.id === item._cardId))
+                  .filter(Boolean);
+                const chips = collectUpdateChips(wishCards);
+                const filterItem = (item) => {
+                  const card = cards.find((c) => c.id === item._cardId);
+                  return card && matchesUpdateFilter(card, selectedUpdates);
+                };
+                const visibleList = wishlist.filter(filterItem);
+                return (
+                  <>
+                    <UpdateChipBar
+                      chips={chips}
+                      selected={selectedUpdates}
+                      onChange={setSelectedUpdates}
+                      totalCount={wishlist.length}
+                    />
+                    {viewMode === "list" ? (
+                      <div>
+                        <CardListHeader tabId="wishlist" />
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {sortCardArray(visibleList, sortBy, "createdAt", "title").map((item) => {
+                            const card = cards.find((c) => c.id === item._cardId);
+                            if (!card) return null;
+                            return (
+                              <CardListRow
+                                key={item._cardId}
+                                card={card}
+                                tabId="wishlist"
+                                onClick={async () => {
+                                  if (!projectSlug) return;
+                                  try {
+                                    const detail = await fetchCardDetail(projectSlug, card.id);
+                                    if (detail) setDetailCard(detail);
+                                  } catch { /* 무시 */ }
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
+                        {sortCardArray(visibleList, sortBy, "createdAt", "title").map((item) => {
                     const card = cards.find((c) => c.id === item._cardId);
                     if (!card) return null;
                     return (
@@ -6066,8 +6220,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       />
                     );
                   })}
-                </div>
-              )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
           </div>
         </main>
       )}
@@ -6757,6 +6914,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     disabled={confirmed}
                     onOpenImage={setPreviewImage}
                     geminiApiKey={geminiApiKey}
+                    availableUpdates={availableUpdates}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
                       if (d) {
