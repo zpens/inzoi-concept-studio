@@ -1617,6 +1617,12 @@ export default function InZOIConceptTool() {
   // ＋ 새 시안 눌렀을 때만 true 로 전환되어 입력/단계 UI 가 드러난다.
   const [showWorkflowDetail, setShowWorkflowDetail] = useState(false);
 
+  // Phase A/B: 새 카드 시스템 state. 기존 completedList / wishlist / jobs 와
+  // 병행 유지하며, 단계적으로 UI 를 cards 기반으로 이전한다.
+  const [cards, setCards] = useState([]);           // 프로젝트 내 모든 카드 (is_archived=0)
+  const [lists, setLists] = useState([]);           // wishlist / drafting / sheet / done
+  const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
+
   const [wishlist, setWishlist] = useState([]);
   const [wishTitle, setWishTitle] = useState("");
   const [wishNote, setWishNote] = useState("");
@@ -1729,6 +1735,12 @@ export default function InZOIConceptTool() {
         }
         setCompletedList(serverCompleted);
         setWishlist(serverWishlist);
+
+        // Phase A/B: 새 카드 모델도 함께 로드
+        const serverLists = (data.lists || []);
+        const serverCards = (data.cards || []);
+        setLists(serverLists);
+        setCards(serverCards);
       } catch (err) {
         console.warn("스냅샷 로드 실패 — 기본 상태로 시작", err);
       } finally {
@@ -1896,6 +1908,10 @@ export default function InZOIConceptTool() {
           const localOnly = local.filter((c) => !serverIds.has(String(c.id)));
           return [...localOnly, ...serverWishlist];
         });
+
+        // cards / lists 는 서버 단일 source — 그대로 반영.
+        setLists(data.lists || []);
+        setCards(data.cards || []);
       } catch (e) { /* silent */ }
     };
     const handle = setInterval(tick, pollInterval);

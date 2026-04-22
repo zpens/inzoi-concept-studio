@@ -9,6 +9,7 @@
     "serve": "node server.js",
     "backup": "node scripts/backup.js",
     "migrate:default": "node scripts/migrate-to-default.js",
+    "migrate:cards": "node scripts/migrate-legacy-to-cards.js",
     "auto-update": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/auto-update.ps1",
     "health-check": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/health-check.ps1"
   },
