@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.3";
+const APP_VERSION = "1.5.4";
 const CHANGELOG = [
+  {
+    version: "1.5.4",
+    date: "2026-04-22",
+    changes: [
+      "시안 작업 큐 재설계 — 실제로 생성 중인 항목이 있을 때만 우하단에 노출, 끝나면 자동 숨김",
+      "카드 생성 진행률(done/total + 프로그레스 바)을 카드별로 표시, 클릭 시 해당 카드 상세 모달 오픈",
+      "기존 레거시 job queue 는 여전히 loading 중인 것만 표시",
+    ],
+  },
   {
     version: "1.5.3",
     date: "2026-04-22",
@@ -1841,7 +1850,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
 //   drafting → Gemini 시안 추가 생성 + 그리드 + 선정
 //   sheet    → "최종 완료" 버튼 (시트 생성은 기존 흐름 혹은 간단화)
 //   done     → (confirmed 잠금, 이 패널은 렌더 안 함)
-function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedModel, actor, onMoveTo, onRefresh, onOpenApiSettings, onOpenImage }) {
+function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedModel, actor, onMoveTo, onRefresh, onOpenApiSettings, onOpenImage, onGenerateProgress, onGenerateEnd }) {
   const [count, setCount] = React.useState(1);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(null);
@@ -1855,16 +1864,24 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
     if (!prompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
     setBusy(true);
     setProgress({ done: 0, total: count });
+    onGenerateProgress?.(card, 0, count);
     try {
       const r = await generateCardVariants({
         card, count, prompt, geminiApiKey, selectedModel,
         slug: projectSlug, actor,
-        onProgress: (done, total) => setProgress({ done, total }),
+        onProgress: (done, total) => {
+          setProgress({ done, total });
+          onGenerateProgress?.(card, done, total);
+        },
       });
       if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
       await onRefresh();
     } catch (e) { alert("생성 실패: " + e.message); }
-    finally { setBusy(false); setProgress(null); }
+    finally {
+      setBusy(false);
+      setProgress(null);
+      onGenerateEnd?.(card);
+    }
   };
 
   const selectDesign = async (idx) => {
@@ -2754,6 +2771,9 @@ export default function InZOIConceptTool() {
   const [lists, setLists] = useState([]);           // wishlist / drafting / sheet / done
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
   const [previewImage, setPreviewImage] = useState(null); // 이미지 원본 해상도 뷰어
+  // 카드별 Gemini 생성 진행 상황. 생성 중일 때만 작업큐에 노출하고 끝나면 제거.
+  // shape: { [cardId]: { title, thumb, done, total } }
+  const [generatingCards, setGeneratingCards] = useState({});
 
   // [Phase B-3] cards → 기존 wishlist / completedList shape 로 변환하는 derived.
   // 컴포넌트들은 계속 `wishlist` / `completedList` 변수명 그대로 사용.
@@ -5919,6 +5939,15 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         }
                       }}
                       onOpenApiSettings={() => setShowApiSettings(true)}
+                      onGenerateProgress={(c, done, total) => setGeneratingCards((prev) => ({
+                        ...prev,
+                        [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total },
+                      }))}
+                      onGenerateEnd={(c) => setGeneratingCards((prev) => {
+                        const n = { ...prev };
+                        delete n[c.id];
+                        return n;
+                      })}
                     />
                   )}
 
@@ -7025,63 +7054,85 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {/* Hidden canvas for concept sheet generation */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
-      {/* Floating job queue — visible on all workflow tabs (create/vote/sheet). */}
-      {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && (
-        <div style={{
-          position: "fixed",
-          bottom: 24,
-          right: 24,
-          width: 340,
-          maxHeight: "70vh",
-          background: "rgba(255, 255, 255, 0.97)",
-          backdropFilter: "blur(16px)",
-          borderRadius: 16,
-          border: "1px solid var(--surface-border)",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
-          zIndex: 90,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}>
+      {/* Floating 시안 작업 큐 — 실제 생성 중인 항목이 있을 때만 노출.
+          동시에 여러 카드를 생성해도 진행률을 한눈에 볼 수 있게 한다. */}
+      {(() => {
+        const runningJobs = jobs.filter((j) => j.loading);
+        const runningCards = Object.entries(generatingCards);
+        const total = runningJobs.length + runningCards.length;
+        if (total === 0) return null;
+        return (
           <div style={{
-            padding: "12px 16px",
-            borderBottom: "1px solid var(--surface-border)",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            gap: 8,
+            position: "fixed",
+            bottom: 24, right: 24,
+            width: 320, maxHeight: "60vh",
+            background: "rgba(255, 255, 255, 0.97)",
+            backdropFilter: "blur(16px)",
+            borderRadius: 16,
+            border: "1px solid var(--surface-border)",
+            boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
+            zIndex: 90,
+            display: "flex", flexDirection: "column", overflow: "hidden",
           }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)", display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 14 }}>🗂️</span>
-              시안 작업 큐
-              <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 12 }}>
-                ({jobs.length})
-              </span>
+            <div style={{
+              padding: "10px 14px",
+              borderBottom: "1px solid var(--surface-border)",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span style={{ fontSize: 14 }}>⏳</span>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+                생성 중 ({total})
+              </div>
             </div>
-            <button
-              onClick={spawnNewJob}
-              style={{
-                padding: "6px 12px", borderRadius: 9,
-                background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-                border: "none", color: "#fff", fontSize: 12, fontWeight: 700,
-                cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
-              }}
-              title="빈 작업 추가"
-            >
-              <span style={{ fontSize: 13, lineHeight: 1 }}>＋</span> 새 시안
-            </button>
+            <div style={{ padding: 10, overflowY: "auto", flex: 1 }}>
+              {runningCards.map(([cid, info]) => {
+                const pct = info.total > 0 ? Math.round((info.done / info.total) * 100) : 0;
+                return (
+                  <div
+                    key={cid}
+                    onClick={async () => {
+                      if (!projectSlug) return;
+                      try {
+                        const d = await fetchCardDetail(projectSlug, cid);
+                        if (d) setDetailCard(d);
+                      } catch (e) { /* 무시 */ }
+                    }}
+                    style={{
+                      padding: "8px 10px", borderRadius: 10, marginBottom: 6,
+                      background: "rgba(7,110,232,0.05)", border: "1px solid rgba(7,110,232,0.2)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {info.thumb && <img src={info.thumb} alt="" style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 6 }} />}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {info.title || "(제목 없음)"}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                          {info.done}/{info.total} · {pct}%
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 6, height: 4, borderRadius: 2, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, var(--primary), var(--secondary))", transition: "width 0.3s" }} />
+                    </div>
+                  </div>
+                );
+              })}
+              {runningJobs.map((job) => (
+                <JobQueueCard
+                  key={job.id}
+                  job={job}
+                  active={job.id === activeJobId}
+                  onSelect={() => setActiveJobId(job.id)}
+                  onRemove={() => removeJob(job.id)}
+                />
+              ))}
+            </div>
           </div>
-          <div style={{ padding: 10, overflowY: "auto", flex: 1 }}>
-            {jobs.map((job) => (
-              <JobQueueCard
-                key={job.id}
-                job={job}
-                active={job.id === activeJobId}
-                onSelect={() => setActiveJobId(job.id)}
-                onRemove={() => removeJob(job.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 이미지 원본 해상도 뷰어 (lightbox) — 배경 클릭 / ESC / ← → 키 지원.
           상세 모달이 열려 있으면 해당 카드의 모든 이미지(썸네일, 참조이미지,
