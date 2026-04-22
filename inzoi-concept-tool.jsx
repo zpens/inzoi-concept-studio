@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.6";
+const APP_VERSION = "1.5.7";
 const CHANGELOG = [
+  {
+    version: "1.5.7",
+    date: "2026-04-22",
+    changes: [
+      "[버그 수정] 같은 카드가 2개씩 보이는 근본 원인 제거 — 클라이언트의 legacy completed/wishlist 싱크 effect 제거 (cards 가 유일 SOT)",
+      "이 싱크가 cards → legacy → ensureLegacyMigration → 이중 접두사 카드 재생성(e.g. comp-wish-xxx) 을 유발하고 있었음",
+      "앱 초기화 dedupe 가 이중 접두사 카드(`comp-wish-…`, `wish-job-…`, `comp-job-…`)를 우선 삭제하도록 강화 — 기존 중복 데이터도 한번에 정리",
+      "수동 위시/완료 추가 핸들러에서도 legacy POST 제거",
+    ],
+  },
   {
     version: "1.5.6",
     date: "2026-04-22",
@@ -3033,10 +3043,27 @@ export default function InZOIConceptTool() {
         setLists(serverLists);
         setCards(serverCards);
 
-        // 과거 버전에서 legacy 마이그레이션이 같은 내용을 복제한 케이스를 정리.
-        // 같은 list_id + title + description + thumbnail_url 조합의 카드가
-        // 2개 이상이면 가장 오래된 것만 남기고 DELETE (실패해도 무시).
+        // 과거 버전 legacy 싱크가 cards → legacy → 다시 cards 로 복제한
+        // 케이스를 정리. 같은 list_id + title + description + thumbnail_url
+        // 조합의 카드가 2개 이상이면 "깨끗한 id" 1개만 남기고 나머지 DELETE.
+        //
+        // id 우선순위 (낮을수록 보존):
+        //   1: 접두사 없음 (`<timestamp>`)  — 사용자가 직접 만든 것
+        //   2: `card-…`  — 새 카드 플로우 생성
+        //   3: `wish-…`  — wishlist 마이그레이션
+        //   4: `comp-…`  — completed 마이그레이션
+        //   5: `comp-wish-…` / `wish-job-…` / `comp-job-…` — 이중 접두사, legacy 루프 잔여물
+        //   6: `job-…`   — legacy job 기반 마이그레이션
         try {
+          const rank = (id) => {
+            if (!id) return 0;
+            if (id.startsWith("comp-wish-") || id.startsWith("wish-job-") || id.startsWith("comp-job-")) return 5;
+            if (id.startsWith("comp-")) return 4;
+            if (id.startsWith("wish-")) return 3;
+            if (id.startsWith("card-")) return 2;
+            if (id.startsWith("job-"))  return 6;
+            return 1;
+          };
           const groups = new Map();
           for (const c of serverCards) {
             if (c.is_archived) continue;
@@ -3048,7 +3075,11 @@ export default function InZOIConceptTool() {
           const toDelete = [];
           for (const arr of groups.values()) {
             if (arr.length <= 1) continue;
-            arr.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+            arr.sort((a, b) => {
+              const dr = rank(a.id) - rank(b.id);
+              if (dr !== 0) return dr;
+              return (a.created_at || "").localeCompare(b.created_at || "");
+            });
             for (let i = 1; i < arr.length; i++) toDelete.push(arr[i].id);
           }
           if (toDelete.length > 0) {
@@ -3056,7 +3087,6 @@ export default function InZOIConceptTool() {
             for (const id of toDelete) {
               try { await fetch(`/api/projects/${slug}/cards/${id}`, { method: "DELETE" }); } catch {}
             }
-            // 정리 직후 상태에서도 제거
             setCards((prev) => prev.filter((c) => !toDelete.includes(c.id)));
           }
         } catch (e) { console.warn("[dedupe] 실패 (무시):", e); }
@@ -3105,27 +3135,14 @@ export default function InZOIConceptTool() {
     return () => clearTimeout(timer);
   }, [jobs, projectSlug, projectReady, actorName]);
 
+  // [v1.5.7] legacy completed/wishlist sync 제거 — cards 가 SOT.
+  // 이전엔 cards → legacy 테이블로 역복사하다가 ensureLegacyMigration 이
+  // 다시 comp-* / wish-* 접두사로 카드를 재생성해 중복이 쌓였다.
+  // (sync effects removed; snapshot init + 카드 CRUD 로 충분)
+  // keep prevCompletedRef / prevWishlistRef 만 유지해 다른 코드 호환.
   useEffect(() => {
     if (!projectSlug || !projectReady) return;
-    const timer = setTimeout(async () => {
-      const prev = prevCompletedRef.current;
-      try {
-        const added = completedList.filter((c) => !prev.find((p) => p.id === c.id));
-        const removed = prev.filter((p) => !completedList.find((c) => c.id === p.id));
-        for (const c of added) {
-          await fetch(`/api/projects/${projectSlug}/completed`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(completedToDbPayload(c)),
-          });
-        }
-        for (const r of removed) {
-          await fetch(`/api/projects/${projectSlug}/completed/${r.id}`, { method: "DELETE" });
-        }
-        prevCompletedRef.current = completedList;
-      } catch (e) { console.warn("completed 동기화 실패", e); }
-    }, 500);
-    return () => clearTimeout(timer);
+    prevCompletedRef.current = completedList;
   }, [completedList, projectSlug, projectReady]);
 
   useEffect(() => {
@@ -3133,18 +3150,7 @@ export default function InZOIConceptTool() {
     const timer = setTimeout(async () => {
       const prev = prevWishlistRef.current;
       try {
-        const added = wishlist.filter((c) => !prev.find((p) => p.id === c.id));
-        const removed = prev.filter((p) => !wishlist.find((c) => c.id === p.id));
-        for (const c of added) {
-          await fetch(`/api/projects/${projectSlug}/wishlist`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(wishlistToDbPayload(c)),
-          });
-        }
-        for (const r of removed) {
-          await fetch(`/api/projects/${projectSlug}/wishlist/${r.id}`, { method: "DELETE" });
-        }
+        // [v1.5.7] legacy /wishlist POST/DELETE 제거. cards 가 SOT.
         prevWishlistRef.current = wishlist;
       } catch (e) { console.warn("wishlist 동기화 실패", e); }
     }, 500);
@@ -3156,32 +3162,7 @@ export default function InZOIConceptTool() {
   // 추가 직후 즉시 F5 눌러도 데이터가 사라지지 않도록 하기 위함.
   useEffect(() => {
     if (!projectSlug || !projectReady) return;
-    const flush = () => {
-      try {
-        const prevC = prevCompletedRef.current;
-        const addedC = completedList.filter((c) => !prevC.find((p) => String(p.id) === String(c.id)));
-        for (const c of addedC) {
-          navigator.sendBeacon?.(
-            `/api/projects/${projectSlug}/completed`,
-            new Blob([JSON.stringify(completedToDbPayload(c))], { type: "application/json" })
-          );
-        }
-        const prevW = prevWishlistRef.current;
-        const addedW = wishlist.filter((w) => !prevW.find((p) => String(p.id) === String(w.id)));
-        for (const w of addedW) {
-          navigator.sendBeacon?.(
-            `/api/projects/${projectSlug}/wishlist`,
-            new Blob([JSON.stringify(wishlistToDbPayload(w))], { type: "application/json" })
-          );
-        }
-      } catch (e) { /* best-effort */ }
-    };
-    window.addEventListener("beforeunload", flush);
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      window.removeEventListener("pagehide", flush);
-    };
+    // [v1.5.7] legacy sendBeacon 제거 — cards CRUD 가 이미 동기 await 됨.
   }, [completedList, wishlist, projectSlug, projectReady]);
 
   // 5초마다 서버 스냅샷을 가져와 자신이 편집 중이 아닌 리소스를 갱신 (협업).
@@ -4948,22 +4929,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         };
                         const finishedJobId = activeJobId;
 
-                        // 1) 즉시 서버에 동기 저장. 새로고침해도 남도록 await.
-                        if (projectSlug) {
-                          try {
-                            const r = await fetch(`/api/projects/${projectSlug}/completed`, {
-                              method: "POST",
-                              headers: { "content-type": "application/json" },
-                              body: JSON.stringify(completedToDbPayload(newItem)),
-                            });
-                            if (!r.ok) console.warn("완료 아이템 서버 저장 실패:", r.status);
-                          } catch (e) {
-                            console.warn("완료 아이템 서버 저장 실패:", e);
-                            alert("완료 아이템을 서버에 저장하지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.");
-                            return;
-                          }
-                        }
-
+                        // [v1.5.7] legacy /completed POST 제거 — cards 만 SOT 로 저장.
                         // 2) 서버 저장 확정 후 로컬 반영
                         setCompletedList((prev) => [newItem, ...prev]);
                         // prev ref 에도 등록해서 debounce effect 가 중복 POST 하지 않도록.
@@ -5313,24 +5279,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       gradient: gradients[Math.floor(Math.random() * gradients.length)],
                       createdAt: new Date().toISOString(),
                     };
-                    // 새로고침에도 남도록 즉시 서버 저장 (await).
-                    if (projectSlug) {
-                      try {
-                        const r = await fetch(`/api/projects/${projectSlug}/wishlist`, {
-                          method: "POST",
-                          headers: { "content-type": "application/json" },
-                          body: JSON.stringify(wishlistToDbPayload(item)),
-                        });
-                        if (!r.ok) throw new Error(`${r.status}`);
-                      } catch (e) {
-                        alert("위시리스트 저장 실패: " + e.message);
-                        return;
-                      }
-                    }
+                    // [v1.5.7] legacy /wishlist POST 제거 — cards 만 SOT 로 저장.
                     setWishlist(prev => [item, ...prev]);
                     prevWishlistRef.current = [item, ...prevWishlistRef.current];
 
-                    // [Phase B-3 이후] 위시리스트는 cards 가 SOT. 저장 실패 시 사용자에게 알림.
                     if (projectSlug) {
                       let ok = false;
                       try {
@@ -6984,24 +6936,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       gradient: gradients[Math.floor(Math.random() * gradients.length)],
                       createdAt: new Date().toISOString(),
                     };
-                    // 새로고침에도 남도록 즉시 서버 저장 (await).
-                    if (projectSlug) {
-                      try {
-                        const r = await fetch(`/api/projects/${projectSlug}/wishlist`, {
-                          method: "POST",
-                          headers: { "content-type": "application/json" },
-                          body: JSON.stringify(wishlistToDbPayload(item)),
-                        });
-                        if (!r.ok) throw new Error(`${r.status}`);
-                      } catch (e) {
-                        alert("위시리스트 저장 실패: " + e.message);
-                        return;
-                      }
-                    }
+                    // [v1.5.7] legacy /wishlist POST 제거 — cards 만 SOT 로 저장.
                     setWishlist(prev => [item, ...prev]);
                     prevWishlistRef.current = [item, ...prevWishlistRef.current];
 
-                    // [Phase B-3 이후] 위시리스트는 cards 가 SOT. 저장 실패 시 사용자에게 알림.
                     if (projectSlug) {
                       let ok = false;
                       try {
