@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.3.3";
+const APP_VERSION = "1.4.0";
 const CHANGELOG = [
+  {
+    version: "1.4.0",
+    date: "2026-04-22",
+    changes: [
+      "위시 → 시안 생성 전환 시 다이얼로그 추가 (카테고리·스타일·프롬프트·참조이미지 입력)",
+      "Gemini 멀티모달 호출 — 참조 이미지를 inline_data 로 함께 전송하여 스타일 반영",
+      "프롬프트 자동 enhance: 카테고리·스타일·스펙 힌트가 합성된 enhancedPrompt 사용",
+      "위시 카드 썸네일이 자동으로 참조이미지 후보로 채워짐 (4개까지 추가 가능)",
+      "참조 이미지는 /api/upload 거쳐 /data/images/ URL 로 보관",
+    ],
+  },
   {
     version: "1.3.3",
     date: "2026-04-22",
@@ -1160,15 +1171,49 @@ function LoadingOverlay({ message, progress }) {
 }
 
 // ─── Gemini Image Generation API Helper ───
-async function generateImageWithGemini(apiKey, prompt, model) {
-  console.log(`Generating image with model: ${model}`);
+// dataURL 또는 /data/images/... URL 을 base64+mime 으로 변환.
+async function fetchImagePart(url) {
+  if (typeof url !== "string") return null;
+  if (url.startsWith("data:")) {
+    const m = url.match(/^data:([^;]+);base64,([\s\S]+)$/);
+    if (!m) return null;
+    return { mime: m[1], base64: m[2] };
+  }
+  // 서버에 호스팅된 이미지 (/data/images/...) 또는 외부 URL
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+    return { mime: blob.type || "image/png", base64: btoa(bin) };
+  } catch (e) {
+    console.warn("fetchImagePart failed for", url, e);
+    return null;
+  }
+}
+
+async function generateImageWithGemini(apiKey, prompt, model, refImages = []) {
+  console.log(`Generating image with model: ${model}, refImages=${refImages.length}`);
+
+  // multimodal: 프롬프트 + 참조 이미지 inline_data
+  const parts = [{ text: prompt }];
+  for (const url of refImages.slice(0, 4)) {  // 안전상 최대 4개로 제한
+    const part = await fetchImagePart(url);
+    if (part) {
+      parts.push({ inline_data: { mime_type: part.mime, data: part.base64 } });
+    }
+  }
+
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts }],
         generationConfig: {
           responseModalities: ["TEXT", "IMAGE"],
         },
@@ -1190,8 +1235,8 @@ async function generateImageWithGemini(apiKey, prompt, model) {
   const data = await response.json();
   console.log(`${model} response:`, JSON.stringify(data).substring(0, 300));
 
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  for (const part of parts) {
+  const respParts = data.candidates?.[0]?.content?.parts || [];
+  for (const part of respParts) {
     if (part.inlineData) {
       return `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
     }
@@ -1414,13 +1459,30 @@ const STATUS_META = {
   done:     { label: "완료",       icon: "✅", color: "#22c55e" },
 };
 
-// 카드 내부 "시안 생성" 액션. 기존 generateImageWithGemini 를 재사용하되
-// 결과를 card.data.designs 배열에 append 하고 PATCH 로 저장.
+// 카드 내부 "시안 생성" 액션.
+// - card.data.category / style_preset 으로 enhanced prompt 자동 구성
+// - card.data.ref_images 가 있으면 Gemini multimodal 로 함께 전송
+// - 결과를 card.data.designs 에 append, PATCH 로 저장
 async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress }) {
   const seeds = Array.from({ length: Math.max(1, Math.min(8, count)) }, () => generateSeed());
+
+  // prompt enhance — 기존 generateDesigns 와 동일 패턴
+  const catInfo = card.data?.category
+    ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category)
+    : null;
+  const styleInfo = card.data?.style_preset
+    ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset)
+    : null;
+  const spec = catInfo ? (ASSET_SPECS[catInfo.id] || DEFAULT_SPEC) : null;
+  const enhancedPrompt = catInfo
+    ? `${catInfo.preset}, ${styleInfo?.label || "modern"} style, ${prompt}${spec?.hint ? `, ${spec.hint}` : ""}, product design concept, white background, studio lighting, high detail, game asset reference`
+    : prompt;
+
+  const refImages = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+
   const tasks = seeds.map((s) => async () => {
     try {
-      const raw = await generateImageWithGemini(geminiApiKey, prompt, selectedModel);
+      const raw = await generateImageWithGemini(geminiApiKey, enhancedPrompt, selectedModel, refImages);
       const uploaded = await uploadDataUrl(raw);
       return { seed: s, imageUrl: uploaded, createdAt: new Date().toISOString() };
     } catch (err) {
@@ -1433,11 +1495,14 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   const nextData = {
     ...(card.data || {}),
     prompt,
+    enhanced_prompt: enhancedPrompt,
     designs: [...existing, ...valid],
   };
-  // 첫 시안 생성이면 썸네일도 갱신.
+  // 첫 시안 생성이면 썸네일 갱신 (참조 이미지가 아닌 생성된 결과로).
   const patch = { data: nextData, actor };
-  if (!card.thumbnail_url && valid[0]?.imageUrl) patch.thumbnail_url = valid[0].imageUrl;
+  if (valid[0]?.imageUrl && (card.data?.source === "wishlist" || !card.thumbnail_url)) {
+    patch.thumbnail_url = valid[0].imageUrl;
+  }
   await fetch(`/api/projects/${slug}/cards/${card.id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -1535,22 +1600,14 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
 
   if (statusKey === "wishlist") {
+    // hooks 규칙상 분기 안에서 useState 못 씀 → wrapper 컴포넌트로 분리.
     return (
-      <div style={sectionStyle}>
-        <div style={titleStyle}>아이디어 → 시안 생성</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 10 }}>
-          이 아이디어로 AI 시안 생성을 시작할 준비가 됐나요? 상태를 "시안 생성" 으로 옮기고
-          카드 내부에서 바로 Gemini 호출이 가능해집니다.
-        </div>
-        <button
-          onClick={() => onMoveTo("drafting")}
-          className="btn-primary"
-          style={{
-            padding: "10px 18px", borderRadius: 10, border: "none",
-            color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
-          }}
-        >✨ 시안 생성 시작 →</button>
-      </div>
+      <WishlistToDraftingAction
+        card={card}
+        projectSlug={projectSlug}
+        actor={actor}
+        onRefresh={onRefresh}
+      />
     );
   }
 
@@ -1779,6 +1836,255 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   }
 
   return null;
+}
+
+// CardActionPanel 의 wishlist 분기에서 호출. 다이얼로그 토글 state 를 분리.
+function WishlistToDraftingAction({ card, projectSlug, actor, onRefresh }) {
+  const [open, setOpen] = React.useState(false);
+  const sectionStyle = {
+    marginBottom: 20, padding: 14, borderRadius: 12,
+    background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
+    border: "1px solid rgba(7,110,232,0.18)",
+  };
+  return (
+    <>
+      <div style={sectionStyle}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
+          아이디어 → 시안 생성
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
+          이 아이디어로 AI 시안 생성을 시작합니다. 다음 단계에서 카테고리·스타일·프롬프트·참조이미지를 확정하세요.
+        </div>
+        <button
+          onClick={() => setOpen(true)}
+          className="btn-primary"
+          style={{
+            padding: "10px 18px", borderRadius: 10, border: "none",
+            color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+          }}
+        >✨ 시안 생성 준비…</button>
+      </div>
+      {open && (
+        <DraftingSetupDialog
+          card={card}
+          onCancel={() => setOpen(false)}
+          onConfirm={async (next) => {
+            await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                status_key: "drafting",
+                data: { ...(card.data || {}), ...next },
+                actor,
+              }),
+            });
+            setOpen(false);
+            await onRefresh();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+// 위시 → 시안 생성 전환 다이얼로그.
+// 카테고리 / 스타일 / 프롬프트 / 참조이미지를 확정 후 status_key=drafting 으로 PATCH.
+function DraftingSetupDialog({ card, onCancel, onConfirm }) {
+  const [category, setCategory]     = React.useState(card.data?.category || "");
+  const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
+  const [prompt, setPrompt]         = React.useState(card.description || card.title || "");
+  const initialRefs = card.data?.ref_images && card.data.ref_images.length
+    ? card.data.ref_images
+    : (card.thumbnail_url ? [card.thumbnail_url] : []);
+  const [refImages, setRefImages]   = React.useState(initialRefs);
+  const [busy, setBusy]             = React.useState(false);
+  const fileRef = React.useRef(null);
+
+  const addRefFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target.result;
+      const url = await uploadDataUrl(dataUrl);
+      setRefImages((prev) => [...prev, url]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleConfirm = async () => {
+    if (!prompt.trim()) { alert("프롬프트를 입력해주세요"); return; }
+    if (!category)      { alert("카테고리를 선택해주세요"); return; }
+    setBusy(true);
+    try {
+      await onConfirm({
+        category,
+        style_preset: stylePreset || null,
+        prompt: prompt.trim(),
+        ref_images: refImages,
+      });
+    } catch (e) { alert("저장 실패: " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  // 카테고리를 room/topTab 별로 분류 — 너무 많으니 그냥 정렬된 리스트
+  return (
+    <>
+      <div className="sidebar-overlay" onClick={onCancel} style={{ zIndex: 210 }} />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+        width: 720, maxWidth: "94vw", maxHeight: "92vh",
+        background: "rgba(255,255,255,0.98)", backdropFilter: "blur(20px)",
+        border: "1px solid var(--surface-border)", borderRadius: 18, zIndex: 211,
+        boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--surface-border)" }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)" }}>
+            ✨ 시안 생성 준비
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
+            카드: {card.title}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflow: "auto", padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* 카테고리 */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
+              카테고리 <span style={{ color: "#ef4444" }}>*</span>
+            </div>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 10,
+                border: "1px solid var(--surface-border)", background: "#fff",
+                fontSize: 14, color: "var(--text-main)",
+              }}
+            >
+              <option value="">— 선택 —</option>
+              {FURNITURE_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>{c.icon} {c.label} ({c.room})</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 스타일 */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
+              스타일 프리셋
+            </div>
+            <select
+              value={stylePreset}
+              onChange={(e) => setStylePreset(e.target.value)}
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 10,
+                border: "1px solid var(--surface-border)", background: "#fff",
+                fontSize: 14, color: "var(--text-main)",
+              }}
+            >
+              <option value="">— 자동 (modern) —</option>
+              {STYLE_PRESETS.map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 프롬프트 */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
+              프롬프트 <span style={{ color: "#ef4444" }}>*</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, marginLeft: 8 }}>
+                (위시 메모 기반, Gemini 호출 시 자동 enhance 됨)
+              </span>
+            </div>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={5}
+              placeholder="원하는 어셋의 재질·색상·디테일·치수 등을 자세히 적어주세요"
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 10,
+                border: "1px solid var(--surface-border)", background: "#fff",
+                fontSize: 13, color: "var(--text-main)", lineHeight: 1.6,
+                resize: "vertical", fontFamily: "inherit", boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          {/* 참조 이미지 */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 6 }}>
+              참조 이미지 ({refImages.length})
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500, marginLeft: 8 }}>
+                (Gemini multimodal 로 함께 전송됨, 최대 4개)
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+              {refImages.map((url, i) => (
+                <div key={i} style={{ position: "relative" }}>
+                  <img src={url} alt="" style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 8, border: "1px solid var(--surface-border)" }} />
+                  <button
+                    onClick={() => setRefImages(refImages.filter((_, idx) => idx !== i))}
+                    style={{
+                      position: "absolute", top: -6, right: -6,
+                      width: 20, height: 20, borderRadius: 10,
+                      background: "rgba(239,68,68,0.95)", color: "#fff",
+                      border: "1px solid #fff", fontSize: 11, cursor: "pointer", lineHeight: 1,
+                    }}
+                  >✕</button>
+                </div>
+              ))}
+              {refImages.length < 4 && (
+                <>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => { addRefFile(e.target.files?.[0]); e.target.value = ""; }}
+                    style={{ display: "none" }}
+                  />
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    style={{
+                      width: 84, height: 84, borderRadius: 8,
+                      background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
+                      color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                    }}
+                  >+ 추가</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          padding: "14px 22px", borderTop: "1px solid var(--surface-border)",
+          display: "flex", justifyContent: "flex-end", gap: 8,
+        }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "10px 18px", borderRadius: 10,
+              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+              color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}
+          >취소</button>
+          <button
+            onClick={handleConfirm}
+            disabled={busy}
+            className="btn-primary"
+            style={{
+              padding: "10px 22px", borderRadius: 10, border: "none",
+              color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: busy ? "wait" : "pointer",
+              boxShadow: "0 4px 14px var(--primary-glow)",
+            }}
+          >{busy ? "저장 중…" : "✨ 시안 생성 시작"}</button>
+        </div>
+      </div>
+    </>
+  );
 }
 
 // 카드 상세 모달의 댓글 입력창. ref 대신 local state 로 간단히.
