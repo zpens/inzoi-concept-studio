@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.4";
+const APP_VERSION = "1.7.5";
 const CHANGELOG = [
+  {
+    version: "1.7.5",
+    date: "2026-04-23",
+    changes: [
+      "📏 크기 정보 패널 추가 — 어셋 정보 안에 별도 강조된 초록색 박스로 W/D/H (cm) 수동 입력 필드",
+      "'🔍 이미지로 AI 추정' 버튼 — Gemini Vision 이 참조/썸네일 이미지에서 실제 크기(cm) 추정, JSON 응답 파싱 → 필드 자동 채움",
+      "카탈로그 참고 범위 — PascalCase 카테고리 id 를 ASSET_SPECS (kebab) 로 매핑하는 CATEGORY_TO_LEGACY_SPEC 테이블로 10여 카테고리는 기본 크기 범위 표시",
+      "업데이트 일정 필드를 어셋 정보 안에서 밖으로 이동 — 상세 모달 좌측, 어셋 정보 상단에 별도 노란색 박스로 강조",
+      "card.data.size_info 구조: { width_cm, depth_cm, height_cm, source: 'manual'|'ai', confidence, reason, updated_at }",
+    ],
+  },
   {
     version: "1.7.4",
     date: "2026-04-23",
@@ -1043,6 +1054,24 @@ const DEFAULT_SPEC = {
   hint: "",
 };
 
+// PascalCase / snake_case 로 바뀐 inzoiObjectList 카테고리 id 를 기존
+// ASSET_SPECS (kebab lowercase) 로 매핑. 일치 없으면 null.
+const CATEGORY_TO_LEGACY_SPEC = {
+  Bed: "bed", Child_Bed: "kids-bed",
+  VanityTable: "vanity", SideTable: "nightstand",
+  Closet: "wardrobe", Sofa: "sofa",
+  Chair01: "chair-living", LowTable: "table-living",
+  Desk: "desk", BookShelf: "bookshelf",
+  DiningRoom_Table: "dining-table", DiningRoom_Chair: "dining-chair",
+  Kitchen_Countertop: "counter", Bath: "bathtub",
+  Toilet: "toilet",
+};
+function findLegacySpec(categoryId) {
+  if (!categoryId) return null;
+  const key = CATEGORY_TO_LEGACY_SPEC[categoryId] || categoryId.toLowerCase();
+  return ASSET_SPECS[key] || null;
+}
+
 // ─── Utility Functions ───
 function generateSeed() {
   return Math.floor(Math.random() * 2147483647);
@@ -1616,6 +1645,59 @@ ${styleList}`;
   } catch { return null; }
 }
 
+// 이미지에서 대략적 실제 크기(cm)를 추정. 카테고리 라벨을 context 로 준다.
+async function estimateSizeWithGemini(apiKey, imageUrl, categoryLabel) {
+  const part = await fetchImagePart(imageUrl);
+  if (!part) throw new Error("이미지 로드 실패");
+
+  const prompt = `이 이미지에 보이는 ${categoryLabel || "가구"}의 실제 크기를 추정해주세요.
+반드시 JSON 만 응답:
+{"width_cm": <정수>, "depth_cm": <정수>, "height_cm": <정수>, "confidence": 0.0~1.0, "reason": "<짧은 근거>"}
+
+규칙:
+- width: 정면 기준 좌우 길이 (cm)
+- depth: 정면 기준 앞뒤 길이 (cm)
+- height: 바닥에서 꼭대기까지 높이 (cm)
+- ${categoryLabel || "해당 가구"} 의 일반적 크기 범위를 기준으로 판단
+- 이미지에서 판단 어려우면 confidence 0.5 미만`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: part.mime, data: part.base64 } },
+            { text: prompt },
+          ],
+        }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      }),
+    }
+  );
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`gemini ${response.status}: ${errBody.slice(0, 120)}`);
+  }
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[0]);
+    const pick = (v) => typeof v === "number" && v > 0 && v < 2000 ? Math.round(v) : null;
+    return {
+      width_cm: pick(obj.width_cm ?? obj.w),
+      depth_cm: pick(obj.depth_cm ?? obj.d),
+      height_cm: pick(obj.height_cm ?? obj.h),
+      confidence: typeof obj.confidence === "number" ? obj.confidence : 0.5,
+      reason: typeof obj.reason === "string" ? obj.reason.slice(0, 200) : null,
+    };
+  } catch { return null; }
+}
+
 // ─── List available Gemini image models ───
 async function listGeminiImageModels(apiKey) {
   const response = await fetch(
@@ -1920,7 +2002,6 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
 
   const [category, setCategory] = React.useState(card.data?.category || "");
   const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
-  const [targetUpdate, setTargetUpdate] = React.useState(card.data?.target_update || "");
   const [prompt, setPrompt] = React.useState(card.data?.prompt || card.description || "");
   const [refImages, setRefImages] = React.useState(initialRefs);
   const [saving, setSaving] = React.useState(false);
@@ -1963,7 +2044,6 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
   React.useEffect(() => {
     setCategory(card.data?.category || "");
     setStylePreset(card.data?.style_preset || "");
-    setTargetUpdate(card.data?.target_update || "");
     setPrompt(card.data?.prompt || card.description || "");
     const nextRefs = (card.data?.ref_images && card.data.ref_images.length)
       ? card.data.ref_images
@@ -2210,28 +2290,15 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         );
       })()}
 
-      {/* 업데이트 일정 — 자유 입력. datalist 로 기존 값 자동완성. */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={fieldLabel}>🗓️ 업데이트 일정 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(예: 2026-Q2 업데이트, 1.2 봄 패치) · 완료 목록 필터에 노출</span></div>
-        <input
-          type="text"
-          value={targetUpdate}
-          disabled={disabled}
-          onChange={(e) => setTargetUpdate(e.target.value)}
-          onBlur={() => {
-            const next = targetUpdate.trim();
-            if (next !== (card.data?.target_update || "")) save({ target_update: next || null });
-          }}
-          list="inzoi-update-options"
-          placeholder="미지정"
-          style={fieldBox}
-        />
-        {availableUpdates.length > 0 && (
-          <datalist id="inzoi-update-options">
-            {availableUpdates.map((u) => <option key={u} value={u} />)}
-          </datalist>
-        )}
-      </div>
+      {/* 📏 크기 정보 — 중요 정보로 강조해 별도 패널에 분리. 수동 입력 + AI 추정 + 카탈로그 참고. */}
+      <SizeInfoPanel
+        card={card}
+        disabled={disabled}
+        geminiApiKey={geminiApiKey}
+        categoryId={category}
+        refImageUrl={refImages[0] || card.thumbnail_url}
+        onSave={async (sizeInfo) => { await save({ size_info: sizeInfo }); }}
+      />
 
       <div style={{ marginBottom: 10 }}>
         <div style={fieldLabel}>프롬프트 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
@@ -2744,6 +2811,194 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") 
     cpy.sort((a, b) => (b[dateKey] || "").localeCompare(a[dateKey] || ""));
   }
   return cpy;
+}
+
+// 업데이트 일정 필드 — 어셋 정보 섹션 위에 별도로 노출. 자유 입력 + datalist.
+function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdates = [] }) {
+  const [value, setValue] = React.useState(card.data?.target_update || "");
+  React.useEffect(() => { setValue(card.data?.target_update || ""); }, [card.id, card.updated_at]);
+  const save = async (next) => {
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), target_update: next || null },
+          actor,
+        }),
+      });
+    } catch (e) { console.warn("업데이트 일정 저장 실패:", e); }
+  };
+  return (
+    <div style={{
+      marginBottom: 14, padding: "10px 14px", borderRadius: 10,
+      background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "#b45309", minWidth: 130 }}>
+          🗓️ 업데이트 일정
+        </span>
+        <input
+          type="text"
+          value={value}
+          disabled={disabled}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => {
+            const next = value.trim();
+            if (next !== (card.data?.target_update || "")) save(next);
+          }}
+          list="inzoi-update-options"
+          placeholder="미지정 (예: 2026-Q2 업데이트, 1.2 봄 패치)"
+          style={{
+            flex: 1, padding: "8px 10px", borderRadius: 8,
+            border: "1px solid rgba(234,179,8,0.3)",
+            background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
+            fontSize: 13, color: "var(--text-main)", outline: "none", boxSizing: "border-box",
+          }}
+        />
+      </div>
+      {availableUpdates.length > 0 && (
+        <datalist id="inzoi-update-options">
+          {availableUpdates.map((u) => <option key={u} value={u} />)}
+        </datalist>
+      )}
+    </div>
+  );
+}
+
+// 📏 크기 정보 패널 — 수동 입력 + AI 추정 + 카탈로그 참고. 별도 강조된 박스.
+function SizeInfoPanel({ card, disabled, geminiApiKey, categoryId, refImageUrl, onSave }) {
+  const si = card.data?.size_info || {};
+  const [w, setW] = React.useState(si.width_cm ?? "");
+  const [d, setD] = React.useState(si.depth_cm ?? "");
+  const [h, setH] = React.useState(si.height_cm ?? "");
+  const [estimating, setEstimating] = React.useState(false);
+  const [note, setNote] = React.useState(si.source === "ai" && si.reason ? si.reason : (si.source === "ai" ? "AI 추정" : null));
+
+  React.useEffect(() => {
+    const s = card.data?.size_info || {};
+    setW(s.width_cm ?? "");
+    setD(s.depth_cm ?? "");
+    setH(s.height_cm ?? "");
+    setNote(s.source === "ai" && s.reason ? s.reason : (s.source === "ai" ? "AI 추정" : null));
+  }, [card.id, card.updated_at]);
+
+  const commit = (source = "manual", extra = {}) => {
+    const next = {
+      width_cm: w === "" ? null : Number(w),
+      depth_cm: d === "" ? null : Number(d),
+      height_cm: h === "" ? null : Number(h),
+      source,
+      updated_at: new Date().toISOString(),
+      ...extra,
+    };
+    onSave?.(next);
+  };
+
+  const runEstimate = async () => {
+    if (!geminiApiKey) { alert("Gemini API 키가 필요합니다"); return; }
+    if (!refImageUrl) { alert("참조 이미지 또는 카드 이미지가 필요합니다"); return; }
+    const cat = FURNITURE_CATEGORIES.find((c) => c.id === categoryId);
+    setEstimating(true);
+    try {
+      const r = await estimateSizeWithGemini(geminiApiKey, refImageUrl, cat?.label || null);
+      if (!r) { alert("크기 추정 실패"); return; }
+      setW(r.width_cm ?? "");
+      setD(r.depth_cm ?? "");
+      setH(r.height_cm ?? "");
+      setNote(r.reason || `AI 추정 · ${Math.round((r.confidence || 0) * 100)}%`);
+      commit("ai", {
+        width_cm: r.width_cm, depth_cm: r.depth_cm, height_cm: r.height_cm,
+        confidence: r.confidence, reason: r.reason,
+      });
+    } catch (e) {
+      alert("크기 추정 실패: " + e.message);
+    } finally { setEstimating(false); }
+  };
+
+  const legacySpec = findLegacySpec(categoryId);
+  const catalogSize = legacySpec?.size;
+
+  const inputStyle = {
+    width: 70, padding: "6px 8px", borderRadius: 6,
+    border: "1px solid rgba(16,185,129,0.3)",
+    background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
+    fontSize: 13, color: "var(--text-main)", textAlign: "center", outline: "none",
+  };
+  const labelStyle = { fontSize: 10, color: "#047857", fontWeight: 700 };
+
+  return (
+    <div style={{
+      marginBottom: 14, padding: "12px 14px", borderRadius: 10,
+      background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.3)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "#047857" }}>📏 크기 정보</span>
+        <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>(중요)</span>
+        {!disabled && (
+          <button
+            onClick={runEstimate}
+            disabled={estimating || !refImageUrl}
+            title="이미지에서 가로/세로/높이 자동 추정 (Gemini Vision)"
+            style={{
+              marginLeft: "auto",
+              padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+              background: estimating ? "rgba(0,0,0,0.06)" : "rgba(16,185,129,0.12)",
+              border: "1px solid rgba(16,185,129,0.4)",
+              color: estimating ? "var(--text-muted)" : "#047857",
+              cursor: estimating || !refImageUrl ? "not-allowed" : "pointer",
+            }}
+          >{estimating ? "⏳ 추정 중…" : "🔍 이미지로 AI 추정"}</button>
+        )}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={labelStyle}>W · 가로</span>
+          <input type="number" min="0" value={w} disabled={disabled}
+            onChange={(e) => setW(e.target.value)}
+            onBlur={() => commit("manual")}
+            style={inputStyle} />
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>cm</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={labelStyle}>D · 깊이</span>
+          <input type="number" min="0" value={d} disabled={disabled}
+            onChange={(e) => setD(e.target.value)}
+            onBlur={() => commit("manual")}
+            style={inputStyle} />
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>cm</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={labelStyle}>H · 높이</span>
+          <input type="number" min="0" value={h} disabled={disabled}
+            onChange={(e) => setH(e.target.value)}
+            onBlur={() => commit("manual")}
+            style={inputStyle} />
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>cm</span>
+        </div>
+      </div>
+
+      {note && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          🤖 {note}
+        </div>
+      )}
+      {catalogSize && (catalogSize.W !== "TBD" || catalogSize.D !== "TBD" || catalogSize.H !== "TBD") && (
+        <div style={{
+          marginTop: 8, padding: "6px 10px", borderRadius: 6,
+          background: "rgba(0,0,0,0.03)", fontSize: 11, color: "var(--text-lighter)", lineHeight: 1.5,
+        }}>
+          <span style={{ color: "var(--text-muted)", fontWeight: 700 }}>📚 카탈로그 참고 범위:</span>{" "}
+          {catalogSize.W !== "TBD" && <span>W {catalogSize.W}</span>}
+          {catalogSize.W !== "TBD" && catalogSize.D !== "TBD" && " · "}
+          {catalogSize.D !== "TBD" && <span>D {catalogSize.D}</span>}
+          {catalogSize.D !== "TBD" && catalogSize.H !== "TBD" && " · "}
+          {catalogSize.H !== "TBD" && <span>H {catalogSize.H}</span>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // 검색 가능한 카테고리 선택기. FURNITURE_CATEGORIES 50+ 개 중에서 라벨/방/id 로
@@ -6907,6 +7162,15 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       />
                     </div>
                   )}
+
+                  {/* 업데이트 일정 — 어셋 정보 위에 별도로 표시 (완료 시점 기획) */}
+                  <TargetUpdateField
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                    availableUpdates={availableUpdates}
+                  />
 
                   {/* 어셋 정보 인라인 편집 (자동 저장) — 카드 생성은 최소 정보, 편집은 여기서 */}
                   <AssetInfoEditor
