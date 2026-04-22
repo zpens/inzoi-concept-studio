@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.4";
+const APP_VERSION = "1.6.5";
 const CHANGELOG = [
+  {
+    version: "1.6.5",
+    date: "2026-04-22",
+    changes: [
+      "메인 페이지 뷰 토글 추가 — 🔲 카드 뷰(기본) ↔ ☰ 리스트 뷰",
+      "리스트 뷰는 썸네일(60px) + 제목 + 카테고리 + 상태/시안수 + 날짜 컬럼으로 컴팩트 표시, 많은 카드를 한 눈에 스캔",
+      "뷰 선택은 localStorage 에 저장되어 새로고침해도 유지, 리스트 뷰에선 카드 크기 토글 숨김",
+    ],
+  },
   {
     version: "1.6.4",
     date: "2026-04-22",
@@ -2532,6 +2541,129 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") 
   return cpy;
 }
 
+// 카드/리스트 뷰 토글.
+function ViewModeToggle({ value, onChange }) {
+  const btn = (mode, icon, title) => (
+    <button
+      onClick={() => onChange(mode)}
+      title={title}
+      style={{
+        padding: "4px 10px", borderRadius: 6,
+        background: value === mode ? "#fff" : "transparent",
+        border: "none", cursor: "pointer",
+        fontSize: 13,
+        color: value === mode ? "var(--primary)" : "var(--text-muted)",
+        boxShadow: value === mode ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+      }}
+    >{icon}</button>
+  );
+  return (
+    <div style={{
+      display: "flex", gap: 2, padding: 2, borderRadius: 8,
+      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+    }}>
+      {btn("card", "🔲", "카드 뷰")}
+      {btn("list", "☰", "리스트 뷰")}
+    </div>
+  );
+}
+
+// 리스트 뷰 한 줄 — 썸네일 + 제목 + 카테고리/스타일 + 탭별 메타 + 날짜.
+function CardListRow({ card, tabId, onClick }) {
+  const data = card.data || {};
+  const designs = Array.isArray(data.designs) ? data.designs : [];
+  const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
+  const selected = selectedIdx != null ? designs[selectedIdx] : null;
+  const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
+  const styleInfo = data.style_preset ? STYLE_PRESETS.find((s) => s.id === data.style_preset) : null;
+
+  let thumb = card.thumbnail_url;
+  if (tabId === "sheet" || tabId === "completed") {
+    thumb = data.concept_sheet_url || selected?.imageUrl || card.thumbnail_url;
+  } else if (tabId !== "wishlist") {
+    thumb = designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
+  }
+
+  const date = tabId === "completed" ? card.confirmed_at : card.created_at;
+
+  return (
+    <div
+      onClick={onClick}
+      className="hover-lift"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "60px 1fr 160px 110px 100px",
+        gap: 14, alignItems: "center",
+        padding: "10px 14px", borderRadius: 10,
+        border: "1px solid var(--surface-border)",
+        background: "var(--surface-color)",
+        cursor: "pointer", transition: "all 0.15s",
+      }}
+    >
+      <div style={{
+        width: 60, height: 60, borderRadius: 8, overflow: "hidden",
+        background: thumb ? "#000" : "rgba(0,0,0,0.05)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {thumb ? (
+          <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <span style={{ fontSize: 24, opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
+        )}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontSize: 14, fontWeight: 700, color: "var(--text-main)",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>
+          {catInfo?.icon || ""} {card.title || "(제목 없음)"}
+        </div>
+        {(card.description || styleInfo) && (
+          <div style={{
+            fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4, marginTop: 2,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || ""}
+          </div>
+        )}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        {catInfo ? `${catInfo.label} · ${catInfo.room}` : "— 카테고리 없음 —"}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+        {tabId === "vote" && `시안 ${designs.length}개`}
+        {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
+          <span style={{ color: "#22c55e", fontWeight: 600 }}>✓ 시트</span>
+        )}
+        {tabId === "create" && designs.length > 0 && `시안 ${designs.length}개`}
+        {tabId === "wishlist" && ""}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
+        {date ? date.slice(0, 10) : "-"}
+      </div>
+    </div>
+  );
+}
+
+// 리스트 뷰 헤더 행.
+function CardListHeader({ tabId }) {
+  const cell = { fontSize: 11, fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em", textTransform: "uppercase" };
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "60px 1fr 160px 110px 100px",
+      gap: 14, alignItems: "center",
+      padding: "6px 14px",
+    }}>
+      <div />
+      <div style={cell}>제목</div>
+      <div style={cell}>카테고리</div>
+      <div style={cell}>{tabId === "completed" ? "결과" : "상태"}</div>
+      <div style={{ ...cell, textAlign: "right" }}>{tabId === "completed" ? "완료일" : "생성일"}</div>
+    </div>
+  );
+}
+
 // 카드 크기 선택 위젯 — 0.5× / 1× / 2× 토글 버튼.
 function CardScaleSelect({ value, onChange }) {
   return (
@@ -3087,6 +3219,9 @@ export default function InZOIConceptTool() {
     return [0.5, 1, 2].includes(v) ? v : 1;
   });
   useEffect(() => { try { localStorage.setItem("inzoi_card_scale", String(cardScale)); } catch {} }, [cardScale]);
+  // "card" (기본) | "list" — 메인 페이지 보기 방식
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem("inzoi_view_mode") === "list" ? "list" : "card");
+  useEffect(() => { try { localStorage.setItem("inzoi_view_mode", viewMode); } catch {} }, [viewMode]);
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달
@@ -4084,7 +4219,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <CardScaleSelect value={cardScale} onChange={setCardScale} />
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
                 <SortSelect value={sortBy} onChange={setSortBy} />
                 {activeTab === "create" && (
                   <button
@@ -4102,6 +4238,27 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             </div>
 
             {totalCount > 0 ? (
+              viewMode === "list" ? (
+                <div style={{ marginBottom: 40 }}>
+                  <CardListHeader tabId={activeTab} />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {sortCardArray(inRangeCards, sortBy).map((c) => (
+                      <CardListRow
+                        key={`card-${c.id}`}
+                        card={c}
+                        tabId={activeTab}
+                        onClick={async () => {
+                          if (!projectSlug) return;
+                          try {
+                            const detail = await fetchCardDetail(projectSlug, c.id);
+                            if (detail) setDetailCard(detail);
+                          } catch (e) { console.warn("카드 열기 실패", e); }
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
               <div style={{
                 display: "grid",
                 gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`,
@@ -4165,6 +4322,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   );
                 })}
               </div>
+              )
             ) : (
               <div style={{
                 padding: "60px 40px", textAlign: "center",
@@ -5421,7 +5579,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 에셋 컨셉시트가 완성됐습니다.</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <CardScaleSelect value={cardScale} onChange={setCardScale} />
+              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+              {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
               <SortSelect value={sortBy} onChange={setSortBy} />
               <button
                 onClick={() => setActiveTab("create")}
@@ -5450,27 +5609,53 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </button>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
-              {sortCardArray(completedList, sortBy, "completedAt", "categoryLabel").map((item) => {
-                const card = cards.find((c) => c.id === item._cardId);
-                if (!card) return null;
-                return (
-                  <CardHubCard
-                    key={item._cardId}
-                    card={card}
-                    tabId="completed"
-                    scale={cardScale}
-                    onClick={async () => {
-                      if (!projectSlug) return;
-                      try {
-                        const detail = await fetchCardDetail(projectSlug, card.id);
-                        if (detail) setDetailCard(detail);
-                      } catch { /* 무시 */ }
-                    }}
-                  />
-                );
-              })}
-            </div>
+            viewMode === "list" ? (
+              <div>
+                <CardListHeader tabId="completed" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {sortCardArray(completedList, sortBy, "completedAt", "categoryLabel").map((item) => {
+                    const card = cards.find((c) => c.id === item._cardId);
+                    if (!card) return null;
+                    return (
+                      <CardListRow
+                        key={item._cardId}
+                        card={card}
+                        tabId="completed"
+                        onClick={async () => {
+                          if (!projectSlug) return;
+                          try {
+                            const detail = await fetchCardDetail(projectSlug, card.id);
+                            if (detail) setDetailCard(detail);
+                          } catch { /* 무시 */ }
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
+                {sortCardArray(completedList, sortBy, "completedAt", "categoryLabel").map((item) => {
+                  const card = cards.find((c) => c.id === item._cardId);
+                  if (!card) return null;
+                  return (
+                    <CardHubCard
+                      key={item._cardId}
+                      card={card}
+                      tabId="completed"
+                      scale={cardScale}
+                      onClick={async () => {
+                        if (!projectSlug) return;
+                        try {
+                          const detail = await fetchCardDetail(projectSlug, card.id);
+                          if (detail) setDetailCard(detail);
+                        } catch { /* 무시 */ }
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            )
           )}
         </main>
       )}
@@ -5655,7 +5840,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <div style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>
                   {wishlist.length}개의 아이디어
                 </div>
-                <CardScaleSelect value={cardScale} onChange={setCardScale} />
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
                 <SortSelect value={sortBy} onChange={setSortBy} />
               </div>
 
@@ -5663,6 +5849,30 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--text-muted)" }}>
                   <div style={{ fontSize: 56, marginBottom: 16 }}>💫</div>
                   <div style={{ fontSize: 16, fontWeight: 500 }}>만들고 싶은 가구 아이디어를 왼쪽 폼에서 추가해보세요</div>
+                </div>
+              ) : viewMode === "list" ? (
+                <div>
+                  <CardListHeader tabId="wishlist" />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {sortCardArray(wishlist, sortBy, "createdAt", "title").map((item) => {
+                      const card = cards.find((c) => c.id === item._cardId);
+                      if (!card) return null;
+                      return (
+                        <CardListRow
+                          key={item._cardId}
+                          card={card}
+                          tabId="wishlist"
+                          onClick={async () => {
+                            if (!projectSlug) return;
+                            try {
+                              const detail = await fetchCardDetail(projectSlug, card.id);
+                              if (detail) setDetailCard(detail);
+                            } catch { /* 무시 */ }
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
