@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.6.9";
+const APP_VERSION = "1.7.0";
 const CHANGELOG = [
+  {
+    version: "1.7.0",
+    date: "2026-04-22",
+    changes: [
+      "카테고리 / 스타일을 inzoiObjectList 의 meta.json 과 자동 연동 — 서버 /api/object-meta 가 운영자 PC :8080/data/meta.json 을 프록시해 catHier + filterKo + objTags 에서 목록 생성",
+      "클라이언트는 앱 시작 시 + 5분 주기로 목록 갱신, 실패 시 내장 fallback 목록 사용",
+      "meta.json 이 변동되면 최대 5분 내 자동 반영 (서버 캐시 동일 주기, ?force=1 로 즉시 무효화 가능)",
+    ],
+  },
   {
     version: "1.6.9",
     date: "2026-04-22",
@@ -790,7 +799,9 @@ const SAMPLE_WISHLIST = [
 ];
 
 // ─── Constants ───
-const FURNITURE_CATEGORIES = [
+// 기본(fallback) 카테고리 목록. 서버 /api/object-meta 가 inzoiObjectList
+// meta.json 을 변환해 내려주면 런타임에 교체된다.
+let FURNITURE_CATEGORIES = [
   // ── 침실 (572) ──
   { id: "bed", label: "침대", icon: "🛏️", room: "침실", preset: "bed frame with headboard, bedroom furniture" },
   { id: "kids-bed", label: "어린이 침대", icon: "🧒", room: "침실", preset: "children's bed, kids bedroom furniture" },
@@ -868,7 +879,7 @@ const FURNITURE_CATEGORIES = [
   { id: "arch-other", label: "기타", icon: "🏗️", room: "기타 건축", preset: "architectural element" },
 ];
 
-const STYLE_PRESETS = [
+let STYLE_PRESETS = [
   { id: "modern", label: "모던", color: "#64748b" },
   { id: "scandinavian", label: "스칸디나비안", color: "#d4a574" },
   { id: "midcentury", label: "미드센추리", color: "#c2956b" },
@@ -2576,13 +2587,14 @@ function CategoryPicker({ value, onChange, disabled }) {
   const wrapRef = React.useRef(null);
 
   const selected = FURNITURE_CATEGORIES.find((c) => c.id === value);
-  const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return FURNITURE_CATEGORIES;
-    return FURNITURE_CATEGORIES.filter((c) =>
-      `${c.label} ${c.room} ${c.id}`.toLowerCase().includes(q)
-    );
-  }, [query]);
+  // useMemo 를 쓰지 않음 — FURNITURE_CATEGORIES 가 서버에서 교체될 때 stale
+  // closure 로 인해 구 목록이 보이는 문제를 피하려 매 렌더마다 필터링.
+  const q = query.trim().toLowerCase();
+  const filtered = !q
+    ? FURNITURE_CATEGORIES
+    : FURNITURE_CATEGORIES.filter((c) =>
+        `${c.label} ${c.room} ${c.id}`.toLowerCase().includes(q)
+      );
 
   // 바깥 클릭으로 닫기
   React.useEffect(() => {
@@ -3365,6 +3377,34 @@ export default function InZOIConceptTool() {
   // "card" (기본) | "list" — 메인 페이지 보기 방식
   const [viewMode, setViewMode] = useState(() => localStorage.getItem("inzoi_view_mode") === "list" ? "list" : "card");
   useEffect(() => { try { localStorage.setItem("inzoi_view_mode", viewMode); } catch {} }, [viewMode]);
+
+  // inzoiObjectList 의 meta.json 을 5분 주기로 가져와 카테고리/스타일 목록을 교체.
+  // 실패하면 hardcoded fallback 사용. metaVersion bump 으로 하위 컴포넌트 re-render.
+  const [metaVersion, setMetaVersion] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const r = await fetch("/api/object-meta");
+        if (!r.ok) return;
+        const d = await r.json();
+        if (cancelled) return;
+        let changed = false;
+        if (Array.isArray(d.categories) && d.categories.length > 0) {
+          FURNITURE_CATEGORIES = d.categories;
+          changed = true;
+        }
+        if (Array.isArray(d.styles) && d.styles.length > 0) {
+          STYLE_PRESETS = d.styles;
+          changed = true;
+        }
+        if (changed) setMetaVersion((v) => v + 1);
+      } catch (e) { console.warn("object-meta 로드 실패:", e.message); }
+    }
+    load();
+    const t = setInterval(load, 5 * 60 * 1000); // 5분
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달

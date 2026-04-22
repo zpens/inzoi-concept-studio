@@ -279,6 +279,79 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
 
+// /api/object-meta — inzoiObjectList 의 meta.json 을 읽어 카테고리/스타일 목록으로
+// 변환해 반환. 같은 PC 에서 object catalog 가 :8080 으로 서빙 중이라 가정.
+// 환경변수 INZOI_OBJECT_LIST_URL 로 대체 가능. 5분 간격 메모리 캐시.
+let _metaCache = { fetchedAt: 0, data: null };
+app.get("/api/object-meta", async (c) => {
+  const base = process.env.INZOI_OBJECT_LIST_URL || "http://localhost:8080";
+  const now = Date.now();
+  const force = c.req.query("force") === "1";
+  if (!force && _metaCache.data && now - _metaCache.fetchedAt < 5 * 60 * 1000) {
+    return c.json(_metaCache.data);
+  }
+  try {
+    const r = await fetch(`${base}/data/meta.json`);
+    if (!r.ok) throw new Error(`upstream ${r.status}`);
+    const meta = await r.json();
+    const filterKo = meta.filterKo || {};
+    const catHier = meta.catHier || {};
+    const iconFor = (room) => ({
+      "침실": "🛏️", "거실": "🛋️", "주방": "🍳", "욕실": "🚿",
+      "서재": "📚", "취미": "🎨", "야외공간": "🌳", "소셜 이벤트": "🎉",
+      "DEV": "⚙️", "기타": "📦", "집": "🏠", "외관": "🏡",
+      "조명": "💡", "테이블 세팅": "🍽️", "플랫폼": "🎮", "음료": "🥤", "음식": "🍜",
+      "승용차": "🚗", "미래형": "🚀", "자동차": "🚙", "기타(탑승)": "🏍️",
+    })[room] || "📦";
+    const categories = [];
+    const seen = new Set();
+    for (const [group, rooms] of Object.entries(catHier)) {
+      for (const [room, types] of Object.entries(rooms)) {
+        if (!Array.isArray(types)) continue;
+        for (const typeId of types) {
+          if (seen.has(typeId)) continue;
+          seen.add(typeId);
+          const label = filterKo[typeId] || typeId;
+          categories.push({
+            id: typeId,
+            label: label,
+            room: room,
+            group: group,
+            icon: iconFor(room),
+            preset: `${label}, furniture asset`,
+          });
+        }
+      }
+    }
+    // 스타일 — meta.objTags 에서 알려진 스타일 태그만 추출, 한글 라벨은 하드코딩.
+    const styleMap = {
+      Modern: "모던", Scandinavian: "스칸디나비안", Mid_Century_Modern: "미드센추리",
+      Industrial: "인더스트리얼", Classic: "클래식", Natural: "내추럴",
+      Vintage: "빈티지", Minimal: "미니멀", Luxury: "럭셔리",
+    };
+    const stylePresent = new Set();
+    for (const tags of Object.values(meta.objTags || {})) {
+      if (!Array.isArray(tags)) continue;
+      for (const t of tags) if (styleMap[t]) stylePresent.add(t);
+    }
+    const styles = Object.keys(styleMap)
+      .filter((id) => stylePresent.size === 0 || stylePresent.has(id))
+      .map((id) => ({ id, label: styleMap[id] }));
+    const out = {
+      categories, styles,
+      source: base,
+      fetched_at: new Date().toISOString(),
+      category_count: categories.length,
+      style_count: styles.length,
+    };
+    _metaCache = { fetchedAt: now, data: out };
+    return c.json(out);
+  } catch (err) {
+    console.warn("object-meta 프록시 실패:", err.message);
+    return c.json({ error: err.message, source: base }, 502);
+  }
+});
+
 // POST /api/projects
 // slug 가 이미 있으면 충돌 에러 대신 기존 프로젝트를 그대로 반환 (idempotent).
 // 팀이 "default" 하나로 수렴할 때 race 없이 안전.
