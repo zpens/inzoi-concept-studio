@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.5.9";
+const APP_VERSION = "1.6.0";
 const CHANGELOG = [
+  {
+    version: "1.6.0",
+    date: "2026-04-22",
+    changes: [
+      "메인 카드 그리드에 카드 크기 토글(0.5× / 1× / 2×) 추가 — localStorage 에 저장되어 새로고침 후에도 유지",
+      "위시리스트 / 완료목록 카드가 시안 생성 탭 크기 기준으로 동일한 양식, 스케일 적용",
+      "위시리스트 이미지 다중 첨부 지원 — 파일 선택(multiple) · Ctrl+V 반복 붙여넣기 모두 최대 4개까지 누적",
+      "위시리스트 생성 시 첫 이미지는 썸네일로, 전체는 data.ref_images 로 저장 → drafting 단계에서 그대로 참조이미지로 사용",
+      "카드 상세 모달(AssetInfoEditor)에서 Ctrl+V 로 참조 이미지 붙여넣기 지원",
+    ],
+  },
   {
     version: "1.5.9",
     date: "2026-04-22",
@@ -1760,12 +1771,41 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const url = await uploadDataUrl(ev.target.result);
-      const next = [...refImages, url];
-      setRefImages(next);
-      await save({ ref_images: next });
+      // 최신 state 를 기반으로 append (연속 붙여넣기 시 덮어쓰기 방지).
+      setRefImages((prev) => {
+        if (prev.length >= 4) return prev;
+        const next = [...prev, url];
+        save({ ref_images: next });
+        return next;
+      });
     };
     reader.readAsDataURL(file);
   };
+
+  // 카드 상세 모달이 열린 상태에서 Ctrl+V (또는 맥 Cmd+V) 로 이미지 붙여넣기.
+  // input/textarea 에 포커스가 있으면 텍스트 붙여넣기를 우선하도록 무시.
+  React.useEffect(() => {
+    if (disabled) return;
+    const onPaste = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) {
+            addRefFile(f);
+            e.preventDefault();
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, card.id]);
 
   const fieldLabel = { fontSize: 11, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 5 };
   const fieldBox = {
@@ -1837,7 +1877,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       </div>
 
       <div>
-        <div style={fieldLabel}>참조 이미지 ({refImages.length}/4) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal 에 함께 전송)</span></div>
+        <div style={fieldLabel}>참조 이미지 ({refImages.length}/4) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal 에 함께 전송 · Ctrl+V 로 붙여넣기도 가능)</span></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {refImages.map((url, i) => (
             <div key={i} style={{ position: "relative" }}>
@@ -2319,6 +2359,32 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") 
   return cpy;
 }
 
+// 카드 크기 선택 위젯 — 0.5× / 1× / 2× 토글 버튼.
+function CardScaleSelect({ value, onChange }) {
+  return (
+    <div style={{
+      display: "flex", gap: 2, padding: 2, borderRadius: 8,
+      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+    }}>
+      {[0.5, 1, 2].map((v) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          title={`카드 크기 ${v}×`}
+          style={{
+            padding: "4px 10px", borderRadius: 6,
+            background: value === v ? "#fff" : "transparent",
+            border: "none", cursor: "pointer",
+            fontSize: 12, fontWeight: 700,
+            color: value === v ? "var(--primary)" : "var(--text-muted)",
+            boxShadow: value === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+          }}
+        >{v}×</button>
+      ))}
+    </div>
+  );
+}
+
 // 정렬 드롭다운 — 메인 그리드 상단에 공통 배치.
 function SortSelect({ value, onChange }) {
   return (
@@ -2512,7 +2578,7 @@ const JOB_STEP_LABELS = ["입력", "시안 생성중", "투표", "선정", "컨�
 // 이것은 메인 영역의 그리드용 큰 카드.
 // 새 카드 시스템용 허브 카드 (위시·completed 탭의 카드와 달리 워크플로우
 // 탭에서 쓰는 컴팩트 그리드 카드. 클릭 시 통합 카드 모달 오픈).
-function CardHubCard({ card, tabId, onClick }) {
+function CardHubCard({ card, tabId, onClick, scale = 1 }) {
   const data = card.data || {};
   const designs = Array.isArray(data.designs) ? data.designs : [];
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
@@ -2544,61 +2610,61 @@ function CardHubCard({ card, tabId, onClick }) {
       }}
     >
       <div style={{
-        width: "100%", height: 180, position: "relative",
+        width: "100%", height: Math.round(180 * scale), position: "relative",
         background: thumb ? "#000" : "rgba(0,0,0,0.04)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {thumb ? (
           <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <span style={{ fontSize: 56, opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
+          <span style={{ fontSize: Math.round(56 * scale), opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
         {designs.length > 0 && (
           <div style={{
             position: "absolute", top: 10, right: 10,
             padding: "3px 10px", borderRadius: 10,
-            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 11, fontWeight: 700,
+            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: Math.round(11 * Math.sqrt(scale)), fontWeight: 700,
           }}>시안 {designs.length}</div>
         )}
       </div>
-      <div style={{ padding: "14px 16px" }}>
+      <div style={{ padding: `${Math.round(14 * scale)}px ${Math.round(16 * scale)}px` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
           <span style={{
-            fontSize: 15, fontWeight: 800, color: "var(--text-main)",
+            fontSize: Math.round(15 * Math.sqrt(scale)), fontWeight: 800, color: "var(--text-main)",
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0,
           }}>
             {catInfo?.icon || ""} {card.title}
           </span>
           <span style={{
-            fontSize: 10, fontWeight: 700, flexShrink: 0,
+            fontSize: Math.round(10 * Math.sqrt(scale)), fontWeight: 700, flexShrink: 0,
             color: "var(--primary)", background: "rgba(7,110,232,0.1)",
             padding: "2px 6px", borderRadius: 6,
           }}>카드</span>
         </div>
         <div style={{
-          fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6,
+          fontSize: Math.round(12 * Math.sqrt(scale)), color: "var(--text-muted)", lineHeight: 1.6,
           display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-          overflow: "hidden", minHeight: 36,
+          overflow: "hidden", minHeight: Math.round(36 * scale),
         }}>
           {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || "(설명 없음)"}
         </div>
         {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
-          <div style={{ marginTop: 8, fontSize: 11, color: "#22c55e", fontWeight: 600 }}>
+          <div style={{ marginTop: 8, fontSize: Math.round(11 * Math.sqrt(scale)), color: "#22c55e", fontWeight: 600 }}>
             ✓ 컨셉시트 생성됨
           </div>
         )}
         {tabId === "completed" && card.confirmed_at && (
-          <div style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+          <div style={{ marginTop: 6, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
             완료 {card.confirmed_at.slice(0, 10)}
           </div>
         )}
         {tabId === "wishlist" && (
-          <div style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+          <div style={{ marginTop: 6, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
             추가 {card.created_at?.slice(0, 10) || "-"}
           </div>
         )}
         {tabId === "vote" && (
-          <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+          <div style={{ marginTop: 8, fontSize: Math.round(11 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
             시안 {designs.length}개 · 투표자 {(data.voters || []).length}명
           </div>
         )}
@@ -2847,6 +2913,11 @@ export default function InZOIConceptTool() {
   const setCompletedList = () => { /* deprecated: cards 가 SOT */ };
   const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
   const [sortBy, setSortBy] = useState("date_desc"); // "date_desc" | "date_asc" | "title_asc" | "title_desc"
+  const [cardScale, setCardScale] = useState(() => {
+    const v = parseFloat(localStorage.getItem("inzoi_card_scale"));
+    return [0.5, 1, 2].includes(v) ? v : 1;
+  });
+  useEffect(() => { try { localStorage.setItem("inzoi_card_scale", String(cardScale)); } catch {} }, [cardScale]);
   const [expandedItem, setExpandedItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [detailDesign, setDetailDesign] = useState(null); // 시안 이미지 확대 모달
@@ -2959,14 +3030,17 @@ export default function InZOIConceptTool() {
   const setWishlist = () => { /* deprecated */ };
   const [wishTitle, setWishTitle] = useState("");
   const [wishNote, setWishNote] = useState("");
-  const [wishImage, setWishImage] = useState(null);
+  // 위시리스트 작성 중 첨부할 이미지들 (dataURL 배열). 최대 4개.
+  const [wishImages, setWishImages] = useState([]);
   const wishImageRef = useRef(null);
 
-  // 클립보드 이미지 붙여넣기 지원 (위시리스트 탭에서만 활성).
-  // 캡처한 첫 번째 이미지 아이템을 dataURL 로 읽어 setWishImage 에 저장한다.
+  // 클립보드 이미지 붙여넣기 — 위시리스트 탭에서만 활성. 여러번 붙여넣으면 누적.
+  // detailCard(카드 상세 모달) 가 열려있으면 AssetInfoEditor 가 처리하므로 건너뛴다.
   useEffect(() => {
-    if (activeTab !== "wishlist") return;
+    if (activeTab !== "wishlist" || detailCard) return;
     const onPaste = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const it of items) {
@@ -2974,7 +3048,7 @@ export default function InZOIConceptTool() {
           const file = it.getAsFile();
           if (!file) continue;
           const reader = new FileReader();
-          reader.onload = (ev) => setWishImage(ev.target.result);
+          reader.onload = (ev) => setWishImages((prev) => prev.length >= 4 ? prev : [...prev, ev.target.result]);
           reader.readAsDataURL(file);
           e.preventDefault();
           return;
@@ -2983,7 +3057,7 @@ export default function InZOIConceptTool() {
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [activeTab]);
+  }, [activeTab, detailCard]);
 
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
@@ -3839,6 +3913,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <CardScaleSelect value={cardScale} onChange={setCardScale} />
                 <SortSelect value={sortBy} onChange={setSortBy} />
                 {activeTab === "create" && (
                   <button
@@ -3858,7 +3933,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             {totalCount > 0 ? (
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`,
                 gap: 16,
                 marginBottom: 40,
               }}>
@@ -3868,6 +3943,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     key={`card-${c.id}`}
                     card={c}
                     tabId={activeTab}
+                    scale={cardScale}
                     onClick={async () => {
                       if (!projectSlug) return;
                       try {
@@ -5174,6 +5250,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 에셋 컨셉시트가 완성됐습니다.</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <CardScaleSelect value={cardScale} onChange={setCardScale} />
               <SortSelect value={sortBy} onChange={setSortBy} />
               <button
                 onClick={() => setActiveTab("create")}
@@ -5202,7 +5279,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </button>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
               {sortCardArray(completedList, sortBy, "completedAt", "categoryLabel").map((item) => {
                 const card = cards.find((c) => c.id === item._cardId);
                 if (!card) return null;
@@ -5211,6 +5288,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     key={item._cardId}
                     card={card}
                     tabId="completed"
+                    scale={cardScale}
                     onClick={async () => {
                       if (!projectSlug) return;
                       try {
@@ -5267,44 +5345,58 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   onFocus={e => { e.target.style.borderColor = "var(--primary)"; }}
                   onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
                 />
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
-                  <input
-                    ref={wishImageRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={e => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => setWishImage(ev.target.result);
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                    style={{ display: "none" }}
-                  />
-                  <button
-                    onClick={() => wishImageRef.current?.click()}
-                    style={{
-                      padding: "9px 16px", borderRadius: 10,
-                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                      color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
-                    }}
-                    onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
-                    onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
-                  >
-                    🖼️ 이미지 첨부
-                  </button>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
-                    또는 <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "rgba(0,0,0,0.06)", border: "1px solid var(--surface-border)", fontFamily: "monospace", fontSize: 10 }}>Ctrl+V</kbd> 로 붙여넣기
-                  </span>
-                  {wishImage && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <img src={wishImage} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover" }} />
-                      <button
-                        onClick={() => { setWishImage(null); if (wishImageRef.current) wishImageRef.current.value = ""; }}
-                        style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 16, cursor: "pointer" }}
-                      >✕</button>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+                    <input
+                      ref={wishImageRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={e => {
+                        const files = Array.from(e.target.files || []);
+                        for (const file of files) {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setWishImages((prev) => prev.length >= 4 ? prev : [...prev, ev.target.result]);
+                          reader.readAsDataURL(file);
+                        }
+                        e.target.value = "";
+                      }}
+                      style={{ display: "none" }}
+                    />
+                    <button
+                      onClick={() => wishImageRef.current?.click()}
+                      disabled={wishImages.length >= 4}
+                      style={{
+                        padding: "9px 16px", borderRadius: 10,
+                        background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                        color: "var(--text-muted)", fontSize: 13, fontWeight: 600,
+                        cursor: wishImages.length >= 4 ? "not-allowed" : "pointer",
+                        display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
+                        opacity: wishImages.length >= 4 ? 0.5 : 1,
+                      }}
+                    >
+                      🖼️ 이미지 첨부 ({wishImages.length}/4)
+                    </button>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
+                      또는 <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "rgba(0,0,0,0.06)", border: "1px solid var(--surface-border)", fontFamily: "monospace", fontSize: 10 }}>Ctrl+V</kbd> 로 붙여넣기 (여러 번)
+                    </span>
+                  </div>
+                  {wishImages.length > 0 && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {wishImages.map((img, idx) => (
+                        <div key={idx} style={{ position: "relative" }}>
+                          <img src={img} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "1px solid var(--surface-border)" }} />
+                          <button
+                            onClick={() => setWishImages((prev) => prev.filter((_, i) => i !== idx))}
+                            style={{
+                              position: "absolute", top: -6, right: -6,
+                              width: 18, height: 18, borderRadius: 9,
+                              background: "rgba(239,68,68,0.95)", color: "#fff",
+                              border: "1px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1,
+                            }}
+                          >✕</button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -5317,13 +5409,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
                       "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
                     ];
-                    // 이미지가 dataURL 이면 먼저 서버에 업로드해서 URL 로 변환.
-                    const uploadedUrl = await uploadDataUrl(wishImage);
+                    // 여러 이미지를 병렬 업로드. 첫번째가 썸네일, 전체는 ref_images.
+                    const uploaded = await Promise.all(wishImages.map((d) => uploadDataUrl(d)));
+                    const primary = uploaded[0] || null;
                     const item = {
                       id: Date.now(),
                       title: wishTitle.trim(),
                       note: wishNote.trim(),
-                      imageUrl: uploadedUrl,
+                      imageUrl: primary,
                       gradient: gradients[Math.floor(Math.random() * gradients.length)],
                       createdAt: new Date().toISOString(),
                     };
@@ -5343,7 +5436,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             description: item.note,
                             thumbnail_url: item.imageUrl,
                             status_key: "wishlist",
-                            data: { source: "wishlist", gradient: item.gradient },
+                            data: { source: "wishlist", gradient: item.gradient, ref_images: uploaded },
                             actor: actorName || null,
                           }),
                         });
@@ -5368,7 +5461,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
                     setWishTitle("");
                     setWishNote("");
-                    setWishImage(null);
+                    setWishImages([]);
                     if (wishImageRef.current) wishImageRef.current.value = "";
                   }}
                   style={{
@@ -5391,6 +5484,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <div style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>
                   {wishlist.length}개의 아이디어
                 </div>
+                <CardScaleSelect value={cardScale} onChange={setCardScale} />
                 <SortSelect value={sortBy} onChange={setSortBy} />
               </div>
 
@@ -5400,7 +5494,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <div style={{ fontSize: 16, fontWeight: 500 }}>만들고 싶은 가구 아이디어를 왼쪽 폼에서 추가해보세요</div>
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(240 * cardScale)}px, 1fr))`, gap: 16 }}>
                   {sortCardArray(wishlist, sortBy, "createdAt", "title").map((item) => {
                     const card = cards.find((c) => c.id === item._cardId);
                     if (!card) return null;
@@ -5409,6 +5503,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         key={item._cardId}
                         card={card}
                         tabId="wishlist"
+                        scale={cardScale}
                         onClick={async () => {
                           if (!projectSlug) return;
                           try {
@@ -6867,47 +6962,56 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   onFocus={e => { e.target.style.borderColor = "rgba(234,179,8,0.4)"; }}
                   onBlur={e => { e.target.style.borderColor = "var(--surface-border)"; }}
                 />
-                {/* Image upload */}
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-                  <input
-                    ref={wishImageRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={e => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => setWishImage(ev.target.result);
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                    style={{ display: "none" }}
-                  />
-                  <button
-                    onClick={() => wishImageRef.current?.click()}
-                    style={{
-                      padding: "8px 14px", borderRadius: 8,
-                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                      color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
-                    }}
-                    onMouseOver={e => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
-                    onMouseOut={e => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
-                  >
-                    🖼️ 이미지 첨부
-                  </button>
-                  {wishImage && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <img src={wishImage} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover" }} />
-                      <button
-                        onClick={() => { setWishImage(null); if (wishImageRef.current) wishImageRef.current.value = ""; }}
-                        style={{
-                          background: "none", border: "none", color: "var(--text-muted)",
-                          fontSize: 14, cursor: "pointer", padding: 2,
-                        }}
-                      >
-                        ✕
-                      </button>
+                {/* Image upload — 사이드바 버전. 다중 업로드 / 붙여넣기 지원 */}
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                    <input
+                      ref={wishImageRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={e => {
+                        const files = Array.from(e.target.files || []);
+                        for (const file of files) {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setWishImages((prev) => prev.length >= 4 ? prev : [...prev, ev.target.result]);
+                          reader.readAsDataURL(file);
+                        }
+                        e.target.value = "";
+                      }}
+                      style={{ display: "none" }}
+                    />
+                    <button
+                      onClick={() => wishImageRef.current?.click()}
+                      disabled={wishImages.length >= 4}
+                      style={{
+                        padding: "8px 14px", borderRadius: 8,
+                        background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                        color: "var(--text-muted)", fontSize: 12, fontWeight: 600,
+                        cursor: wishImages.length >= 4 ? "not-allowed" : "pointer",
+                        display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
+                        opacity: wishImages.length >= 4 ? 0.5 : 1,
+                      }}
+                    >
+                      🖼️ 이미지 ({wishImages.length}/4)
+                    </button>
+                  </div>
+                  {wishImages.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {wishImages.map((img, idx) => (
+                        <div key={idx} style={{ position: "relative" }}>
+                          <img src={img} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "1px solid var(--surface-border)" }} />
+                          <button
+                            onClick={() => setWishImages((prev) => prev.filter((_, i) => i !== idx))}
+                            style={{
+                              position: "absolute", top: -5, right: -5,
+                              width: 16, height: 16, borderRadius: 8,
+                              background: "rgba(239,68,68,0.95)", color: "#fff",
+                              border: "1px solid #fff", fontSize: 9, cursor: "pointer", lineHeight: 1,
+                            }}
+                          >✕</button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -6920,13 +7024,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       "linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 50%, #1e293b 100%)",
                       "linear-gradient(135deg, #14120f 0%, #3d2f1e 50%, #14120f 100%)",
                     ];
-                    // 이미지가 dataURL 이면 먼저 서버에 업로드해서 URL 로 변환.
-                    const uploadedUrl = await uploadDataUrl(wishImage);
+                    // 여러 이미지를 병렬 업로드. 첫번째가 썸네일, 전체는 ref_images.
+                    const uploaded = await Promise.all(wishImages.map((d) => uploadDataUrl(d)));
+                    const primary = uploaded[0] || null;
                     const item = {
                       id: Date.now(),
                       title: wishTitle.trim(),
                       note: wishNote.trim(),
-                      imageUrl: uploadedUrl,
+                      imageUrl: primary,
                       gradient: gradients[Math.floor(Math.random() * gradients.length)],
                       createdAt: new Date().toISOString(),
                     };
@@ -6946,7 +7051,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             description: item.note,
                             thumbnail_url: item.imageUrl,
                             status_key: "wishlist",
-                            data: { source: "wishlist", gradient: item.gradient },
+                            data: { source: "wishlist", gradient: item.gradient, ref_images: uploaded },
                             actor: actorName || null,
                           }),
                         });
@@ -6971,7 +7076,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
                     setWishTitle("");
                     setWishNote("");
-                    setWishImage(null);
+                    setWishImages([]);
                     if (wishImageRef.current) wishImageRef.current.value = "";
                   }}
                   style={{
