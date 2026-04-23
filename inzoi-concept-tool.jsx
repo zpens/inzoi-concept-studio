@@ -1,8 +1,22 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.3";
+const APP_VERSION = "1.10.4";
 const CHANGELOG = [
+  {
+    version: "1.10.4",
+    date: "2026-04-24",
+    changes: [
+      "유사 에셋 가중치 재조정 — 검증 목적(같은 종류 에셋 이미 있는지 확인) 정확도 향상",
+      "  · 이름 키워드 매칭 ×25 → ×50 (가장 강한 신호로 승격)",
+      "  · style +30 → +10, mood +20 → +5 (분위기 기반 일치는 낮춘 보조 신호로)",
+      "  · shape ×20 유지, materials ×10 유지, size +5 유지",
+      "  · colors ×15 제거 — 같은 색이라도 다른 오브젝트 매칭 잦음",
+      "  · 같은 filter -10 페널티 제거 — 검증엔 같은 종류 더 보여야 함",
+      "  · 다른 catHier lv1 -50 페널티 유지 (가구 ↔ 탑승물/건축 배제)",
+      "[기존 카드 자동 반영] 상세에서 유사 에셋 그리드 렌더 시 저장된 features 로 매번 fresh 재계산 — 예전에 분류한 카드도 새 기준으로 자동 재매칭",
+    ],
+  },
   {
     version: "1.10.3",
     date: "2026-04-23",
@@ -1979,32 +1993,24 @@ ${styleList}`;
   } catch { return null; }
 }
 
-// posmap 유사도 계산.
-// 가중치: style+30 / mood+20 / shape×20 / colors×15 / materials×10 / size+5
-// 이름 키워드 매칭 ×25 (검증 정확도 향상)
-// 카테고리 페널티: 같은 filter -10, **다른 lv1 -50** (NEW v1.9.3)
+// posmap 유사도 계산 (v1.10.4 재조정).
+// 검증 목적 → 이름이 비슷한 같은 종류 에셋이 맨 위에 오는게 핵심.
+// 가중치:
+//   이름 키워드 매칭 ×50 (dominant, v1.9.2 25→v1.10.4 50)
+//   shape ×20 (유지)
+//   materials ×10 (유지)
+//   style +10 (v1.9.x 30→v1.10.4 10, 낮춤)
+//   mood +5 (v1.9.x 20→v1.10.4 5, 낮춤)
+//   size +5 (유지)
+// 제거된 항목 (v1.10.4):
+//   colors 매칭 — 같은 색상이라도 다른 오브젝트 매칭 잦아 정확도 저해
+//   같은 filter -10 페널티 — 오히려 같은 종류 검증 목적에 역효과
+// 유지 페널티:
+//   다른 catHier lv1 (가구 vs 탑승물/건축/제작) -50 — 큰 분류 다르면 거의 무관
 function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId, userLv1) {
   if (!assetScore?.style) return -999;
   let score = 0;
-  // 1. style / mood
-  if (userFeatures.style && assetScore.style === userFeatures.style) score += 30;
-  if (userFeatures.mood && assetScore.mood === userFeatures.mood) score += 20;
-  // 2. shape
-  const ush = userFeatures.shape || [];
-  const osh = assetScore.shape || [];
-  if (ush.length > 0 && osh.length > 0) {
-    score += ush.filter((s) => osh.includes(s)).length * 20;
-  }
-  // 3. colors / materials
-  const ic = userFeatures.colors || [];
-  const oc = assetScore.colors || [];
-  score += ic.filter((c) => oc.includes(c)).length * 15;
-  const im = userFeatures.materials || [];
-  const om = assetScore.materials || [];
-  score += im.filter((m) => om.includes(m)).length * 10;
-  // 4. size
-  if (userFeatures.size && assetScore.size === userFeatures.size) score += 5;
-  // 5. 이름 키워드 매칭
+  // 1. 이름 키워드 매칭 (가장 강한 신호)
   const kws = userFeatures.keywords || [];
   if (kws.length > 0 && assetScore.name) {
     const nameLower = assetScore.name.toLowerCase();
@@ -2012,12 +2018,24 @@ function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId, userLv1)
     for (const kw of kws) {
       if (kw && nameLower.includes(kw.toLowerCase())) kwHits++;
     }
-    score += kwHits * 25;
+    score += kwHits * 50;
   }
-  // 6. 카테고리 페널티
-  // - 같은 filter 는 -10 (검증엔 같은 종류 보임 OK)
-  // - 다른 lv1 (가구 vs 탑승물 등) 은 -50 (큰 분류 다르면 거의 무관)
-  if (userCategoryId && assetScore.filter === userCategoryId) score -= 10;
+  // 2. shape
+  const ush = userFeatures.shape || [];
+  const osh = assetScore.shape || [];
+  if (ush.length > 0 && osh.length > 0) {
+    score += ush.filter((s) => osh.includes(s)).length * 20;
+  }
+  // 3. materials
+  const im = userFeatures.materials || [];
+  const om = assetScore.materials || [];
+  score += im.filter((m) => om.includes(m)).length * 10;
+  // 4. style / mood (보조 신호, 낮은 가중치)
+  if (userFeatures.style && assetScore.style === userFeatures.style) score += 10;
+  if (userFeatures.mood && assetScore.mood === userFeatures.mood) score += 5;
+  // 5. size
+  if (userFeatures.size && assetScore.size === userFeatures.size) score += 5;
+  // 6. catHier lv1 페널티 (큰 분류 다르면 배제)
   if (userLv1 && assetScore.lv1 && assetScore.lv1 !== userLv1) score -= 50;
   return score;
 }
@@ -2796,15 +2814,17 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               </div>
             )}
             {(() => {
-              // catalog_matches 우선 — posmap 유사도 기반 top-12 (자동 분류 후 저장됨).
-              // 없으면 spec.sample_thumbs (기본 카테고리 정렬) 로 fallback.
+              // v1.10.4: 저장된 features (card.data.catalog_matches.features 또는 posmap_features)
+              // 가 있으면 매번 fresh 로 재계산 — 가중치 조정 후 기존 카드도 자동 반영.
+              // features 없으면 spec.sample_thumbs (기본 카테고리 정렬) 로 fallback.
               const cm = card.data?.catalog_matches;
-              const useMatches = cm && Array.isArray(cm.items) && cm.items.length > 0;
+              const features = cm?.features || card.data?.posmap_features;
+              const fresh = features && typeof features === "object"
+                ? findSimilarCatalogAssets(features, card.data?.category, 12)
+                : [];
+              const useMatches = fresh.length > 0;
               const items = useMatches
-                ? cm.items.map((m) => {
-                    // objects.json 에서 name 을 클라 사이드에 다 갖고있지 않아
-                    // sample_thumbs 에서 매칭 가능하면 이름을 땅겨온다.
-                    // 없으면 id 를 그대로 표시 (대부분 spec 기반이라 존재).
+                ? fresh.map((m) => {
                     const fromSpec = spec.sample_thumbs?.find((s) => s.id === m.id);
                     return {
                       id: m.id,
