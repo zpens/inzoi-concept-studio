@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.8.3";
+const APP_VERSION = "1.8.4";
 const CHANGELOG = [
+  {
+    version: "1.8.4",
+    date: "2026-04-23",
+    changes: [
+      "카탈로그 상세를 iframe 대신 네이티브 모달로 렌더 — /api/object-detail/:id 가 해당 에셋 데이터만 내려주고 클라이언트가 직접 그림 (전체 카탈로그 페이지 로드 없음, 훨씬 가볍고 빠름)",
+      "네이티브 모달: 아이콘 200×200, 이름/설명/필터/가격/태그/스타일태그/재질/속성, 같은 필터 변형 최대 10개 썸네일 — 클릭 시 모달 내에서 이동",
+      "[버그 수정] 완료 카드 '🔓 재오픈' 버튼이 실제로 잠금 풀리지 않던 문제 — 서버 updateCardField SQL 의 COALESCE 가 null 바인딩을 '변경 없음' 으로 처리. body.confirmed_at === null 일 때 별도 UPDATE 로 NULL 강제 (confirmed_by 도 동시 클리어)",
+    ],
+  },
   {
     version: "1.8.3",
     date: "2026-04-23",
@@ -3186,6 +3195,211 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") 
     cpy.sort((a, b) => (b[dateKey] || "").localeCompare(a[dateKey] || ""));
   }
   return cpy;
+}
+
+// inzoiObjectList 에셋 상세 모달 — /api/object-detail/:id fetch → 네이티브 렌더.
+// 카탈로그 전체 페이지를 로드하지 않고 해당 에셋 정보만 보여준다.
+function CatalogDetailModal({ id, onClose, onOpenSibling, onOpenImage }) {
+  const [data, setData] = React.useState(null);
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError(null);
+    (async () => {
+      try {
+        const r = await fetch(`/api/object-detail/${encodeURIComponent(id)}`);
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          if (!cancelled) setError(body.error || `http ${r.status}`);
+          return;
+        }
+        const d = await r.json();
+        if (!cancelled) setData(d);
+      } catch (e) {
+        if (!cancelled) setError(e.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
+
+  // ESC 닫기
+  React.useEffect(() => {
+    const h = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const row = { display: "flex", fontSize: 12, marginBottom: 6 };
+  const label = { width: 90, fontWeight: 700, color: "var(--text-muted)" };
+  const value = { flex: 1, color: "var(--text-main)", lineHeight: 1.5 };
+
+  return (
+    <>
+      <div className="sidebar-overlay" onClick={onClose} style={{ zIndex: 299 }} />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+        width: 640, maxWidth: "94vw", maxHeight: "88vh",
+        background: "#fff", border: "1px solid var(--surface-border)",
+        borderRadius: 14, zIndex: 300,
+        boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        <div style={{
+          padding: "12px 18px", borderBottom: "1px solid var(--surface-border)",
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+            📦 inzoi 카탈로그 에셋
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>
+            {id}
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              marginLeft: "auto",
+              width: 32, height: 32, borderRadius: 8,
+              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+              color: "var(--text-muted)", fontSize: 16, cursor: "pointer",
+            }}
+          >✕</button>
+        </div>
+        <div style={{ padding: 20, overflow: "auto", flex: 1 }}>
+          {error ? (
+            <div style={{ color: "#ef4444", fontSize: 13, padding: 20, textAlign: "center" }}>
+              상세 불러오기 실패: {error}
+            </div>
+          ) : !data ? (
+            <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 40, textAlign: "center" }}>
+              로딩 중…
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 20, marginBottom: 20 }}>
+                <img
+                  src={data.icon_url}
+                  alt={data.name}
+                  onClick={() => onOpenImage?.(data.icon_url)}
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  style={{
+                    width: 200, height: 200, objectFit: "contain",
+                    background: "rgba(0,0,0,0.04)", borderRadius: 10,
+                    border: "1px solid var(--surface-border)",
+                    cursor: onOpenImage ? "zoom-in" : "default",
+                  }}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)", marginBottom: 6 }}>
+                    {data.name}
+                  </div>
+                  {data.desc && (
+                    <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.7, marginBottom: 12 }}>
+                      {data.desc}
+                    </div>
+                  )}
+                  <div style={row}><span style={label}>필터</span><span style={value}>{data.filter || "—"}</span></div>
+                  {data.category && data.category !== "None" && (
+                    <div style={row}><span style={label}>카테고리</span><span style={value}>{data.category}</span></div>
+                  )}
+                  {data.price != null && (
+                    <div style={row}><span style={label}>가격</span><span style={value}>{data.price.toLocaleString()}원</span></div>
+                  )}
+                  {data.tags.length > 0 && (
+                    <div style={row}>
+                      <span style={label}>태그</span>
+                      <span style={value}>
+                        {data.tags.map((t) => (
+                          <span key={t} style={{
+                            display: "inline-block", marginRight: 4, marginBottom: 4,
+                            padding: "1px 7px", borderRadius: 8, fontSize: 10,
+                            background: "rgba(7,110,232,0.08)", color: "var(--primary)", fontWeight: 600,
+                          }}>{t}</span>
+                        ))}
+                      </span>
+                    </div>
+                  )}
+                  {data.style_tags.length > 0 && (
+                    <div style={row}>
+                      <span style={label}>스타일 태그</span>
+                      <span style={value}>
+                        {data.style_tags.map((t) => (
+                          <span key={t} style={{
+                            display: "inline-block", marginRight: 4, marginBottom: 4,
+                            padding: "1px 7px", borderRadius: 8, fontSize: 10,
+                            background: "rgba(234,179,8,0.12)", color: "#b45309", fontWeight: 600,
+                          }}>{t}</span>
+                        ))}
+                      </span>
+                    </div>
+                  )}
+                  {data.mats.length > 0 && (
+                    <div style={row}>
+                      <span style={label}>재질 세트</span>
+                      <span style={{ ...value, fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace" }}>
+                        {data.mats.join(" · ")}
+                      </span>
+                    </div>
+                  )}
+                  {(data.unlockable || data.cst) && (
+                    <div style={{ ...row, marginTop: 8 }}>
+                      <span style={label}>속성</span>
+                      <span style={value}>
+                        {data.cst && <span style={{ marginRight: 6 }}>🎨 커스터마이즈</span>}
+                        {data.unlockable && <span>🔒 조건부 해금</span>}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {data.siblings.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>
+                    같은 필터의 다른 변형 ({data.siblings.length})
+                  </div>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))",
+                    gap: 6,
+                  }}>
+                    {data.siblings.map((s) => (
+                      <div
+                        key={s.id}
+                        onClick={() => onOpenSibling?.(s.id)}
+                        title={`${s.name}${s.price ? ` · ${s.price.toLocaleString()}원` : ""}`}
+                        className="hover-lift"
+                        style={{
+                          cursor: "pointer", borderRadius: 6, overflow: "hidden",
+                          border: "1px solid var(--surface-border)", background: "#fff",
+                        }}
+                      >
+                        <div style={{ width: "100%", aspectRatio: "1/1", background: "rgba(0,0,0,0.03)" }}>
+                          <img
+                            src={s.icon_url}
+                            alt={s.name}
+                            loading="lazy"
+                            onError={(e) => { e.currentTarget.style.display = "none"; }}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                          />
+                        </div>
+                        <div style={{
+                          padding: "3px 5px", fontSize: 9, color: "var(--text-muted)",
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          textAlign: "center",
+                        }}>{s.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
 }
 
 // 업데이트 일정 필드 — 어셋 정보 섹션 위에 별도로 노출. 자유 입력 + datalist.
@@ -8811,65 +9025,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         );
       })()}
 
-      {/* inzoiObjectList 카탈로그 상세 iframe 모달 — 새 탭 대신 현재 페이지에서 조회. */}
-      {catalogItemId !== null && (() => {
-        const base = typeof window !== "undefined"
-          ? `${window.location.protocol}//${window.location.hostname}:8080`
-          : "http://localhost:8080";
-        const src = catalogItemId ? `${base}/#item=${encodeURIComponent(catalogItemId)}` : `${base}/`;
-        return (
-          <>
-            <div className="sidebar-overlay" onClick={() => setCatalogItemId(null)} style={{ zIndex: 299 }} />
-            <div style={{
-              position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-              width: "92vw", height: "88vh",
-              background: "#fff", border: "1px solid var(--surface-border)",
-              borderRadius: 14, zIndex: 300,
-              boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
-              display: "flex", flexDirection: "column", overflow: "hidden",
-            }}>
-              <div style={{
-                padding: "10px 16px", borderBottom: "1px solid var(--surface-border)",
-                display: "flex", alignItems: "center", gap: 10,
-              }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
-                  📦 inzoi 에셋 카탈로그
-                </span>
-                {catalogItemId && (
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>
-                    {catalogItemId}
-                  </span>
-                )}
-                <a
-                  href={src}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="새 탭에서 열기"
-                  style={{
-                    marginLeft: "auto",
-                    padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
-                    background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                    color: "var(--primary)", textDecoration: "none",
-                  }}
-                >↗ 새 탭</a>
-                <button
-                  onClick={() => setCatalogItemId(null)}
-                  style={{
-                    width: 32, height: 32, borderRadius: 8,
-                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                    color: "var(--text-muted)", fontSize: 16, cursor: "pointer",
-                  }}
-                >✕</button>
-              </div>
-              <iframe
-                src={src}
-                title="inzoi 에셋 카탈로그"
-                style={{ flex: 1, width: "100%", border: "none", background: "#fff" }}
-              />
-            </div>
-          </>
-        );
-      })()}
+      {/* inzoiObjectList 에셋 상세 모달 (네이티브) — 카탈로그 전체 페이지가 아닌
+          /api/object-detail/:id 로 해당 에셋 데이터만 fetch 해서 가볍게 렌더. */}
+      {catalogItemId && (
+        <CatalogDetailModal
+          id={catalogItemId}
+          onClose={() => setCatalogItemId(null)}
+          onOpenSibling={(id) => setCatalogItemId(id)}
+          onOpenImage={setPreviewImage}
+        />
+      )}
 
       {/* 이미지 원본 해상도 뷰어 (lightbox) — 배경 클릭 / ESC / ← → 키 지원.
           상세 모달이 열려 있으면 해당 카드의 모든 이미지(썸네일, 참조이미지,

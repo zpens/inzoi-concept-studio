@@ -279,6 +279,72 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
 
+// 단일 에셋 상세 조회용 캐시 — objects.json + meta.objTags 병합. 1시간 TTL.
+let _objectsCache = { fetchedAt: 0, byId: null, objTags: null };
+async function loadObjectsCache(base) {
+  const now = Date.now();
+  if (_objectsCache.byId && now - _objectsCache.fetchedAt < META_CACHE_TTL) return _objectsCache;
+  const [r1, r2] = await Promise.all([
+    fetch(`${base}/data/objects.json`),
+    fetch(`${base}/data/meta.json`),
+  ]);
+  if (!r1.ok) throw new Error(`objects.json upstream ${r1.status}`);
+  const objects = await r1.json();
+  const meta = r2.ok ? await r2.json() : {};
+  const byId = new Map();
+  for (const o of objects) { if (o?.id) byId.set(o.id, o); }
+  _objectsCache = { fetchedAt: now, byId, objTags: meta.objTags || {} };
+  return _objectsCache;
+}
+
+// /api/object-detail/:id — 특정 에셋의 상세 정보 JSON 반환.
+app.get("/api/object-detail/:id", async (c) => {
+  const base = process.env.INZOI_OBJECT_LIST_URL || "http://localhost:8080";
+  const rawId = c.req.param("id") || "";
+  const id = rawId.replace(/[^A-Za-z0-9_\-]/g, "");
+  if (!id) return c.json({ error: "invalid id" }, 400);
+  try {
+    const { byId, objTags } = await loadObjectsCache(base);
+    const o = byId.get(id);
+    if (!o) return c.json({ error: "not found" }, 404);
+    const tags = typeof o.tags === "string"
+      ? o.tags.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const styleTags = (objTags[o.id] || []).filter(Boolean);
+    const mats = Array.isArray(o.mats) ? o.mats : [];
+    // 같은 filter 안의 다른 변형 (최대 10개, 자기 제외)
+    const siblings = [];
+    for (const v of byId.values()) {
+      if (v.id === o.id) continue;
+      if (v.filter !== o.filter) continue;
+      siblings.push({
+        id: v.id,
+        name: v.name || v.id,
+        icon_url: `/api/object-icon/${encodeURIComponent(v.icon || v.id)}`,
+        price: v.price ?? null,
+      });
+      if (siblings.length >= 10) break;
+    }
+    return c.json({
+      id: o.id,
+      name: o.name || o.id,
+      desc: o.desc || null,
+      category: o.category || null,
+      filter: o.filter || null,
+      icon_url: `/api/object-icon/${encodeURIComponent(o.icon || o.id)}`,
+      price: typeof o.price === "number" ? o.price : null,
+      tags, style_tags: styleTags, mats,
+      unlockable: !!o.unlockable,
+      cst: !!o.cst,
+      siblings,
+      source_hash_url: `${base}/#item=${encodeURIComponent(o.id)}`,
+    });
+  } catch (err) {
+    console.warn("object-detail 실패:", err.message);
+    return c.json({ error: err.message }, 502);
+  }
+});
+
 // /api/object-icon/:id — inzoiObjectList 의 /img/{id}.PNG 를 동일 오리진으로 프록시.
 // 브라우저가 cross-origin / 혼합 콘텐츠 걱정 없이 아이콘 이미지 로드 가능.
 // 24시간 브라우저 캐시 허용.
@@ -634,6 +700,12 @@ app.patch("/api/projects/:slug/cards/:id", async (c) => {
     body.updated_by ?? body.actor ?? null,
     id, p.id
   );
+  // updateCardField 의 SQL 이 COALESCE 를 써서 null 바인딩은 "변경 없음" 으로 처리됨.
+  // 재오픈 (confirmed_at/confirmed_by 를 명시적 NULL 로 지우는 경우) 는 별도 SQL 로 강제.
+  if (body.confirmed_at === null) {
+    db.prepare("UPDATE cards SET confirmed_at = NULL, confirmed_by = NULL, updated_at = datetime('now') WHERE id = ? AND project_id = ?")
+      .run(id, p.id);
+  }
   stmts.touchProject.run(p.id);
 
   // 활동 이력 기록
