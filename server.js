@@ -156,6 +156,12 @@ const stmts = {
   listProfiles: db.prepare("SELECT id, name, icon, created_at FROM profiles ORDER BY created_at ASC"),
   insertProfile: db.prepare("INSERT INTO profiles (id, name, icon) VALUES (?, ?, ?)"),
   getProfileByName: db.prepare("SELECT id, name, icon, created_at FROM profiles WHERE name = ?"),
+  getProfileById: db.prepare("SELECT id, name, icon, created_at FROM profiles WHERE id = ?"),
+  updateProfile: db.prepare("UPDATE profiles SET name = ?, icon = ? WHERE id = ?"),
+  // 프로필 이름 변경 시 기존 작성자 필드도 일괄 갱신 (orphan 방지).
+  renameCommentsActor: db.prepare("UPDATE card_comments SET actor = ? WHERE actor = ?"),
+  renameCardActivitiesActor: db.prepare("UPDATE card_activities SET actor = ? WHERE actor = ?"),
+  renameActivityLogActor: db.prepare("UPDATE activity_log SET actor = ? WHERE actor = ?"),
   listActivitiesByCard: db.prepare("SELECT * FROM card_activities WHERE card_id = ? ORDER BY created_at DESC LIMIT 200"),
 
   insertComment: db.prepare("INSERT INTO card_comments (id, card_id, body, actor) VALUES (?, ?, ?, ?)"),
@@ -810,7 +816,7 @@ app.get("/api/profiles", (c) => {
 app.post("/api/profiles", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const name = (body.name || "").trim();
-  const icon = (body.icon || "🧑").slice(0, 4); // 이모지 1~2자
+  const icon = (body.icon || "🧑").slice(0, 10); // ZWJ 시퀀스 대비 여유 있게
   if (!name) return c.json({ error: "name required" }, 400);
   if (name.length > 30) return c.json({ error: "name too long (max 30)" }, 400);
   const existing = stmts.getProfileByName.get(name);
@@ -818,6 +824,33 @@ app.post("/api/profiles", async (c) => {
   const id = randomUUID();
   stmts.insertProfile.run(id, name, icon);
   return c.json(stmts.getProfileByName.get(name), 201);
+});
+
+// PATCH /api/profiles/:id — 이름 / 아이콘 수정. 이름 변경 시 기존 작성자 필드 일괄 갱신.
+// 삭제는 지원하지 않음 (사용자 요구사항).
+app.patch("/api/profiles/:id", async (c) => {
+  const id = c.req.param("id");
+  const current = stmts.getProfileById.get(id);
+  if (!current) return c.json({ error: "profile not found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const name = (body.name ?? current.name).trim();
+  const icon = (body.icon ?? current.icon).slice(0, 10);
+  if (!name) return c.json({ error: "name required" }, 400);
+  if (name.length > 30) return c.json({ error: "name too long (max 30)" }, 400);
+  // 이름 충돌 검사 (자기 자신 제외).
+  const other = stmts.getProfileByName.get(name);
+  if (other && other.id !== id) return c.json({ error: "name already used by another profile" }, 409);
+  const nameChanged = name !== current.name;
+  const tx = db.transaction(() => {
+    stmts.updateProfile.run(name, icon, id);
+    if (nameChanged) {
+      stmts.renameCommentsActor.run(name, current.name);
+      stmts.renameCardActivitiesActor.run(name, current.name);
+      stmts.renameActivityLogActor.run(name, current.name);
+    }
+  });
+  tx();
+  return c.json(stmts.getProfileById.get(id));
 });
 
 // PATCH /api/projects/:slug/cards/:id/comments/:commentId — 본인 댓글 수정.

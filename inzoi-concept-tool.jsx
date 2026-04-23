@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.10";
+const APP_VERSION = "1.10.11";
 const CHANGELOG = [
+  {
+    version: "1.10.11",
+    date: "2026-04-24",
+    changes: [
+      "프로필 편집 가능 — 드롭다운 각 행 오른쪽 ✏️ 클릭 시 인라인 편집 (이름 + 아이콘), Enter 저장 / Esc 취소 / 저장 버튼",
+      "이름 변경 시 서버가 card_comments / card_activities / activity_log 의 actor 필드를 트랜잭션으로 일괄 갱신 — 기존 댓글·활동 기록도 새 이름으로 자동 연결 (orphan 방지)",
+      "이름 충돌 (다른 프로필이 같은 이름 사용) 시 409 반환",
+      "삭제는 여전히 지원 안 함 (사용자 요구사항 유지)",
+    ],
+  },
   {
     version: "1.10.10",
     date: "2026-04-24",
@@ -2420,6 +2430,19 @@ async function fetchProfiles() {
 async function createProfile(name, icon) {
   const r = await fetch("/api/profiles", {
     method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, icon }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || `profile ${r.status}`);
+  }
+  return r.json();
+}
+
+async function updateProfile(id, name, icon) {
+  const r = await fetch(`/api/profiles/${id}`, {
+    method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name, icon }),
   });
@@ -5249,17 +5272,18 @@ const PROFILE_ICON_CHOICES = [
   "👴🏼","👵🏾",
 ];
 
-// 헤더 프로필 선택기 — 현재 프로필 표시 + 드롭다운으로 변경 / ＋ 새 프로필.
-function ProfilePicker({ profiles, current, onChange, onCreate }) {
+// 헤더 프로필 선택기 — 현재 프로필 표시 + 드롭다운으로 변경 / ＋ 새 프로필 / ✏️ 편집.
+function ProfilePicker({ profiles, current, onChange, onCreate, onEdit }) {
   const [open, setOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
+  const [editingId, setEditingId] = React.useState(null); // 편집 중인 프로필 id
   const [newName, setNewName] = React.useState("");
   const [newIcon, setNewIcon] = React.useState(PROFILE_ICON_CHOICES[0]);
   const wrapRef = React.useRef(null);
 
   React.useEffect(() => {
     if (!open) return;
-    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setCreating(false); } };
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setCreating(false); setEditingId(null); } };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
@@ -5271,6 +5295,22 @@ function ProfilePicker({ profiles, current, onChange, onCreate }) {
       const p = await onCreate(n, newIcon);
       if (p) { onChange(p); setOpen(false); setCreating(false); setNewName(""); }
     } catch (e) { alert("프로필 생성 실패: " + e.message); }
+  };
+
+  const startEdit = (p) => {
+    setEditingId(p.id);
+    setNewName(p.name);
+    setNewIcon(p.icon);
+    setCreating(false);
+  };
+  const submitEdit = async () => {
+    const n = newName.trim();
+    if (!n || !editingId) return;
+    try {
+      await onEdit?.(editingId, n, newIcon);
+      setEditingId(null);
+      setNewName("");
+    } catch (e) { alert("프로필 수정 실패: " + e.message); }
   };
 
   return (
@@ -5310,21 +5350,95 @@ function ProfilePicker({ profiles, current, onChange, onCreate }) {
             )}
             {profiles.map((p) => {
               const active = current?.id === p.id;
+              if (editingId === p.id) {
+                return (
+                  <div key={p.id} style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(7,110,232,0.06)", marginBottom: 4 }}>
+                    <input
+                      autoFocus
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); submitEdit(); }
+                        else if (e.key === "Escape") { setEditingId(null); setNewName(""); }
+                      }}
+                      placeholder="이름"
+                      style={{
+                        width: "100%", padding: "5px 7px", borderRadius: 6,
+                        border: "1px solid var(--surface-border)", outline: "none",
+                        fontSize: 12, boxSizing: "border-box", marginBottom: 6,
+                      }}
+                    />
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 6 }}>
+                      {PROFILE_ICON_CHOICES.map((ic) => (
+                        <button
+                          key={ic}
+                          onClick={() => setNewIcon(ic)}
+                          style={{
+                            aspectRatio: "1/1", padding: 0,
+                            background: newIcon === ic ? "rgba(7,110,232,0.14)" : "transparent",
+                            border: `1px solid ${newIcon === ic ? "var(--primary)" : "var(--surface-border)"}`,
+                            borderRadius: 5, cursor: "pointer", fontSize: 14,
+                          }}
+                        >{ic}</button>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button
+                        onClick={submitEdit}
+                        disabled={!newName.trim()}
+                        style={{
+                          flex: 1, padding: "4px 0", borderRadius: 5, border: "none",
+                          background: newName.trim() ? "var(--primary)" : "rgba(0,0,0,0.08)",
+                          color: newName.trim() ? "#fff" : "var(--text-muted)",
+                          fontSize: 11, fontWeight: 700, cursor: newName.trim() ? "pointer" : "not-allowed",
+                        }}
+                      >저장</button>
+                      <button
+                        onClick={() => { setEditingId(null); setNewName(""); }}
+                        style={{
+                          padding: "4px 10px", borderRadius: 5,
+                          background: "transparent", border: "1px solid var(--surface-border)",
+                          color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                        }}
+                      >취소</button>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div
                   key={p.id}
-                  onClick={() => { onChange(p); setOpen(false); }}
                   style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "7px 10px", borderRadius: 8, cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 6px 7px 10px", borderRadius: 8,
                     background: active ? "rgba(7,110,232,0.1)" : "transparent",
                   }}
                   onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
                 >
-                  <span style={{ fontSize: 18 }}>{p.icon}</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--primary)" : "var(--text-main)", flex: 1 }}>{p.name}</span>
-                  {active && <span style={{ fontSize: 11, color: "var(--primary)" }}>✓</span>}
+                  <div
+                    onClick={() => { onChange(p); setOpen(false); }}
+                    style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, cursor: "pointer", minWidth: 0 }}
+                  >
+                    <span style={{ fontSize: 18 }}>{p.icon}</span>
+                    <span style={{
+                      fontSize: 13, fontWeight: 600, flex: 1,
+                      color: active ? "var(--primary)" : "var(--text-main)",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>{p.name}</span>
+                    {active && <span style={{ fontSize: 11, color: "var(--primary)" }}>✓</span>}
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startEdit(p); }}
+                    title={`'${p.name}' 수정`}
+                    style={{
+                      width: 22, height: 22, borderRadius: 11,
+                      background: "transparent", border: "none",
+                      color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >✏️</button>
                 </div>
               );
             })}
@@ -5775,6 +5889,20 @@ export default function InZOIConceptTool() {
   const handleCreateProfile = async (name, icon) => {
     const p = await createProfile(name, icon);
     setProfiles((prev) => prev.find((x) => x.id === p.id) ? prev : [...prev, p]);
+    return p;
+  };
+  // 프로필 편집 (이름 변경 시 서버가 card_comments / card_activities / activity_log 의
+  // actor 필드를 일괄 갱신해 기존 기록도 새 이름으로 연결됨).
+  const handleEditProfile = async (id, name, icon) => {
+    const p = await updateProfile(id, name, icon);
+    setProfiles((prev) => prev.map((x) => x.id === id ? p : x));
+    // 이름이 바뀌었으면 상세 카드를 새로 불러와 댓글/활동에 반영된 새 이름 보여주기.
+    if (detailCard) {
+      try {
+        const d = await fetchCardDetail(projectSlug, detailCard.id);
+        if (d) setDetailCard(d);
+      } catch {}
+    }
     return p;
   };
   // actor 이름은 프로필에서 파생 — 프로필 없으면 localStorage 의 예전 inzoi_actor_name fallback.
@@ -6701,6 +6829,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             current={currentProfile}
             onChange={(p) => setCurrentProfileId(p.id)}
             onCreate={handleCreateProfile}
+            onEdit={handleEditProfile}
           />
         </div>
       </header>
