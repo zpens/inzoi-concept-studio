@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.9";
+const APP_VERSION = "1.10.10";
 const CHANGELOG = [
+  {
+    version: "1.10.10",
+    date: "2026-04-24",
+    changes: [
+      "헤더 우측 3개 버튼(아카이브 / API 설정 / 새 시안) 컴팩트화 — padding 10→5, fontSize 13-14→11-12, 아이콘도 한 단계 축소",
+      "헤더 검색창 폭 280→238px (약 15% 감소)",
+      "프로필 아이콘 후보 16개 → 21개로 확장. 피부색(light / medium / dark) × 남/녀 기본, 빨강머리·곱슬·흰머리·탈모·수염·금발·안경(🤓/🧐)·어르신 포함 — 사용자 구분감 강화",
+      "프로필 선택 그리드 8→7 열 (21 = 7×3 행)",
+    ],
+  },
   {
     version: "1.10.9",
     date: "2026-04-24",
@@ -5217,8 +5227,27 @@ function JobQueueCard({ job, active, onSelect, onRemove }) {
   );
 }
 
-// 프로필 아이콘 후보 — 간단한 사람 머리 이모지.
-const PROFILE_ICON_CHOICES = ["🧑","👤","👨","👩","🧔","👱","👴","👵","🧓","🧒","🤓","😊","🙂","🦊","🐻","🐰"];
+// 프로필 아이콘 후보 — 피부색 / 헤어색 / 헤어 스타일 / 안경 조합으로 구분감 강화 (v1.10.10).
+// 일부 플랫폼은 ZWJ 시퀀스 렌더링이 제한될 수 있음 (Windows 11 기본 이모지 폰트는 지원).
+const PROFILE_ICON_CHOICES = [
+  // 피부색 3단 × 남녀 (기본 헤어)
+  "👨🏻","👨🏽","👨🏿",
+  "👩🏻","👩🏽","👩🏿",
+  // 빨강 머리
+  "👨🏻‍🦰","👩🏼‍🦰",
+  // 곱슬 머리
+  "👨🏼‍🦱","👩🏾‍🦱",
+  // 흰머리 / 탈모
+  "👨🏻‍🦳","👩🏿‍🦳","👨🏾‍🦲",
+  // 수염
+  "🧔🏻","🧔🏿",
+  // 금발
+  "👱🏻‍♀️","👱🏿‍♂️",
+  // 안경 (nerd / monocle)
+  "🤓","🧐",
+  // 어르신
+  "👴🏼","👵🏾",
+];
 
 // 헤더 프로필 선택기 — 현재 프로필 표시 + 드롭다운으로 변경 / ＋ 새 프로필.
 function ProfilePicker({ profiles, current, onChange, onCreate }) {
@@ -5319,7 +5348,7 @@ function ProfilePicker({ profiles, current, onChange, onCreate }) {
                 }}
               />
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>아이콘</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4, marginBottom: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 10 }}>
                 {PROFILE_ICON_CHOICES.map((ic) => (
                   <button
                     key={ic}
@@ -6432,7 +6461,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 }}
                 placeholder="전체 카드 검색 (제목 / 설명 / 태그 / 카테고리)"
                 style={{
-                  width: 280, padding: "8px 28px 8px 32px", borderRadius: 10,
+                  width: 238, padding: "8px 28px 8px 32px", borderRadius: 10,
                   border: "1px solid var(--surface-border)",
                   background: "rgba(0,0,0,0.03)",
                   fontSize: 12, color: "var(--text-main)", outline: "none", boxSizing: "border-box",
@@ -6622,30 +6651,30 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             }}
             className="hover-lift"
             style={{
-              padding: "10px 14px", borderRadius: 12,
+              padding: "5px 10px", borderRadius: 8,
               background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-              color: "var(--text-muted)", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6,
+              color: "var(--text-muted)", fontSize: 11, fontWeight: 600, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4,
             }}
             title="아카이브된 카드 목록"
           >
-            <span style={{ fontSize: 14 }}>🗄️</span>
+            <span style={{ fontSize: 12 }}>🗄️</span>
             아카이브
           </button>
           <button
             onClick={() => setShowApiSettings(true)}
             className="hover-lift"
             style={{
-              padding: "10px 18px", borderRadius: 12,
+              padding: "5px 10px", borderRadius: 8,
               background: geminiApiKey ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
               border: `1px solid ${geminiApiKey ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
               color: geminiApiKey ? "#10b981" : "#ef4444",
-              fontSize: 13, fontWeight: 600, cursor: "pointer",
+              fontSize: 11, fontWeight: 600, cursor: "pointer",
               transition: "all 0.3s",
-              display: "flex", alignItems: "center", gap: 6,
+              display: "flex", alignItems: "center", gap: 4,
             }}
           >
-            <span style={{ fontSize: 14 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
+            <span style={{ fontSize: 12 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
             API 설정
           </button>
           {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && (
@@ -6653,17 +6682,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               onClick={() => { setActiveTab("create"); spawnNewJob(); }}
               className="hover-lift"
               style={{
-                padding: "10px 20px", borderRadius: 12,
+                padding: "5px 12px", borderRadius: 8,
                 background: "linear-gradient(135deg, var(--primary), var(--secondary))",
                 border: "none",
-                color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
                 transition: "all 0.3s",
-                boxShadow: "0 4px 14px var(--primary-glow)",
-                display: "flex", alignItems: "center", gap: 6,
+                boxShadow: "0 3px 10px var(--primary-glow)",
+                display: "flex", alignItems: "center", gap: 4,
               }}
               title="새 시안 작업 추가 (현재 작업은 유지)"
             >
-              <span style={{ fontSize: 16, lineHeight: 1 }}>＋</span> 새 시안
+              <span style={{ fontSize: 13, lineHeight: 1 }}>＋</span> 새 시안
             </button>
           )}
           {/* 프로필 선택기 — 헤더 맨 오른쪽 끝 (v1.10.8) */}
