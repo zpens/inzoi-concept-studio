@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.3";
+const APP_VERSION = "1.9.4";
 const CHANGELOG = [
+  {
+    version: "1.9.4",
+    date: "2026-04-23",
+    changes: [
+      "유사 에셋 썸네일에서 ↗ 바로가기 배지와 NN% 유사도 배지 제거 — 깔끔한 아이콘만 표시",
+    ],
+  },
   {
     version: "1.9.3",
     date: "2026-04-23",
@@ -2789,23 +2796,6 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                               onError={(e) => { e.currentTarget.style.display = "none"; }}
                               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                             />
-                            {pct != null && (
-                              <div style={{
-                                position: "absolute", bottom: 3, left: 3,
-                                padding: "1px 5px", borderRadius: 4,
-                                background: pct >= 70 ? "rgba(34,197,94,0.9)" : pct >= 40 ? "rgba(234,179,8,0.9)" : "rgba(0,0,0,0.6)",
-                                color: "#fff", fontSize: 9, fontWeight: 700, pointerEvents: "none",
-                              }}>{pct}%</div>
-                            )}
-                            <div style={{
-                              position: "absolute", top: 3, right: 3,
-                              width: 16, height: 16, borderRadius: 8,
-                              background: "rgba(7,110,232,0.85)", color: "#fff",
-                              fontSize: 9, fontWeight: 700,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              pointerEvents: "none",
-                              opacity: 0.9,
-                            }} title="카탈로그 상세">↗</div>
                           </div>
                           <div style={{
                             padding: "3px 5px",
