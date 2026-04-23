@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.5";
+const APP_VERSION = "1.10.6";
 const CHANGELOG = [
+  {
+    version: "1.10.6",
+    date: "2026-04-24",
+    changes: [
+      "상세 모달 댓글 편집 가능 — 본인이 쓴 댓글은 본문 클릭 또는 ✏️ 로 인라인 textarea 전환, Ctrl/⌘+Enter 저장 / Esc 취소 / blur 자동 저장",
+      "서버: PATCH /api/projects/:slug/cards/:id/comments/:commentId — actor 일치 검사, 빈 본문 거부, 'comment_edited' 활동 기록",
+      "CommentRow 컴포넌트로 분리 — 편집 / 삭제 ✏️ ✕ 한 곳에 모음",
+    ],
+  },
   {
     version: "1.10.5",
     date: "2026-04-24",
@@ -2380,6 +2389,20 @@ async function deleteCardComment(slug, cardId, commentId, actor) {
   return r.json();
 }
 
+// 본인 댓글 수정 — 서버가 actor 일치 검사.
+async function patchCardComment(slug, cardId, commentId, body, actor) {
+  const r = await fetch(`/api/projects/${slug}/cards/${cardId}/comments/${commentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body, actor }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || `edit ${r.status}`);
+  }
+  return r.json();
+}
+
 const STATUS_META = {
   wishlist: { label: "아이디어",   icon: "⭐", color: "#f59e0b" },
   drafting: { label: "시안 생성",  icon: "✨", color: "#7c3aed" },
@@ -4640,6 +4663,110 @@ function CardDescriptionEditor({ card, projectSlug, actor, disabled, onSaved }) 
       onMouseOut={(e) => { e.currentTarget.style.borderColor = "transparent"; }}
     >
       {card.description || <span style={{ color: "var(--text-muted)" }}>(설명 없음 — 클릭해서 입력)</span>}
+    </div>
+  );
+}
+
+// 상세 모달 댓글 한 줄 — 본인 댓글은 인라인 편집 + 삭제 가능.
+// 편집 시 textarea, Ctrl/⌘+Enter 저장, Esc 취소, blur 자동 저장.
+function CommentRow({ comment, projectSlug, cardId, actorName, onChanged }) {
+  const mine = !!actorName && comment.actor === actorName;
+  const [editing, setEditing] = React.useState(false);
+  const [value, setValue] = React.useState(comment.body || "");
+  const [saving, setSaving] = React.useState(false);
+  const areaRef = React.useRef(null);
+  React.useEffect(() => { setValue(comment.body || ""); }, [comment.id, comment.body]);
+  React.useEffect(() => { if (editing) { areaRef.current?.focus(); areaRef.current?.select(); } }, [editing]);
+
+  const commit = async () => {
+    const next = value.trim();
+    if (!next) { setValue(comment.body || ""); setEditing(false); return; }
+    if (next === comment.body) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await patchCardComment(projectSlug, cardId, comment.id, next, actorName);
+      setEditing(false);
+      await onChanged?.();
+    } catch (e) { alert("댓글 수정 실패: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{
+      padding: "8px 12px", borderRadius: 10,
+      background: "rgba(0,0,0,0.03)", fontSize: 13,
+      position: "relative",
+    }}>
+      <div style={{
+        fontSize: 11, color: "var(--text-muted)", marginBottom: 4,
+        paddingRight: mine ? 46 : 0,
+      }}>
+        {comment.actor || "익명"} · {comment.created_at?.slice(0, 16).replace("T", " ")}
+      </div>
+      {editing && mine ? (
+        <textarea
+          ref={areaRef}
+          value={value}
+          disabled={saving}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if ((e.key === "Enter") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commit(); }
+            else if (e.key === "Escape") { setValue(comment.body || ""); setEditing(false); }
+          }}
+          placeholder="Ctrl/⌘+Enter 저장, Esc 취소"
+          style={{
+            width: "100%", minHeight: 60,
+            padding: "6px 8px", borderRadius: 8,
+            border: "1px solid var(--primary)", outline: "none",
+            fontSize: 13, color: "var(--text-main)", lineHeight: 1.6,
+            fontFamily: "inherit", resize: "vertical", boxSizing: "border-box",
+            background: "#fff",
+          }}
+        />
+      ) : (
+        <div
+          onClick={() => { if (mine && !editing) setEditing(true); }}
+          title={mine ? "클릭해서 수정" : undefined}
+          style={{
+            whiteSpace: "pre-wrap", wordBreak: "break-word",
+            cursor: mine ? "text" : "default",
+          }}
+        >{comment.body}</div>
+      )}
+      {mine && !editing && (
+        <div style={{
+          position: "absolute", top: 4, right: 4,
+          display: "flex", gap: 2,
+        }}>
+          <button
+            onClick={() => setEditing(true)}
+            title="내 댓글 수정"
+            style={{
+              width: 18, height: 18, borderRadius: 9,
+              border: "none", background: "transparent",
+              color: "var(--text-muted)", fontSize: 10, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+            }}
+          >✏️</button>
+          <button
+            onClick={async () => {
+              if (!confirm("이 댓글을 삭제할까요?")) return;
+              try {
+                await deleteCardComment(projectSlug, cardId, comment.id, actorName);
+                await onChanged?.();
+              } catch (e) { alert("댓글 삭제 실패: " + e.message); }
+            }}
+            title="내 댓글 삭제"
+            style={{
+              width: 18, height: 18, borderRadius: 9,
+              border: "none", background: "transparent",
+              color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+            }}
+          >✕</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -8823,41 +8950,19 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       댓글 ({card.comments?.length || 0})
                     </div>
                     <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
-                      {(card.comments || []).map((cm) => {
-                        const mine = !!actorName && cm.actor === actorName;
-                        return (
-                          <div key={cm.id} style={{
-                            padding: "8px 12px", borderRadius: 10,
-                            background: "rgba(0,0,0,0.03)", fontSize: 13,
-                            position: "relative",
-                          }}>
-                            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, paddingRight: mine ? 20 : 0 }}>
-                              {cm.actor || "익명"} · {cm.created_at?.slice(0, 16).replace("T", " ")}
-                            </div>
-                            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cm.body}</div>
-                            {mine && (
-                              <button
-                                onClick={async () => {
-                                  if (!confirm("이 댓글을 삭제할까요?")) return;
-                                  try {
-                                    await deleteCardComment(projectSlug, card.id, cm.id, actorName);
-                                    const detail = await fetchCardDetail(projectSlug, card.id);
-                                    if (detail) setDetailCard(detail);
-                                  } catch (e) { alert("댓글 삭제 실패: " + e.message); }
-                                }}
-                                title="내 댓글 삭제"
-                                style={{
-                                  position: "absolute", top: 4, right: 4,
-                                  width: 18, height: 18, borderRadius: 9,
-                                  border: "none", background: "transparent",
-                                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
-                                  display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
-                                }}
-                              >✕</button>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {(card.comments || []).map((cm) => (
+                        <CommentRow
+                          key={cm.id}
+                          comment={cm}
+                          projectSlug={projectSlug}
+                          cardId={card.id}
+                          actorName={actorName}
+                          onChanged={async () => {
+                            const detail = await fetchCardDetail(projectSlug, card.id);
+                            if (detail) setDetailCard(detail);
+                          }}
+                        />
+                      ))}
                       {(!card.comments || card.comments.length === 0) && (
                         <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "16px 0" }}>
                           아직 댓글이 없습니다.
