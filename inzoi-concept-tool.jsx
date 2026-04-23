@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.9.2";
 const CHANGELOG = [
+  {
+    version: "1.9.2",
+    date: "2026-04-23",
+    changes: [
+      "유사 에셋 매칭 정확도 향상 (검증 용도) — Gemini 가 posmap_shape (형태: 곡선/사각/원형/유기적/직선) + keywords (한글 명사 1~3개) 도 추출",
+      "매칭 점수에 shape 매칭 ×20, asset name 키워드 매칭 ×25 추가 — '바구니' 같은 명사로 카탈로그 이름 검색해 같은 종류 에셋 우선 노출",
+      "같은 카테고리 페널티 -30 → -10 으로 완화 — 검증엔 같은 종류 매칭이 더 중요",
+      "서버 posmap 응답에 shape 배열 + objects.json name 포함 (키워드 매칭 가능)",
+      "추천 배지에 매칭 근거 표시: 🔑 키워드 · 형태 · 스타일 · 재질",
+    ],
+  },
   {
     version: "1.9.1",
     date: "2026-04-23",
@@ -1735,6 +1746,7 @@ async function generateImageWithGemini(apiKey, prompt, model, refImages = []) {
 const POSMAP_STYLES = ["내추럴", "모던", "미니멀", "미드센추리", "보헤미안", "빈티지", "스칸디나비안", "아르데코", "인더스트리얼", "전통", "캐주얼", "컨트리", "클래식", "키치"];
 const POSMAP_MOODS = ["럭셔리", "세련된", "아늑한", "차분한", "캐주얼", "활기찬"];
 const POSMAP_SIZES = ["대", "소", "중"];
+const POSMAP_SHAPES = ["곡선", "사각", "원형", "유기적", "직선"];
 const POSMAP_COLORS = ["갈색", "검정", "금색", "노랑", "베이지", "보라", "분홍", "빨강", "은색", "주황", "초록", "파랑", "회색", "흰색"];
 const POSMAP_MATERIALS = ["가죽", "금속", "대리석", "라탄", "목재", "석재", "세라믹", "유리", "콘크리트", "패브릭", "플라스틱"];
 
@@ -1764,8 +1776,10 @@ async function classifyCategoryWithGemini(apiKey, imageUrl) {
   "posmap_style":"<한글 스타일>",
   "posmap_mood":"<한글 무드>",
   "posmap_size":"<한글 크기>",
+  "posmap_shape":["<한글 형태1>", "<한글 형태2>"],
   "posmap_colors":["<한글 색상1>", "<한글 색상2>", ...],
-  "posmap_materials":["<한글 재질1>", "<한글 재질2>", ...]
+  "posmap_materials":["<한글 재질1>", "<한글 재질2>", ...],
+  "keywords":["<핵심 명사1>", "<핵심 명사2>"]
 }
 
 규칙 (카테고리 / 스타일 / 크기):
@@ -1777,10 +1791,13 @@ async function classifyCategoryWithGemini(apiKey, imageUrl) {
 - posmap_style: ${POSMAP_STYLES.join(" / ")}
 - posmap_mood: ${POSMAP_MOODS.join(" / ")}
 - posmap_size: ${POSMAP_SIZES.join(" / ")} (소=작은가구·소품, 중=일반가구, 대=큰가구)
-- posmap_colors: 최대 4개. 위 목록에서만. 주 색상 순.
-- posmap_materials: 최대 3개. 위 목록에서만. 주 재질 순.
-- 사용 가능 한글 색상: ${POSMAP_COLORS.join(", ")}
-- 사용 가능 한글 재질: ${POSMAP_MATERIALS.join(", ")}
+- posmap_shape: 최대 2개. ${POSMAP_SHAPES.join(" / ")} 중에서. 주 형태 순.
+- posmap_colors: 최대 4개. ${POSMAP_COLORS.join(", ")} 중에서. 주 색상 순.
+- posmap_materials: 최대 3개. ${POSMAP_MATERIALS.join(", ")} 중에서. 주 재질 순.
+
+규칙 (keywords — 카탈로그 이름 검색용):
+- 이미지 속 사물의 종류·기능을 나타내는 한글 명사 1~3개. 예: ["바구니","트레이"], ["침대","베드"], ["조명","램프"].
+- 카테고리 라벨과 동일 단어 OK. 변형(영문 일반명·동의어) 도 추가하면 좋음.
 
 카테고리:
 ${categoryList}
@@ -1832,12 +1849,22 @@ ${styleList}`;
       if (!Array.isArray(arr)) return [];
       return arr.filter((v) => typeof v === "string" && allowed.includes(v)).slice(0, cap);
     };
+    // keywords — 한글 명사 위주, 최대 3개, 1~10자 정도로 제한.
+    const cleanKeywords = (arr) => {
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .map((v) => typeof v === "string" ? v.trim() : "")
+        .filter((v) => v.length >= 1 && v.length <= 12)
+        .slice(0, 3);
+    };
     const posmapFeatures = {
       style: POSMAP_STYLES.includes(obj.posmap_style) ? obj.posmap_style : null,
       mood: POSMAP_MOODS.includes(obj.posmap_mood) ? obj.posmap_mood : null,
       size: POSMAP_SIZES.includes(obj.posmap_size) ? obj.posmap_size : null,
+      shape: filterInList(obj.posmap_shape, POSMAP_SHAPES, 2),
       colors: filterInList(obj.posmap_colors, POSMAP_COLORS, 4),
       materials: filterInList(obj.posmap_materials, POSMAP_MATERIALS, 3),
+      keywords: cleanKeywords(obj.keywords),
     };
     return {
       category_id: catId,
@@ -1852,23 +1879,44 @@ ${styleList}`;
   } catch { return null; }
 }
 
-// posmap 유사도 계산 — inzoiObjectList 의 calcSimilarity 알고리즘을 그대로 사용.
-// userFeatures: { style, mood, size, colors[], materials[] } + userCategoryId
-// 반환: 점수 (높을수록 유사)
+// posmap 유사도 계산 — inzoiObjectList 의 calcSimilarity 를 확장.
+// shape 매칭 + 이름 키워드 매칭으로 검증 정확도 향상 (v1.9.2).
+// 같은 카테고리 페널티는 -30 → -10 으로 완화 (검증 용도엔 같은 종류 매칭이 핵심).
 function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId) {
   if (!assetScore?.style) return -999;
   let score = 0;
+  // 1. style / mood — 디자인 분위기
   if (userFeatures.style && assetScore.style === userFeatures.style) score += 30;
   if (userFeatures.mood && assetScore.mood === userFeatures.mood) score += 20;
+  // 2. shape — 형태 (검증 정확도에 큰 기여, NEW v1.9.2)
+  const ush = userFeatures.shape || [];
+  const osh = assetScore.shape || [];
+  if (ush.length > 0 && osh.length > 0) {
+    const shapeOverlap = ush.filter((s) => osh.includes(s)).length;
+    score += shapeOverlap * 20;
+  }
+  // 3. colors / materials
   const ic = userFeatures.colors || [];
   const oc = assetScore.colors || [];
   score += ic.filter((c) => oc.includes(c)).length * 15;
   const im = userFeatures.materials || [];
   const om = assetScore.materials || [];
   score += im.filter((m) => om.includes(m)).length * 10;
+  // 4. size
   if (userFeatures.size && assetScore.size === userFeatures.size) score += 5;
-  // 같은 카테고리 페널티 — 크로스 카테고리 유사한 아이템이 상위로 올라오게
-  if (userCategoryId && assetScore.filter === userCategoryId) score -= 30;
+  // 5. 이름 키워드 매칭 — "바구니" / "트레이" 등 (NEW v1.9.2)
+  // 검증 용도엔 가장 큰 신호. asset 이름에 키워드 포함 시 +25 per match.
+  const kws = userFeatures.keywords || [];
+  if (kws.length > 0 && assetScore.name) {
+    const nameLower = assetScore.name.toLowerCase();
+    let kwHits = 0;
+    for (const kw of kws) {
+      if (kw && nameLower.includes(kw.toLowerCase())) kwHits++;
+    }
+    score += kwHits * 25;
+  }
+  // 6. 같은 카테고리 페널티 (검증엔 같은 종류 매칭이 핵심이라 완화)
+  if (userCategoryId && assetScore.filter === userCategoryId) score -= 10;
   return score;
 }
 
@@ -2661,8 +2709,13 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                     </span>
                     {useMatches && cm.features && (
                       <span style={{ marginLeft: 8, fontSize: 10, color: "var(--text-muted)" }}>
-                        기준: {cm.features.style || "—"} · {cm.features.mood || "—"}
-                        {cm.features.colors?.length > 0 && ` · ${cm.features.colors.slice(0, 2).join(",")}`}
+                        기준:
+                        {cm.features.keywords?.length > 0 && (
+                          <span style={{ color: "var(--primary)", fontWeight: 700 }}> 🔑 {cm.features.keywords.join(", ")}</span>
+                        )}
+                        {cm.features.shape?.length > 0 && ` · ${cm.features.shape.join("/")}`}
+                        {cm.features.style && ` · ${cm.features.style}`}
+                        {cm.features.materials?.length > 0 && ` · ${cm.features.materials.slice(0, 2).join(",")}`}
                       </span>
                     )}
                     <button

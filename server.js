@@ -483,22 +483,27 @@ app.get("/api/object-meta", async (c) => {
       .map((id) => ({ id, label: styleMap[id] }));
 
     // posmap_scores 를 전 에셋 feature vector 형태로 클라에 내려줌.
-    // { id: { style, mood, size, colors[], materials[], posx, posy, filter } }
-    // id 별 filter 값을 objects.json 기준으로 붙여 유사도 계산 시 카테고리 페널티 활용 가능.
-    const byIdFilter = new Map();
-    for (const o of objects) { if (o?.id && o.filter) byIdFilter.set(o.id, o.filter); }
+    // { id: { style, mood, size, shape[], colors[], materials[], posx, posy, filter, name } }
+    // id 별 filter / name 을 objects.json 기준으로 함께 붙여 키워드 매칭에 사용.
+    const byIdMeta = new Map();
+    for (const o of objects) {
+      if (o?.id) byIdMeta.set(o.id, { filter: o.filter || null, name: o.name || null });
+    }
     const posmap = {};
     for (const [id, v] of Object.entries(posmapScores)) {
       if (!v || typeof v !== "object") continue;
+      const meta2 = byIdMeta.get(id) || {};
       posmap[id] = {
         style: v.style || null,
         mood: v.mood || null,
         size: v.size || null,
+        shape: Array.isArray(v.shape) ? v.shape : [],
         colors: Array.isArray(v.colors) ? v.colors : [],
         materials: Array.isArray(v.materials) ? v.materials : [],
         posx: typeof v.posx === "number" ? v.posx : null,
         posy: typeof v.posy === "number" ? v.posy : null,
-        filter: byIdFilter.get(id) || null,
+        filter: meta2.filter,
+        name: meta2.name, // 키워드 매칭에 사용
       };
     }
 
