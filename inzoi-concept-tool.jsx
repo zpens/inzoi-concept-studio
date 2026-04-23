@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.13";
+const APP_VERSION = "1.10.14";
 const CHANGELOG = [
+  {
+    version: "1.10.14",
+    date: "2026-04-24",
+    changes: [
+      "리스트 뷰 행 오른쪽 끝에 작성자 아이콘 열 추가 — 카드의 created_by 프로필 이모지, 마우스 hover 시 이름 tooltip 표시",
+      "LIST_GRID 9→10 컬럼 (마지막 32px)",
+      "댓글 입력창 앞에 현재 프로필 아이콘 32px 원형 표시 — hover 시 현재 프로필 이름 tooltip, 프로필 미선택 시 회색 톤 + 안내",
+    ],
+  },
   {
     version: "1.10.13",
     date: "2026-04-24",
@@ -4405,9 +4414,9 @@ function ViewModeToggle({ value, onChange }) {
 
 // 리스트 뷰 한 줄 — 썸네일 + 제목 + 카테고리/스타일 + 탭별 메타 + 날짜.
 // 리스트 뷰 공통 grid 템플릿 — CardListRow 와 CardListHeader 가 같은 비율 공유.
-const LIST_GRID = "90px 1fr 70px 90px 150px 80px 130px 95px 100px";
+const LIST_GRID = "90px 1fr 70px 90px 150px 80px 130px 95px 100px 32px";
 
-function CardListRow({ card, tabId, onClick }) {
+function CardListRow({ card, tabId, onClick, profileByName }) {
   const data = card.data || {};
   const designs = Array.isArray(data.designs) ? data.designs : [];
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
@@ -4542,6 +4551,22 @@ function CardListRow({ card, tabId, onClick }) {
       <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
         {date ? date.slice(0, 10) : "-"}
       </div>
+      {/* 작성자 아이콘 (v1.10.14) — 마우스 올리면 이름 tooltip */}
+      {(() => {
+        const author = card.created_by || card.updated_by || null;
+        const authorProfile = author ? profileByName?.get?.(author) : null;
+        const icon = authorProfile?.icon || (author ? "👤" : "—");
+        const tooltip = author || "작성자 없음";
+        return (
+          <div
+            title={tooltip}
+            style={{
+              fontSize: 18, textAlign: "center", cursor: "help",
+              opacity: author ? 1 : 0.35,
+            }}
+          >{icon}</div>
+        );
+      })()}
     </div>
   );
 }
@@ -4605,6 +4630,7 @@ function CardListHeader({ tabId, sortBy, onSortChange }) {
       <SortCell label="크기 (W×D×H)"    ascKey="size_asc"     descKey="size_desc" />
       <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
       <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
+      <div style={{ ...cellBase, textAlign: "center" }} title="작성자">👤</div>
     </div>
   );
 }
@@ -4911,10 +4937,24 @@ function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, on
 }
 
 // 카드 상세 모달의 댓글 입력창. ref 대신 local state 로 간단히.
-function CardCommentInput({ onSubmit, disabled }) {
+function CardCommentInput({ onSubmit, disabled, currentProfile }) {
   const [val, setVal] = React.useState("");
+  const icon = currentProfile?.icon || "👤";
+  const tooltip = currentProfile?.name || "프로필 미선택 — 헤더에서 선택하세요";
   return (
-    <div style={{ display: "flex", gap: 6 }}>
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      {/* 현재 작성자 아이콘 — 마우스 올리면 이름 tooltip (v1.10.14) */}
+      <div
+        title={tooltip}
+        style={{
+          width: 32, height: 32, borderRadius: 16,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: currentProfile ? "rgba(7,110,232,0.08)" : "rgba(0,0,0,0.04)",
+          border: `1px solid ${currentProfile ? "rgba(7,110,232,0.2)" : "var(--surface-border)"}`,
+          fontSize: 16, cursor: "help", flexShrink: 0,
+          opacity: currentProfile ? 1 : 0.55,
+        }}
+      >{icon}</div>
       <input
         type="text"
         value={val}
@@ -6940,6 +6980,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         key={`card-${c.id}`}
                         card={c}
                         tabId={activeTab}
+                        profileByName={profileByName}
                         onClick={async () => {
                           if (!projectSlug) return;
                           try {
@@ -8348,6 +8389,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             key={item._cardId}
                             card={card}
                             tabId="completed"
+                            profileByName={profileByName}
                             onClick={async () => {
                               if (!projectSlug) return;
                               try {
@@ -8478,6 +8520,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                                 key={item._cardId}
                                 card={card}
                                 tabId="wishlist"
+                                profileByName={profileByName}
                                 onClick={async () => {
                                   if (!projectSlug) return;
                                   try {
@@ -9427,7 +9470,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         </div>
                       )}
                     </div>
-                    <CardCommentInput onSubmit={submitComment} disabled={confirmed} />
+                    <CardCommentInput onSubmit={submitComment} disabled={confirmed} currentProfile={currentProfile} />
                   </div>
 
                   {/* 활동 이력 */}
