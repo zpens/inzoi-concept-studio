@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.4";
+const APP_VERSION = "1.10.5";
 const CHANGELOG = [
+  {
+    version: "1.10.5",
+    date: "2026-04-24",
+    changes: [
+      "스타일 프리셋 기본 목록 8개 → 24개 확장: 컨템포러리 / 재팬디 / 레트로 / 아르데코 / 러스틱 / 팜하우스 / 보헤미안 / 코스탈 / 지중해 / 전통(한옥) / 프렌치 컨트리 / 어반 / 퓨처리스틱 / 키즈 / 고딕 / 이클렉틱 추가",
+      "(inzoiObjectList meta.json 에 styles 가 있으면 그게 우선 — 이 목록은 fallback)",
+      "상세 모달 '설명' 영역 편집 가능 — CardDescriptionEditor 컴포넌트로 교체. 클릭해서 textarea 로 전환, Ctrl/⌘+Enter 로 저장 / Esc 로 취소 / blur 로 자동 저장",
+    ],
+  },
   {
     version: "1.10.4",
     date: "2026-04-24",
@@ -1186,14 +1195,30 @@ let FURNITURE_CATEGORIES = [
 let POSMAP_SCORES = {};
 
 let STYLE_PRESETS = [
-  { id: "modern", label: "모던", color: "#64748b" },
-  { id: "scandinavian", label: "스칸디나비안", color: "#d4a574" },
-  { id: "midcentury", label: "미드센추리", color: "#c2956b" },
-  { id: "industrial", label: "인더스트리얼", color: "#78716c" },
-  { id: "minimal", label: "미니멀", color: "#e2e8f0" },
-  { id: "vintage", label: "빈티지", color: "#a87c5a" },
-  { id: "luxury", label: "럭셔리", color: "#d4af37" },
-  { id: "natural", label: "내추럴", color: "#86a873" },
+  { id: "modern",         label: "모던",         color: "#64748b" },
+  { id: "contemporary",   label: "컨템포러리",   color: "#475569" },
+  { id: "scandinavian",   label: "스칸디나비안", color: "#d4a574" },
+  { id: "japandi",        label: "재팬디",       color: "#b8a790" },
+  { id: "midcentury",     label: "미드센추리",   color: "#c2956b" },
+  { id: "industrial",     label: "인더스트리얼", color: "#78716c" },
+  { id: "minimal",        label: "미니멀",       color: "#e2e8f0" },
+  { id: "vintage",        label: "빈티지",       color: "#a87c5a" },
+  { id: "retro",          label: "레트로",       color: "#d97757" },
+  { id: "luxury",         label: "럭셔리",       color: "#d4af37" },
+  { id: "art-deco",       label: "아르데코",     color: "#c9a227" },
+  { id: "natural",        label: "내추럴",       color: "#86a873" },
+  { id: "rustic",         label: "러스틱",       color: "#8b6f47" },
+  { id: "farmhouse",      label: "팜하우스",     color: "#a8906a" },
+  { id: "bohemian",       label: "보헤미안",     color: "#c17a54" },
+  { id: "coastal",        label: "코스탈",       color: "#6fa8dc" },
+  { id: "mediterranean",  label: "지중해",       color: "#4b9cd3" },
+  { id: "traditional-kr", label: "전통(한옥)",   color: "#9b7e5e" },
+  { id: "french-country", label: "프렌치 컨트리", color: "#d4a5a5" },
+  { id: "urban",          label: "어반",         color: "#525252" },
+  { id: "futuristic",     label: "퓨처리스틱",   color: "#7c3aed" },
+  { id: "kids",           label: "키즈",         color: "#f472b6" },
+  { id: "gothic",         label: "고딕",         color: "#1e293b" },
+  { id: "eclectic",       label: "이클렉틱",     color: "#be6f4e" },
 ];
 
 const VIEW_ANGLES = [
@@ -4539,6 +4564,82 @@ function CardTitleEditor({ card, projectSlug, actor, disabled, onSaved }) {
       onMouseOut={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       {card.title || <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(제목 없음)</span>}
+    </div>
+  );
+}
+
+// 설명 인라인 에디터 — 클릭해서 textarea 로 전환, Ctrl/⌘+Enter 또는 blur 로 저장.
+// CardTitleEditor 와 동일한 패턴 (card.id / card.updated_at 으로 local state sync).
+function CardDescriptionEditor({ card, projectSlug, actor, disabled, onSaved }) {
+  const [editing, setEditing] = React.useState(false);
+  const [value, setValue] = React.useState(card.description || "");
+  const [saving, setSaving] = React.useState(false);
+  const areaRef = React.useRef(null);
+
+  React.useEffect(() => {
+    setValue(card.description || "");
+  }, [card.id, card.updated_at]);
+  React.useEffect(() => { if (editing) areaRef.current?.focus(); }, [editing]);
+
+  const commit = async () => {
+    const next = value;
+    if (next === (card.description || "")) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ description: next || "", actor }),
+      });
+      if (!r.ok) throw new Error(`desc ${r.status}`);
+      setEditing(false);
+      await onSaved?.();
+    } catch (e) {
+      alert("설명 저장 실패: " + e.message);
+    } finally { setSaving(false); }
+  };
+
+  if (editing && !disabled) {
+    return (
+      <textarea
+        ref={areaRef}
+        value={value}
+        disabled={saving}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if ((e.key === "Enter") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commit(); }
+          else if (e.key === "Escape") { setValue(card.description || ""); setEditing(false); }
+        }}
+        placeholder="설명을 입력하세요 — Ctrl/⌘+Enter 로 저장, Esc 취소"
+        style={{
+          width: "100%", minHeight: 100,
+          padding: 14, borderRadius: 10,
+          border: "1px solid var(--primary)",
+          background: "#fff", outline: "none",
+          fontSize: 13, color: "var(--text-main)", lineHeight: 1.8,
+          fontFamily: "inherit", resize: "vertical",
+          boxSizing: "border-box",
+        }}
+      />
+    );
+  }
+  return (
+    <div
+      onClick={() => !disabled && setEditing(true)}
+      title={disabled ? "잠긴 카드는 설명 수정 불가" : "클릭해서 설명 편집"}
+      style={{
+        padding: 14, borderRadius: 10,
+        background: "rgba(0,0,0,0.03)",
+        fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.8,
+        whiteSpace: "pre-wrap", wordBreak: "break-word",
+        minHeight: 80, cursor: disabled ? "not-allowed" : "text",
+        border: "1px solid transparent", transition: "border-color 0.15s, background 0.15s",
+      }}
+      onMouseOver={(e) => { if (!disabled) e.currentTarget.style.borderColor = "var(--surface-border)"; }}
+      onMouseOut={(e) => { e.currentTarget.style.borderColor = "transparent"; }}
+    >
+      {card.description || <span style={{ color: "var(--text-muted)" }}>(설명 없음 — 클릭해서 입력)</span>}
     </div>
   );
 }
@@ -8677,15 +8778,19 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   })()}
 
                   <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>설명</div>
-                  <div style={{
-                    padding: 14, borderRadius: 10,
-                    background: "rgba(0,0,0,0.03)",
-                    fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.8,
-                    whiteSpace: "pre-wrap", wordBreak: "break-word",
-                    minHeight: 80,
-                  }}>
-                    {card.description || <span style={{ color: "var(--text-muted)" }}>(설명 없음)</span>}
-                  </div>
+                  <CardDescriptionEditor
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                    onSaved={async () => {
+                      const d = await fetchCardDetail(projectSlug, card.id);
+                      if (d) {
+                        setDetailCard(d);
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      }
+                    }}
+                  />
 
                   {card.data && Object.keys(card.data).length > 0 && (
                     <details style={{ marginTop: 20 }}>
