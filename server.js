@@ -808,7 +808,8 @@ app.patch("/api/projects/:slug/cards/:id/comments/:commentId", async (c) => {
   if (!cm) return c.json({ error: "comment not found" }, 404);
   const body = await c.req.json().catch(() => ({}));
   const actor = body.actor || null;
-  if (!cm.actor || cm.actor !== actor) {
+  // 본인 확인: null === null (익명 댓글은 actorName 미설정 사용자가 본인으로 편집 허용)
+  if ((cm.actor || null) !== actor) {
     return c.json({ error: "only the author can edit this comment" }, 403);
   }
   if (typeof body.body !== "string" || !body.body.trim()) {
@@ -832,8 +833,8 @@ app.delete("/api/projects/:slug/cards/:id/comments/:commentId", async (c) => {
   if (!card) return c.json({ error: "card not found" }, 404);
   const cm = stmts.getCommentById.get(commentId, cardId);
   if (!cm) return c.json({ error: "comment not found" }, 404);
-  // 본인 확인 — actor 가 작성자와 동일해야 함. 둘 다 null 이면 거부.
-  if (!cm.actor || cm.actor !== actor) {
+  // 본인 확인: null === null 도 본인으로 인정 (익명 댓글 편집 허용)
+  if ((cm.actor || null) !== actor) {
     return c.json({ error: "only the author can delete this comment" }, 403);
   }
   stmts.deleteComment.run(commentId, cardId);

@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.6";
+const APP_VERSION = "1.10.7";
 const CHANGELOG = [
+  {
+    version: "1.10.7",
+    date: "2026-04-24",
+    changes: [
+      "상세 모달 레이아웃 재정리 — 좌: 업데이트 일정 → 우선순위 → 대표이미지 → 어셋정보 → 설명. 우: 시안 생성 → 시안 이력 → 댓글 → 활동 이력",
+      "[버그 수정] 댓글 편집이 안 되던 문제 — actorName 미설정(null) 사용자가 본인이 쓴 익명 댓글(cm.actor=null) 도 본인으로 인정되게 서버/클라 확인 로직 완화 ((cm.actor || null) === (actor || null))",
+      "v1.10.0 에서 추가한 본인 댓글 삭제도 같이 익명 케이스 허용",
+    ],
+  },
   {
     version: "1.10.6",
     date: "2026-04-24",
@@ -4670,7 +4679,8 @@ function CardDescriptionEditor({ card, projectSlug, actor, disabled, onSaved }) 
 // 상세 모달 댓글 한 줄 — 본인 댓글은 인라인 편집 + 삭제 가능.
 // 편집 시 textarea, Ctrl/⌘+Enter 저장, Esc 취소, blur 자동 저장.
 function CommentRow({ comment, projectSlug, cardId, actorName, onChanged }) {
-  const mine = !!actorName && comment.actor === actorName;
+  // 본인 확인: 작성자 이름이 같으면 본인. null === null (양쪽 다 익명) 도 본인으로 인정.
+  const mine = (comment.actor || null) === (actorName || null);
   const [editing, setEditing] = React.useState(false);
   const [value, setValue] = React.useState(comment.body || "");
   const [saving, setSaving] = React.useState(false);
@@ -8727,9 +8737,22 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
               {/* Body */}
               <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 0 }}>
-                {/* 왼쪽: 썸네일 + 액션 + 설명 */}
+                {/* 왼쪽: 업데이트 일정 · 우선순위 · 대표이미지 · 어셋정보 (v1.10.7) */}
                 <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
-                  {/* 우선순위 — 모달 좌측 최상단 (썸네일보다 위, 가장 먼저 눈에 들어오도록) */}
+                  {/* 1) 업데이트 일정 */}
+                  <TargetUpdateField
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                    availableUpdates={availableUpdates}
+                    onSaved={(d) => {
+                      setDetailCard(d);
+                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                    }}
+                  />
+
+                  {/* 2) 우선순위 */}
                   <PriorityField
                     card={card}
                     projectSlug={projectSlug}
@@ -8741,8 +8764,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   />
 
+                  {/* 3) 대표이미지 — 시안이 단 하나면 그 이미지로, 아니면 card.thumbnail_url */}
                   {(() => {
-                    // 상세 모달 좌측 대표 이미지 — 시안이 단 하나면 그 이미지로, 아니면 card.thumbnail_url.
                     const ds = Array.isArray(card.data?.designs) ? card.data.designs : [];
                     const single = ds.length === 1 && ds[0]?.imageUrl ? ds[0].imageUrl : null;
                     const src = single || card.thumbnail_url;
@@ -8766,20 +8789,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     ) : null;
                   })()}
 
-                  {/* 업데이트 일정 — 어셋 정보 위에 별도로 표시 (완료 시점 기획) */}
-                  <TargetUpdateField
-                    card={card}
-                    projectSlug={projectSlug}
-                    actor={actorName}
-                    disabled={confirmed}
-                    availableUpdates={availableUpdates}
-                    onSaved={(d) => {
-                      setDetailCard(d);
-                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                    }}
-                  />
-
-                  {/* 어셋 정보 인라인 편집 (자동 저장) — 카드 생성은 최소 정보, 편집은 여기서 */}
+                  {/* 4) 어셋 정보 (카테고리 / 스타일 / 크기 / 카탈로그 매칭 등) */}
                   <AssetInfoEditor
                     card={card}
                     projectSlug={projectSlug}
@@ -8798,112 +8808,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   />
 
-                  {/* === Phase E: 상태별 카드 액션 === */}
-                  {!confirmed && (
-                    <CardActionPanel
-                      card={card}
-                      statusKey={statusKey}
-                      projectSlug={projectSlug}
-                      geminiApiKey={geminiApiKey}
-                      selectedModel={selectedModel}
-                      actor={actorName}
-                      onMoveTo={moveTo}
-                      onOpenImage={setPreviewImage}
-                      onRefresh={async () => {
-                        const d = await fetchCardDetail(projectSlug, card.id);
-                        if (d) {
-                          setDetailCard(d);
-                          setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                        }
-                      }}
-                      onOpenApiSettings={() => setShowApiSettings(true)}
-                      onGenerateProgress={(c, done, total) => setGeneratingCards((prev) => ({
-                        ...prev,
-                        [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total },
-                      }))}
-                      onGenerateEnd={(c) => setGeneratingCards((prev) => {
-                        const n = { ...prev };
-                        delete n[c.id];
-                        return n;
-                      })}
-                    />
-                  )}
-
-                  {/* 시안 이력 — drafting 외 단계(sheet/done) 에서 그동안 만들어진
-                      시안들을 읽기 전용으로 보여줌. 클릭 시 lightbox 오픈.
-                      legacy 마이그레이션 카드는 designs 가 없고 data.image_url /
-                      concept_sheet_url 만 있을 수 있어 fallback 로 합성해 표시한다. */}
-                  {statusKey !== "drafting" && (() => {
-                    const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
-                    const extras = [];
-                    if (raw.length === 0) {
-                      if (card.data?.image_url) extras.push({ imageUrl: card.data.image_url, seed: card.data.seed, _legacy: true });
-                    }
-                    if (card.data?.concept_sheet_url && !raw.find((d) => d?.imageUrl === card.data.concept_sheet_url) && !extras.find((d) => d.imageUrl === card.data.concept_sheet_url)) {
-                      extras.push({ imageUrl: card.data.concept_sheet_url, seed: null, _sheet: true });
-                    }
-                    const displayDesigns = [...raw, ...extras];
-                    if (displayDesigns.length === 0) return null;
-                    const selectedIdx = card.data?.selected_design;
-                    return (
-                    <div style={{
-                      marginBottom: 20, padding: 14, borderRadius: 12,
-                      background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
-                          🎨 시안 이력 ({displayDesigns.length}개)
-                        </div>
-                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                          그동안 생성된 시안 — 클릭해서 원본 확인
-                        </div>
-                      </div>
-                      <div style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                        gap: 8,
-                      }}>
-                        {displayDesigns.map((d, i) => {
-                          const isSelected = selectedIdx === i;
-                          const badge = d._sheet ? "📑 시트" : (d._legacy ? "🗂 레거시" : `#${i + 1}`);
-                          return (
-                            <div key={i} style={{
-                              position: "relative", borderRadius: 8, overflow: "hidden",
-                              border: isSelected ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
-                              background: "#000",
-                            }}>
-                              {d?.imageUrl ? (
-                                <img
-                                  src={d.imageUrl}
-                                  alt=""
-                                  onClick={() => setPreviewImage(d.imageUrl)}
-                                  style={{ width: "100%", height: 200, objectFit: "cover", display: "block", cursor: "zoom-in" }}
-                                />
-                              ) : (
-                                <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
-                              )}
-                              <div style={{
-                                position: "absolute", top: 4, left: 4,
-                                padding: "1px 6px", borderRadius: 4,
-                                background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
-                                pointerEvents: "none",
-                              }}>{badge}</div>
-                              {isSelected && (
-                                <div style={{
-                                  position: "absolute", top: 4, right: 4,
-                                  padding: "1px 6px", borderRadius: 4,
-                                  background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
-                                  pointerEvents: "none",
-                                }}>⭐ 선정</div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    );
-                  })()}
-
+                  {/* 설명 (편집 가능) */}
                   <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, marginBottom: 6 }}>설명</div>
                   <CardDescriptionEditor
                     card={card}
@@ -8936,15 +8841,112 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   )}
                 </div>
 
-                {/* 오른쪽: 댓글 + 활동 이력 */}
+                {/* 오른쪽: 시안 생성 + 시안 이력 + 댓글 + 활동 (v1.10.7) */}
                 <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
-                  {/* 메타 */}
-                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                    <div>생성: {card.created_at?.slice(0, 16).replace("T", " ") || "-"} · {card.created_by || "알 수 없음"}</div>
-                    {card.confirmed_at && <div style={{ color: "#22c55e", marginTop: 4 }}>완료: {card.confirmed_at.slice(0, 16).replace("T", " ")} · {card.confirmed_by || "-"}</div>}
-                  </div>
+                  {/* 1) 시안 생성 — 상태별 액션 (drafting: 생성, vote: 투표, sheet: 4뷰) */}
+                  {!confirmed && (
+                    <CardActionPanel
+                      card={card}
+                      statusKey={statusKey}
+                      projectSlug={projectSlug}
+                      geminiApiKey={geminiApiKey}
+                      selectedModel={selectedModel}
+                      actor={actorName}
+                      onMoveTo={moveTo}
+                      onOpenImage={setPreviewImage}
+                      onRefresh={async () => {
+                        const d = await fetchCardDetail(projectSlug, card.id);
+                        if (d) {
+                          setDetailCard(d);
+                          setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                        }
+                      }}
+                      onOpenApiSettings={() => setShowApiSettings(true)}
+                      onGenerateProgress={(c, done, total) => setGeneratingCards((prev) => ({
+                        ...prev,
+                        [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total },
+                      }))}
+                      onGenerateEnd={(c) => setGeneratingCards((prev) => {
+                        const n = { ...prev };
+                        delete n[c.id];
+                        return n;
+                      })}
+                    />
+                  )}
 
-                  {/* 댓글 */}
+                  {/* 2) 시안 이력 (drafting 외 단계에서 그동안 생성된 시안들) */}
+                  {statusKey !== "drafting" && (() => {
+                    const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
+                    const extras = [];
+                    if (raw.length === 0) {
+                      if (card.data?.image_url) extras.push({ imageUrl: card.data.image_url, seed: card.data.seed, _legacy: true });
+                    }
+                    if (card.data?.concept_sheet_url && !raw.find((d) => d?.imageUrl === card.data.concept_sheet_url) && !extras.find((d) => d.imageUrl === card.data.concept_sheet_url)) {
+                      extras.push({ imageUrl: card.data.concept_sheet_url, seed: null, _sheet: true });
+                    }
+                    const displayDesigns = [...raw, ...extras];
+                    if (displayDesigns.length === 0) return null;
+                    const selectedIdx = card.data?.selected_design;
+                    return (
+                      <div style={{
+                        padding: 14, borderRadius: 12,
+                        background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+                            🎨 시안 이력 ({displayDesigns.length}개)
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                            그동안 생성된 시안 — 클릭해서 원본 확인
+                          </div>
+                        </div>
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                          gap: 8,
+                        }}>
+                          {displayDesigns.map((d, i) => {
+                            const isSelected = selectedIdx === i;
+                            const badge = d._sheet ? "📑 시트" : (d._legacy ? "🗂 레거시" : `#${i + 1}`);
+                            return (
+                              <div key={i} style={{
+                                position: "relative", borderRadius: 8, overflow: "hidden",
+                                border: isSelected ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+                                background: "#000",
+                              }}>
+                                {d?.imageUrl ? (
+                                  <img
+                                    src={d.imageUrl}
+                                    alt=""
+                                    onClick={() => setPreviewImage(d.imageUrl)}
+                                    style={{ width: "100%", height: 150, objectFit: "cover", display: "block", cursor: "zoom-in" }}
+                                  />
+                                ) : (
+                                  <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+                                )}
+                                <div style={{
+                                  position: "absolute", top: 4, left: 4,
+                                  padding: "1px 6px", borderRadius: 4,
+                                  background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
+                                  pointerEvents: "none",
+                                }}>{badge}</div>
+                                {isSelected && (
+                                  <div style={{
+                                    position: "absolute", top: 4, right: 4,
+                                    padding: "1px 6px", borderRadius: 4,
+                                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
+                                    pointerEvents: "none",
+                                  }}>⭐ 선정</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 3) 댓글 */}
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>
                       댓글 ({card.comments?.length || 0})
