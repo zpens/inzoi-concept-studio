@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.9";
+const APP_VERSION = "1.10.0";
 const CHANGELOG = [
+  {
+    version: "1.10.0",
+    date: "2026-04-23",
+    changes: [
+      "[버그 수정] 상세 모달에서 업데이트 일정 입력 후 금방 지워지던 문제 — PriorityField / TargetUpdateField 가 서로 stale card.data 를 PATCH 로 덮어쓰던 race 해결. 각 필드 저장 시 서버 응답을 onSaved 로 부모에 전달해 detailCard 즉시 동기화.",
+      "업데이트 chip ✏️ 일괄 이름 변경 — '교도소 · 3' 같은 chip 옆 ✏️ 클릭하면 인라인 입력으로 전환, 확인 시 해당 태그 붙은 모든 카드의 target_update 를 새 이름으로 일괄 PATCH. 컨펌 카드도 force 로 갱신.",
+      "본인 댓글 삭제 ✕ — 상세 모달 댓글 목록에서 본인이 쓴 댓글만 우측 상단에 ✕ 표시, 서버가 actor 일치 검사 후 DELETE /api/.../comments/:commentId 처리, 'comment_deleted' 활동 기록.",
+      "시안 이미지가 단 한 개뿐이면 무조건 대표 이미지 — CardHubCard / CardListRow / 상세 모달 좌측 대표 이미지 모두 designs.length === 1 일 때 card.thumbnail_url 보다 그 한 장을 우선.",
+    ],
+  },
   {
     version: "1.9.9",
     date: "2026-04-23",
@@ -2290,6 +2300,18 @@ async function postCardComment(slug, cardId, body, actor) {
   return r.json();
 }
 
+// 본인 댓글 삭제 — 서버가 actor 일치 검사.
+async function deleteCardComment(slug, cardId, commentId, actor) {
+  const r = await fetch(`/api/projects/${slug}/cards/${cardId}/comments/${commentId}?actor=${encodeURIComponent(actor || "")}`, {
+    method: "DELETE",
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || `delete ${r.status}`);
+  }
+  return r.json();
+}
+
 const STATUS_META = {
   wishlist: { label: "아이디어",   icon: "⭐", color: "#f59e0b" },
   drafting: { label: "시안 생성",  icon: "✨", color: "#7c3aed" },
@@ -3651,26 +3673,32 @@ function priorityBadgeStyle(p) {
 
 // 우선순위 필드 — 어셋 정보 섹션 위에 별도로 노출. 5개 버튼 중 선택.
 // 로컬 optimistic state 로 클릭 즉시 active 하이라이트 반영 (부모 re-fetch 기다리지 않음).
-function PriorityField({ card, projectSlug, actor, disabled }) {
+// onSaved(nextCard) 로 서버 응답을 부모에 전달해 detailCard 동기화 — 다른 필드와의 stale
+// card.data race (업데이트 일정이 금방 지워지는 현상 등) 방지.
+function PriorityField({ card, projectSlug, actor, disabled, onSaved }) {
   const serverValue = getCardPriority(card);
   const [optimistic, setOptimistic] = React.useState(serverValue);
   // 다른 카드로 전환 or 서버 값이 바뀌면 local 도 동기화.
   React.useEffect(() => { setOptimistic(serverValue); }, [card.id, serverValue]);
   const current = optimistic;
-  const save = (next) => {
+  const save = async (next) => {
     setOptimistic(next); // 즉시 UI 반영
-    // fire-and-forget — 실패 시 rollback.
-    fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        data: { ...(card.data || {}), priority: next || null },
-        actor,
-      }),
-    }).catch((e) => {
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), priority: next || null },
+          actor,
+        }),
+      });
+      if (!r.ok) throw new Error(`priority ${r.status}`);
+      const updated = await r.json();
+      onSaved?.(updated);
+    } catch (e) {
       console.warn("우선순위 저장 실패:", e);
       setOptimistic(serverValue); // rollback
-    });
+    }
   };
   return (
     <div style={{
@@ -3709,12 +3737,14 @@ function PriorityField({ card, projectSlug, actor, disabled }) {
 }
 
 // 업데이트 일정 필드 — 어셋 정보 섹션 위에 별도로 노출. 자유 입력 + datalist.
-function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdates = [] }) {
+// onSaved(nextCard) 로 서버 응답을 부모에 전달해 detailCard 동기화 — 다른 필드와의 stale
+// card.data race 방지 (다른 필드 저장이 target_update 를 덮어써 금방 지워지던 현상).
+function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdates = [], onSaved }) {
   const [value, setValue] = React.useState(card.data?.target_update || "");
   React.useEffect(() => { setValue(card.data?.target_update || ""); }, [card.id, card.updated_at]);
   const save = async (next) => {
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -3722,6 +3752,9 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
           actor,
         }),
       });
+      if (!r.ok) throw new Error(`update ${r.status}`);
+      const updated = await r.json();
+      onSaved?.(updated);
     } catch (e) { console.warn("업데이트 일정 저장 실패:", e); }
   };
   return (
@@ -4017,34 +4050,104 @@ function collectUpdateChips(cards) {
 }
 
 // 업데이트 일정 chip 필터 바. 다중 선택, 전체 chip 으로 선택 초기화.
-function UpdateChipBar({ chips, selected, onChange, totalCount }) {
+// 개별 업데이트 chip — 본체 클릭 = 필터 토글, ✏️ = 인라인 이름 변경 (일괄 적용).
+function UpdateChipItem({ chip, active, faded, onToggle, onRename }) {
+  const [editing, setEditing] = React.useState(false);
+  const [input, setInput] = React.useState(chip.label);
+  React.useEffect(() => { setInput(chip.label); }, [chip.label]);
+  const baseStyle = {
+    display: "inline-flex", alignItems: "center", gap: 4,
+    padding: "4px 4px 4px 10px", borderRadius: 14,
+    background: active ? "var(--primary)" : (faded ? "rgba(0,0,0,0.04)" : "rgba(7,110,232,0.08)"),
+    border: `1px solid ${active ? "var(--primary)" : "rgba(7,110,232,0.18)"}`,
+    color: active ? "#fff" : (faded ? "var(--text-muted)" : "var(--primary)"),
+    fontSize: 11, fontWeight: 700, transition: "all 0.15s",
+  };
+  const commit = () => {
+    const next = input.trim();
+    setEditing(false);
+    if (!next || next === chip.label) { setInput(chip.label); return; }
+    if (!confirm(`'${chip.label}' 태그가 붙은 카드 ${chip.count}개를 '${next}' 로 일괄 변경합니다. 계속할까요?`)) {
+      setInput(chip.label);
+      return;
+    }
+    onRename(chip.value, next);
+  };
+  if (editing) {
+    return (
+      <span style={{ ...baseStyle, padding: "2px 6px", background: "#fff", border: "1px solid var(--primary)" }}>
+        <input
+          autoFocus
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            else if (e.key === "Escape") { e.preventDefault(); setEditing(false); setInput(chip.label); }
+          }}
+          onBlur={() => { if (editing) commit(); }}
+          style={{
+            border: "none", outline: "none", fontSize: 11, fontWeight: 700,
+            background: "transparent", color: "var(--text-main)", padding: "2px 2px",
+            width: `${Math.max(input.length, chip.label.length, 4) + 2}ch`,
+          }}
+        />
+      </span>
+    );
+  }
+  return (
+    <span style={baseStyle}>
+      <span
+        onClick={onToggle}
+        style={{ cursor: "pointer" }}
+      >{chip.label} · {chip.count}</span>
+      {!!onRename && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+          title={`'${chip.label}' 태그 이름 일괄 변경`}
+          style={{
+            width: 18, height: 18, borderRadius: 9,
+            border: "none", background: "transparent",
+            color: active ? "rgba(255,255,255,0.85)" : "inherit",
+            cursor: "pointer", fontSize: 10, padding: 0, lineHeight: 1,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+          }}
+        >✏️</button>
+      )}
+    </span>
+  );
+}
+
+function UpdateChipBar({ chips, selected, onChange, totalCount, onRename }) {
   if (chips.length === 0) return null;
   const toggle = (value) => {
     if (selected.includes(value)) onChange(selected.filter((v) => v !== value));
     else onChange([...selected, value]);
   };
-  const chipStyle = (active, faded) => ({
+  const allStyle = {
     padding: "4px 10px", borderRadius: 14,
-    background: active ? "var(--primary)" : (faded ? "rgba(0,0,0,0.04)" : "rgba(7,110,232,0.08)"),
-    border: `1px solid ${active ? "var(--primary)" : "rgba(7,110,232,0.18)"}`,
-    color: active ? "#fff" : (faded ? "var(--text-muted)" : "var(--primary)"),
-    fontSize: 11, fontWeight: 700, cursor: "pointer",
-    transition: "all 0.15s",
-  });
+    background: selected.length === 0 ? "var(--primary)" : "rgba(7,110,232,0.08)",
+    border: `1px solid ${selected.length === 0 ? "var(--primary)" : "rgba(7,110,232,0.18)"}`,
+    color: selected.length === 0 ? "#fff" : "var(--primary)",
+    fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
+  };
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
       <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginRight: 4 }}>🗓️ 업데이트:</span>
-      <button
-        onClick={() => onChange([])}
-        style={chipStyle(selected.length === 0, false)}
-      >전체 · {totalCount}</button>
-      {chips.map((c) => (
-        <button
-          key={c.value}
-          onClick={() => toggle(c.value)}
-          style={chipStyle(selected.includes(c.value), c.value === "__unspecified")}
-        >{c.label} · {c.count}</button>
-      ))}
+      <button onClick={() => onChange([])} style={allStyle}>전체 · {totalCount}</button>
+      {chips.map((c) => {
+        const faded = c.value === "__unspecified";
+        return (
+          <UpdateChipItem
+            key={c.value}
+            chip={c}
+            active={selected.includes(c.value)}
+            faded={faded}
+            onToggle={() => toggle(c.value)}
+            // '미지정' 은 빈값 묶음이라 이름 변경 대상 아님.
+            onRename={faded ? null : onRename}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -4088,8 +4191,12 @@ function CardListRow({ card, tabId, onClick }) {
   const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
   const styleInfo = data.style_preset ? STYLE_PRESETS.find((s) => s.id === data.style_preset) : null;
 
-  // 썸네일 우선순위: 사용자 지정 card.thumbnail_url 최우선, 없을 때만 fallback.
-  let thumb = card.thumbnail_url;
+  // 썸네일 우선순위:
+  // 1) 시안 이미지가 단 한 개뿐이면 무조건 대표 (v1.10.0 — 하나일 땐 선택 여지 없음).
+  // 2) 그 외엔 사용자가 '대표' 버튼으로 명시 설정한 card.thumbnail_url.
+  // 3) 없으면 탭별 fallback.
+  const singleImage = designs.length === 1 && designs[0]?.imageUrl ? designs[0].imageUrl : null;
+  let thumb = singleImage || card.thumbnail_url;
   if (!thumb) {
     if (tabId === "sheet" || tabId === "completed") {
       thumb = data.concept_sheet_url || selected?.imageUrl;
@@ -4503,9 +4610,12 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
   const selected = selectedIdx != null ? designs[selectedIdx] : null;
 
-  // 썸네일 우선순위: 사용자가 '대표' 버튼으로 명시 설정한 card.thumbnail_url 을
-  // 항상 최우선. 없을 때만 탭별 fallback.
-  let thumb = card.thumbnail_url;
+  // 썸네일 우선순위:
+  // 1) 시안 이미지가 단 한 개뿐이면 무조건 대표 (v1.10.0 — 하나일 땐 선택 여지 없음).
+  // 2) 그 외엔 사용자가 '대표' 버튼으로 명시 설정한 card.thumbnail_url.
+  // 3) 없으면 탭별 fallback.
+  const singleImage = designs.length === 1 && designs[0]?.imageUrl ? designs[0].imageUrl : null;
+  let thumb = singleImage || card.thumbnail_url;
   if (!thumb) {
     if (tabId === "sheet" || tabId === "completed") {
       thumb = data.concept_sheet_url || selected?.imageUrl;
@@ -4906,6 +5016,7 @@ export default function InZOIConceptTool() {
     return [...set].sort((a, b) => a.localeCompare(b, "ko"));
   }, [cards]);
 
+
   // 상세 모달 ← → 키 네비게이션은 projectSlug 선언 이후에 정의 (TDZ 방지).
 
   // [Phase B-3] cards → 기존 wishlist / completedList shape 로 변환하는 derived.
@@ -5069,6 +5180,42 @@ export default function InZOIConceptTool() {
   const actorName = useMemo(() => {
     try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
   }, []);
+
+  // 업데이트 태그 일괄 이름 변경 — chip 의 ✏️ 에서 호출. 해당 태그가 붙은
+  // 모든 카드에 PATCH 를 병렬로 날리고, 응답으로 로컬 cards/detailCard 도 동기화.
+  // selectedUpdates 에 이전 값이 있었으면 새 값으로 치환해 필터가 풀리지 않게 한다.
+  const renameUpdateTag = React.useCallback(async (oldVal, newVal) => {
+    if (!projectSlug) return;
+    const targets = cards.filter((c) => (c.data?.target_update || "") === oldVal);
+    if (targets.length === 0) return;
+    try {
+      const results = await Promise.all(targets.map(async (c) => {
+        const r = await fetch(`/api/projects/${projectSlug}/cards/${c.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            data: { ...(c.data || {}), target_update: newVal || null },
+            actor: actorName,
+            force: true, // 컨펌된 카드도 태그 이름 변경은 허용.
+          }),
+        });
+        if (!r.ok) throw new Error(`rename ${r.status} on ${c.id}`);
+        return r.json();
+      }));
+      setCards((prev) => {
+        const map = new Map(results.map((r) => [r.id, r]));
+        return prev.map((c) => map.get(c.id) || c);
+      });
+      setDetailCard((prev) => (prev ? (results.find((r) => r.id === prev.id) || prev) : prev));
+      setSelectedUpdates((prev) => {
+        if (!prev.includes(oldVal)) return prev;
+        const deduped = prev.filter((v) => v !== oldVal);
+        return deduped.includes(newVal) ? deduped : [...deduped, newVal];
+      });
+    } catch (e) {
+      alert(`태그 이름 변경 실패: ${e.message}`);
+    }
+  }, [cards, projectSlug, actorName]);
 
   // 상세 모달이 열려있을 때 ← → 키로 같은 탭의 이전/다음 카드로 이동.
   // input/textarea 입력 중이거나 이미지 lightbox 가 열려있을 땐 동작 안 함.
@@ -5908,6 +6055,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   selected={selectedUpdates}
                   onChange={setSelectedUpdates}
                   totalCount={inRangeCards.length}
+                  onRename={renameUpdateTag}
                 />
               );
             })()}
@@ -7301,6 +7449,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   selected={selectedUpdates}
                   onChange={setSelectedUpdates}
                   totalCount={completedList.length}
+                  onRename={renameUpdateTag}
                 />
                 {viewMode === "list" ? (
                   <div>
@@ -7417,6 +7566,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       selected={selectedUpdates}
                       onChange={setSelectedUpdates}
                       totalCount={wishlist.length}
+                      onRename={renameUpdateTag}
                     />
                     {viewMode === "list" ? (
                       <div>
@@ -8139,26 +8289,36 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     projectSlug={projectSlug}
                     actor={actorName}
                     disabled={confirmed}
+                    onSaved={(d) => {
+                      setDetailCard(d);
+                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                    }}
                   />
 
-                  {card.thumbnail_url && (
-                    <div style={{
-                      background: "rgba(0,0,0,0.04)", padding: 16, borderRadius: 12,
-                      marginBottom: 20, textAlign: "center",
-                    }}>
-                      <img
-                        src={card.thumbnail_url}
-                        alt=""
-                        onClick={() => setPreviewImage(card.thumbnail_url)}
-                        style={{
-                          maxWidth: "100%", maxHeight: 340, objectFit: "contain",
-                          borderRadius: 10, background: "#fff",
-                          boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-                          cursor: "zoom-in",
-                        }}
-                      />
-                    </div>
-                  )}
+                  {(() => {
+                    // 상세 모달 좌측 대표 이미지 — 시안이 단 하나면 그 이미지로, 아니면 card.thumbnail_url.
+                    const ds = Array.isArray(card.data?.designs) ? card.data.designs : [];
+                    const single = ds.length === 1 && ds[0]?.imageUrl ? ds[0].imageUrl : null;
+                    const src = single || card.thumbnail_url;
+                    return src ? (
+                      <div style={{
+                        background: "rgba(0,0,0,0.04)", padding: 16, borderRadius: 12,
+                        marginBottom: 20, textAlign: "center",
+                      }}>
+                        <img
+                          src={src}
+                          alt=""
+                          onClick={() => setPreviewImage(src)}
+                          style={{
+                            maxWidth: "100%", maxHeight: 340, objectFit: "contain",
+                            borderRadius: 10, background: "#fff",
+                            boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+                            cursor: "zoom-in",
+                          }}
+                        />
+                      </div>
+                    ) : null;
+                  })()}
 
                   {/* 업데이트 일정 — 어셋 정보 위에 별도로 표시 (완료 시점 기획) */}
                   <TargetUpdateField
@@ -8167,6 +8327,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     actor={actorName}
                     disabled={confirmed}
                     availableUpdates={availableUpdates}
+                    onSaved={(d) => {
+                      setDetailCard(d);
+                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                    }}
                   />
 
                   {/* 어셋 정보 인라인 편집 (자동 저장) — 카드 생성은 최소 정보, 편집은 여기서 */}
@@ -8336,17 +8500,41 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       댓글 ({card.comments?.length || 0})
                     </div>
                     <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
-                      {(card.comments || []).map((cm) => (
-                        <div key={cm.id} style={{
-                          padding: "8px 12px", borderRadius: 10,
-                          background: "rgba(0,0,0,0.03)", fontSize: 13,
-                        }}>
-                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
-                            {cm.actor || "익명"} · {cm.created_at?.slice(0, 16).replace("T", " ")}
+                      {(card.comments || []).map((cm) => {
+                        const mine = !!actorName && cm.actor === actorName;
+                        return (
+                          <div key={cm.id} style={{
+                            padding: "8px 12px", borderRadius: 10,
+                            background: "rgba(0,0,0,0.03)", fontSize: 13,
+                            position: "relative",
+                          }}>
+                            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, paddingRight: mine ? 20 : 0 }}>
+                              {cm.actor || "익명"} · {cm.created_at?.slice(0, 16).replace("T", " ")}
+                            </div>
+                            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cm.body}</div>
+                            {mine && (
+                              <button
+                                onClick={async () => {
+                                  if (!confirm("이 댓글을 삭제할까요?")) return;
+                                  try {
+                                    await deleteCardComment(projectSlug, card.id, cm.id, actorName);
+                                    const detail = await fetchCardDetail(projectSlug, card.id);
+                                    if (detail) setDetailCard(detail);
+                                  } catch (e) { alert("댓글 삭제 실패: " + e.message); }
+                                }}
+                                title="내 댓글 삭제"
+                                style={{
+                                  position: "absolute", top: 4, right: 4,
+                                  width: 18, height: 18, borderRadius: 9,
+                                  border: "none", background: "transparent",
+                                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                                  display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+                                }}
+                              >✕</button>
+                            )}
                           </div>
-                          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cm.body}</div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {(!card.comments || card.comments.length === 0) && (
                         <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "16px 0" }}>
                           아직 댓글이 없습니다.

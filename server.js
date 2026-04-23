@@ -148,6 +148,8 @@ const stmts = {
     WHERE cl.card_id = ? ORDER BY ci.position ASC`),
   listAttachmentsByCard: db.prepare("SELECT * FROM card_attachments WHERE card_id = ? ORDER BY created_at DESC"),
   listCommentsByCard: db.prepare("SELECT * FROM card_comments WHERE card_id = ? ORDER BY created_at ASC"),
+  getCommentById: db.prepare("SELECT * FROM card_comments WHERE id = ? AND card_id = ?"),
+  deleteComment: db.prepare("DELETE FROM card_comments WHERE id = ? AND card_id = ?"),
   listActivitiesByCard: db.prepare("SELECT * FROM card_activities WHERE card_id = ? ORDER BY created_at DESC LIMIT 200"),
 
   insertComment: db.prepare("INSERT INTO card_comments (id, card_id, body, actor) VALUES (?, ?, ?, ?)"),
@@ -790,6 +792,27 @@ app.post("/api/projects/:slug/cards/:id/comments", async (c) => {
   stmts.insertComment.run(id, cardId, body.body, body.actor ?? null);
   logCardActivity(cardId, body.actor ?? null, "comment_added", { preview: body.body.slice(0, 80) });
   return c.json({ id, body: body.body, actor: body.actor ?? null, created_at: new Date().toISOString() }, 201);
+});
+
+// DELETE /api/projects/:slug/cards/:id/comments/:commentId — 본인 댓글 삭제.
+// actor (쿼리 파라미터) 가 댓글 작성자와 일치할 때만 허용.
+app.delete("/api/projects/:slug/cards/:id/comments/:commentId", async (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const cardId = c.req.param("id");
+  const commentId = c.req.param("commentId");
+  const actor = c.req.query("actor") || null;
+  const card = stmts.getCardById.get(cardId, p.id);
+  if (!card) return c.json({ error: "card not found" }, 404);
+  const cm = stmts.getCommentById.get(commentId, cardId);
+  if (!cm) return c.json({ error: "comment not found" }, 404);
+  // 본인 확인 — actor 가 작성자와 동일해야 함. 둘 다 null 이면 거부.
+  if (!cm.actor || cm.actor !== actor) {
+    return c.json({ error: "only the author can delete this comment" }, 403);
+  }
+  stmts.deleteComment.run(commentId, cardId);
+  logCardActivity(cardId, actor, "comment_deleted", { preview: (cm.body || "").slice(0, 80) });
+  return c.json({ ok: true });
 });
 
 // GET /api/projects/:slug
