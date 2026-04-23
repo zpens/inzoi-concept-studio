@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.8.2";
 const CHANGELOG = [
+  {
+    version: "1.8.2",
+    date: "2026-04-23",
+    changes: [
+      "기존 제작 에셋 썸네일 클릭 시 inzoiObjectList 의 해당 에셋 상세를 새 탭으로 딥링크 — URL 해시 `#item=<id>` 로 카탈로그가 자동 인식해 모달 오픈",
+      "썸네일 우측 상단에 ↗ 배지 + hover 시 테두리 강조 + 살짝 떠오르는 피드백으로 '클릭 가능' 시각화",
+    ],
+  },
   {
     version: "1.8.1",
     date: "2026-04-23",
@@ -2490,40 +2498,70 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                   gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))",
                   gap: 6,
                 }}>
-                  {spec.sample_thumbs.map((t) => (
-                    <div
-                      key={t.id}
-                      title={`${t.name}${t.price ? ` · ${t.price.toLocaleString()}원` : ""}${t.tags ? `\n${t.tags}` : ""}`}
-                      onClick={() => onOpenImage?.(t.icon_url)}
-                      style={{
-                        cursor: onOpenImage ? "zoom-in" : "default",
-                        borderRadius: 6, overflow: "hidden",
-                        border: "1px solid var(--surface-border)",
-                        background: "#fff",
-                      }}
-                    >
-                      <div style={{
-                        width: "100%", aspectRatio: "1/1",
-                        background: "rgba(0,0,0,0.03)",
-                      }}>
-                        <img
-                          src={t.icon_url}
-                          alt={t.name}
-                          loading="lazy"
-                          onError={(e) => { e.currentTarget.style.display = "none"; }}
-                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                        />
-                      </div>
-                      <div style={{
-                        padding: "3px 5px",
-                        fontSize: 9, color: "var(--text-muted)",
-                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                        textAlign: "center",
-                      }}>
-                        {t.name}
-                      </div>
-                    </div>
-                  ))}
+                  {spec.sample_thumbs.map((t) => {
+                    const catalogBase = typeof window !== "undefined"
+                      ? `${window.location.protocol}//${window.location.hostname}:8080`
+                      : "http://localhost:8080";
+                    const detailUrl = `${catalogBase}/#item=${encodeURIComponent(t.id)}`;
+                    return (
+                      <a
+                        key={t.id}
+                        href={detailUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`카탈로그에서 상세 보기: ${t.name}${t.price ? ` · ${t.price.toLocaleString()}원` : ""}${t.tags ? `\n${t.tags}` : ""}`}
+                        style={{
+                          cursor: "pointer",
+                          borderRadius: 6, overflow: "hidden",
+                          border: "1px solid var(--surface-border)",
+                          background: "#fff",
+                          textDecoration: "none",
+                          color: "inherit",
+                          display: "block",
+                          transition: "border-color 0.15s, transform 0.15s",
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.borderColor = "var(--primary)";
+                          e.currentTarget.style.transform = "translateY(-1px)";
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.borderColor = "var(--surface-border)";
+                          e.currentTarget.style.transform = "none";
+                        }}
+                      >
+                        <div style={{
+                          width: "100%", aspectRatio: "1/1",
+                          background: "rgba(0,0,0,0.03)",
+                          position: "relative",
+                        }}>
+                          <img
+                            src={t.icon_url}
+                            alt={t.name}
+                            loading="lazy"
+                            onError={(e) => { e.currentTarget.style.display = "none"; }}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                          />
+                          <div style={{
+                            position: "absolute", top: 3, right: 3,
+                            width: 16, height: 16, borderRadius: 8,
+                            background: "rgba(7,110,232,0.85)", color: "#fff",
+                            fontSize: 9, fontWeight: 700,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            pointerEvents: "none",
+                            opacity: 0.9,
+                          }} title="카탈로그 상세">↗</div>
+                        </div>
+                        <div style={{
+                          padding: "3px 5px",
+                          fontSize: 9, color: "var(--text-muted)",
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          textAlign: "center",
+                        }}>
+                          {t.name}
+                        </div>
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
