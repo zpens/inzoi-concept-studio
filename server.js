@@ -500,7 +500,11 @@ app.get("/api/object-meta", async (c) => {
     // { id: { style, mood, size, shape[], colors[], materials[], posx, posy, filter, lv1, lv2, name } }
     const byIdMeta = new Map();
     for (const o of objects) {
-      if (o?.id) byIdMeta.set(o.id, { filter: o.filter || null, name: o.name || null });
+      if (o?.id) byIdMeta.set(o.id, {
+        filter: o.filter || null,
+        name: o.name || null,
+        icon: o.icon || null, // 아이콘 파일명 (보통 id 와 동일하지만 다른 경우도 있음)
+      });
     }
     const posmap = {};
     for (const [id, v] of Object.entries(posmapScores)) {

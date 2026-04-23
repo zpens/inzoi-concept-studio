@@ -1,8 +1,26 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.4";
+const APP_VERSION = "1.9.6";
 const CHANGELOG = [
+  {
+    version: "1.9.6",
+    date: "2026-04-23",
+    changes: [
+      "🔥 우선순위 필드 추가 — card.data.priority 에 1/2/3/미정/보류 5개 고정값 저장, 상세 모달 최상단 어셋 정보 섹션 위에 버튼 5개로 편집",
+      "리스트 뷰에 [우선순위] 컬럼 추가 — 제목과 업데이트 사이, 1(빨강)/2(주황)/3(노랑)/미정(회색)/보류(흐림) 색상 뱃지",
+      "메인/완료/위시 탭 상단에 🔥 우선순위 chip 필터 바 — 업데이트 chip 바 위에 다중 선택, 카드에 실제 등장한 값만 노출",
+      "LIST_GRID 를 8→9 컬럼으로 확장 (90px 1fr 70px 90px 150px 80px 130px 95px 100px)",
+    ],
+  },
+  {
+    version: "1.9.5",
+    date: "2026-04-22",
+    changes: [
+      "리스트 뷰에 [업데이트] 컬럼 추가 — 제목과 카테고리 사이에 🗓️ target_update 값 (교도소 / voc / 미지정 등) 표시",
+      "LIST_GRID 를 7→8 컬럼으로 확장 (90px 1fr 90px 150px 80px 130px 95px 100px)",
+    ],
+  },
   {
     version: "1.9.4",
     date: "2026-04-23",
@@ -3515,6 +3533,74 @@ function CatalogDetailModal({ id, onClose }) {
   );
 }
 
+// 우선순위 enum — 고정 5개. card.data.priority 에 문자열로 저장, 빈값은 '미정'으로 취급.
+const PRIORITY_OPTIONS = ["1", "2", "3", "미정", "보류"];
+function getCardPriority(card) {
+  const v = card?.data?.priority;
+  if (v && PRIORITY_OPTIONS.includes(v)) return v;
+  return "미정";
+}
+// 우선순위 뱃지 색상 — 1/2/3 은 경고 레벨, 미정은 중립, 보류는 흐림.
+function priorityBadgeStyle(p) {
+  switch (p) {
+    case "1": return { bg: "rgba(220,38,38,0.12)",  fg: "#dc2626", border: "rgba(220,38,38,0.3)" };
+    case "2": return { bg: "rgba(234,88,12,0.12)",  fg: "#ea580c", border: "rgba(234,88,12,0.3)" };
+    case "3": return { bg: "rgba(202,138,4,0.12)",  fg: "#a16207", border: "rgba(202,138,4,0.3)" };
+    case "보류": return { bg: "rgba(0,0,0,0.06)",     fg: "var(--text-muted)", border: "rgba(0,0,0,0.1)" };
+    default: return { bg: "transparent",             fg: "var(--text-muted)", border: "transparent" };
+  }
+}
+
+// 우선순위 필드 — 어셋 정보 섹션 위에 별도로 노출. 5개 버튼 중 선택.
+function PriorityField({ card, projectSlug, actor, disabled }) {
+  const current = getCardPriority(card);
+  const save = async (next) => {
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), priority: next || null },
+          actor,
+        }),
+      });
+    } catch (e) { console.warn("우선순위 저장 실패:", e); }
+  };
+  return (
+    <div style={{
+      marginBottom: 14, padding: "10px 14px", borderRadius: 10,
+      background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.22)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626", minWidth: 130 }}>
+          🔥 우선순위
+        </span>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {PRIORITY_OPTIONS.map((p) => {
+            const active = current === p;
+            const s = priorityBadgeStyle(p);
+            return (
+              <button
+                key={p}
+                disabled={disabled}
+                onClick={() => { if (!disabled && p !== current) save(p); }}
+                style={{
+                  padding: "5px 12px", borderRadius: 8,
+                  background: active ? s.fg : s.bg,
+                  color: active ? "#fff" : s.fg,
+                  border: `1px solid ${active ? s.fg : s.border}`,
+                  fontSize: 12, fontWeight: 700, cursor: disabled ? "default" : "pointer",
+                  minWidth: 40, transition: "all 0.15s",
+                }}
+              >{p}</button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 업데이트 일정 필드 — 어셋 정보 섹션 위에 별도로 노출. 자유 입력 + datalist.
 function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdates = [] }) {
   const [value, setValue] = React.useState(card.data?.target_update || "");
@@ -3856,6 +3942,62 @@ function UpdateChipBar({ chips, selected, onChange, totalCount }) {
   );
 }
 
+// 우선순위 chip 필터.
+function matchesPriorityFilter(card, selected) {
+  if (!selected || selected.length === 0) return true;
+  return selected.includes(getCardPriority(card));
+}
+function collectPriorityChips(cards) {
+  const counts = new Map();
+  for (const c of cards) {
+    if (c.is_archived) continue;
+    const p = getCardPriority(c);
+    counts.set(p, (counts.get(p) || 0) + 1);
+  }
+  // PRIORITY_OPTIONS 순서대로 정렬 (1, 2, 3, 미정, 보류).
+  return PRIORITY_OPTIONS
+    .filter((p) => counts.has(p))
+    .map((p) => ({ value: p, label: p, count: counts.get(p) }));
+}
+function PriorityChipBar({ chips, selected, onChange, totalCount }) {
+  if (chips.length === 0) return null;
+  const toggle = (value) => {
+    if (selected.includes(value)) onChange(selected.filter((v) => v !== value));
+    else onChange([...selected, value]);
+  };
+  const chipStyle = (active, value) => {
+    const s = priorityBadgeStyle(value);
+    return {
+      padding: "4px 10px", borderRadius: 14,
+      background: active ? s.fg : s.bg,
+      border: `1px solid ${active ? s.fg : s.border}`,
+      color: active ? "#fff" : s.fg,
+      fontSize: 11, fontWeight: 700, cursor: "pointer",
+      transition: "all 0.15s",
+    };
+  };
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginRight: 4 }}>🔥 우선순위:</span>
+      <button
+        onClick={() => onChange([])}
+        style={{
+          padding: "4px 10px", borderRadius: 14,
+          background: selected.length === 0 ? "var(--primary)" : "rgba(7,110,232,0.08)",
+          border: `1px solid ${selected.length === 0 ? "var(--primary)" : "rgba(7,110,232,0.18)"}`,
+          color: selected.length === 0 ? "#fff" : "var(--primary)",
+          fontSize: 11, fontWeight: 700, cursor: "pointer",
+        }}
+      >전체 · {totalCount}</button>
+      {chips.map((c) => (
+        <button key={c.value} onClick={() => toggle(c.value)} style={chipStyle(selected.includes(c.value), c.value)}>
+          {c.label} · {c.count}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // 카드/리스트 뷰 토글.
 function ViewModeToggle({ value, onChange }) {
   const btn = (mode, icon, title) => (
@@ -3885,7 +4027,7 @@ function ViewModeToggle({ value, onChange }) {
 
 // 리스트 뷰 한 줄 — 썸네일 + 제목 + 카테고리/스타일 + 탭별 메타 + 날짜.
 // 리스트 뷰 공통 grid 템플릿 — CardListRow 와 CardListHeader 가 같은 비율 공유.
-const LIST_GRID = "90px 1fr 150px 80px 130px 95px 100px";
+const LIST_GRID = "90px 1fr 70px 90px 150px 80px 130px 95px 100px";
 
 function CardListRow({ card, tabId, onClick }) {
   const data = card.data || {};
@@ -3960,6 +4102,31 @@ function CardListRow({ card, tabId, onClick }) {
           </div>
         )}
       </div>
+      <div style={{ fontSize: 11 }}>
+        {(() => {
+          const p = getCardPriority(card);
+          const s = priorityBadgeStyle(p);
+          return (
+            <span style={{
+              padding: "2px 10px", borderRadius: 10,
+              background: s.bg, color: s.fg, border: `1px solid ${s.border}`,
+              fontWeight: 700, display: "inline-block", minWidth: 36, textAlign: "center",
+            }}>{p}</span>
+          );
+        })()}
+      </div>
+      <div style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {(() => {
+          const tu = data.target_update?.trim?.() || "";
+          if (!tu) return <span style={{ color: "var(--text-muted)" }}>미지정</span>;
+          return (
+            <span style={{
+              padding: "2px 8px", borderRadius: 10,
+              background: "rgba(180,83,9,0.1)", color: "#b45309", fontWeight: 600,
+            }}>🗓️ {tu}</span>
+          );
+        })()}
+      </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {catInfo ? `${catInfo.label} · ${catInfo.room}` : "—"}
       </div>
@@ -4009,6 +4176,8 @@ function CardListHeader({ tabId }) {
     }}>
       <div />
       <div style={cell}>제목</div>
+      <div style={cell}>우선순위</div>
+      <div style={cell}>업데이트</div>
       <div style={cell}>카테고리</div>
       <div style={cell}>스타일</div>
       <div style={cell}>크기 (W×D×H)</div>
@@ -4580,6 +4749,8 @@ export default function InZOIConceptTool() {
 
   // 업데이트 일정 필터 상태 (availableUpdates 는 cards 선언 이후에 정의 — TDZ 방지).
   const [selectedUpdates, setSelectedUpdates] = useState([]);
+  // 우선순위 chip 필터 상태 (1/2/3/미정/보류 다중 선택).
+  const [selectedPriorities, setSelectedPriorities] = useState([]);
 
   // inzoiObjectList 의 meta.json 을 5분 주기로 가져와 카테고리/스타일 목록을 교체.
   // 실패하면 hardcoded fallback 사용. metaVersion bump 으로 하위 컴포넌트 re-render.
@@ -5642,13 +5813,22 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
             {(() => {
               const chips = collectUpdateChips(inRangeCards);
+              const pchips = collectPriorityChips(inRangeCards);
               return (
-                <UpdateChipBar
-                  chips={chips}
-                  selected={selectedUpdates}
-                  onChange={setSelectedUpdates}
-                  totalCount={inRangeCards.length}
-                />
+                <>
+                  <PriorityChipBar
+                    chips={pchips}
+                    selected={selectedPriorities}
+                    onChange={setSelectedPriorities}
+                    totalCount={inRangeCards.length}
+                  />
+                  <UpdateChipBar
+                    chips={chips}
+                    selected={selectedUpdates}
+                    onChange={setSelectedUpdates}
+                    totalCount={inRangeCards.length}
+                  />
+                </>
               );
             })()}
 
@@ -5657,7 +5837,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <div style={{ marginBottom: 40 }}>
                   <CardListHeader tabId={activeTab} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
+                    {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates) && matchesPriorityFilter(c, selectedPriorities)), sortBy).map((c) => (
                       <CardListRow
                         key={`card-${c.id}`}
                         card={c}
@@ -5681,7 +5861,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 marginBottom: 40,
               }}>
                 {/* 새 카드 시스템의 카드들 — 위시에서 넘어온 것 포함. 정렬 sortBy 적용 */}
-                {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
+                {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates) && matchesPriorityFilter(c, selectedPriorities)), sortBy).map((c) => (
                   <CardHubCard
                     key={`card-${c.id}`}
                     card={c}
@@ -7029,13 +7209,20 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               .map((item) => cards.find((c) => c.id === item._cardId))
               .filter(Boolean);
             const chips = collectUpdateChips(completedCards);
+            const pchips = collectPriorityChips(completedCards);
             const filterItem = (item) => {
               const card = cards.find((c) => c.id === item._cardId);
-              return card && matchesUpdateFilter(card, selectedUpdates);
+              return card && matchesUpdateFilter(card, selectedUpdates) && matchesPriorityFilter(card, selectedPriorities);
             };
             const visibleList = completedList.filter(filterItem);
             return (
               <>
+                <PriorityChipBar
+                  chips={pchips}
+                  selected={selectedPriorities}
+                  onChange={setSelectedPriorities}
+                  totalCount={completedList.length}
+                />
                 <UpdateChipBar
                   chips={chips}
                   selected={selectedUpdates}
@@ -7142,13 +7329,20 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   .map((item) => cards.find((c) => c.id === item._cardId))
                   .filter(Boolean);
                 const chips = collectUpdateChips(wishCards);
+                const pchips = collectPriorityChips(wishCards);
                 const filterItem = (item) => {
                   const card = cards.find((c) => c.id === item._cardId);
-                  return card && matchesUpdateFilter(card, selectedUpdates);
+                  return card && matchesUpdateFilter(card, selectedUpdates) && matchesPriorityFilter(card, selectedPriorities);
                 };
                 const visibleList = wishlist.filter(filterItem);
                 return (
                   <>
+                    <PriorityChipBar
+                      chips={pchips}
+                      selected={selectedPriorities}
+                      onChange={setSelectedPriorities}
+                      totalCount={wishlist.length}
+                    />
                     <UpdateChipBar
                       chips={chips}
                       selected={selectedUpdates}
@@ -7885,6 +8079,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       />
                     </div>
                   )}
+
+                  {/* 우선순위 — 어셋 정보 위에 별도로 표시 */}
+                  <PriorityField
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                  />
 
                   {/* 업데이트 일정 — 어셋 정보 위에 별도로 표시 (완료 시점 기획) */}
                   <TargetUpdateField
