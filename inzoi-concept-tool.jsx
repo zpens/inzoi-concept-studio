@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.6";
+const APP_VERSION = "1.9.7";
 const CHANGELOG = [
+  {
+    version: "1.9.7",
+    date: "2026-04-23",
+    changes: [
+      "우선순위 '미정' 버튼이 투명 배경·투명 테두리라 안 보이던 문제 수정 — 회색 배경 + 테두리 추가",
+      "우선순위 버튼 클릭 시 active 하이라이트가 즉시 반영 안되던 문제 수정 — optimistic local state 로 클릭 즉시 UI 업데이트, 실패 시 rollback",
+      "활성 버튼에 그림자 추가 — 선택 여부 더 명확",
+    ],
+  },
   {
     version: "1.9.6",
     date: "2026-04-23",
@@ -3540,31 +3549,39 @@ function getCardPriority(card) {
   if (v && PRIORITY_OPTIONS.includes(v)) return v;
   return "미정";
 }
-// 우선순위 뱃지 색상 — 1/2/3 은 경고 레벨, 미정은 중립, 보류는 흐림.
+// 우선순위 뱃지 색상 — 1/2/3 은 경고 레벨, 미정/보류는 눈에 보이는 중립 배경.
 function priorityBadgeStyle(p) {
   switch (p) {
     case "1": return { bg: "rgba(220,38,38,0.12)",  fg: "#dc2626", border: "rgba(220,38,38,0.3)" };
     case "2": return { bg: "rgba(234,88,12,0.12)",  fg: "#ea580c", border: "rgba(234,88,12,0.3)" };
     case "3": return { bg: "rgba(202,138,4,0.12)",  fg: "#a16207", border: "rgba(202,138,4,0.3)" };
-    case "보류": return { bg: "rgba(0,0,0,0.06)",     fg: "var(--text-muted)", border: "rgba(0,0,0,0.1)" };
-    default: return { bg: "transparent",             fg: "var(--text-muted)", border: "transparent" };
+    case "보류": return { bg: "rgba(100,116,139,0.1)", fg: "#64748b", border: "rgba(100,116,139,0.3)" };
+    default: return { bg: "rgba(0,0,0,0.04)",          fg: "#64748b", border: "rgba(0,0,0,0.15)" };
   }
 }
 
 // 우선순위 필드 — 어셋 정보 섹션 위에 별도로 노출. 5개 버튼 중 선택.
+// 로컬 optimistic state 로 클릭 즉시 active 하이라이트 반영 (부모 re-fetch 기다리지 않음).
 function PriorityField({ card, projectSlug, actor, disabled }) {
-  const current = getCardPriority(card);
-  const save = async (next) => {
-    try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), priority: next || null },
-          actor,
-        }),
-      });
-    } catch (e) { console.warn("우선순위 저장 실패:", e); }
+  const serverValue = getCardPriority(card);
+  const [optimistic, setOptimistic] = React.useState(serverValue);
+  // 다른 카드로 전환 or 서버 값이 바뀌면 local 도 동기화.
+  React.useEffect(() => { setOptimistic(serverValue); }, [card.id, serverValue]);
+  const current = optimistic;
+  const save = (next) => {
+    setOptimistic(next); // 즉시 UI 반영
+    // fire-and-forget — 실패 시 rollback.
+    fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        data: { ...(card.data || {}), priority: next || null },
+        actor,
+      }),
+    }).catch((e) => {
+      console.warn("우선순위 저장 실패:", e);
+      setOptimistic(serverValue); // rollback
+    });
   };
   return (
     <div style={{
@@ -3591,6 +3608,7 @@ function PriorityField({ card, projectSlug, actor, disabled }) {
                   border: `1px solid ${active ? s.fg : s.border}`,
                   fontSize: 12, fontWeight: 700, cursor: disabled ? "default" : "pointer",
                   minWidth: 40, transition: "all 0.15s",
+                  boxShadow: active ? "0 1px 4px rgba(0,0,0,0.12)" : "none",
                 }}
               >{p}</button>
             );
