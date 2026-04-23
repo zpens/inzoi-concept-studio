@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.25";
+const APP_VERSION = "1.10.26";
 const CHANGELOG = [
+  {
+    version: "1.10.26",
+    date: "2026-04-24",
+    changes: [
+      "🖼 갤러리 캔버스 — 상세 모달 열고 F 키 (또는 헤더 🖼 버튼) 로 전체 화면 전환. 카드의 모든 이미지를 그룹별(대표/참조 · 시안 · 현재 시트 · 이전 시트)로 한 화면에 배치",
+      "팬 / 줌 / 키보드 조작: 휠=커서 기준 줌 · 드래그=팬 · 0=초기화 · ±=줌 · 방향키=팬 · Esc/F=닫기",
+      "각 이미지 호버 시 ☆ 대표 (카드 썸네일 지정) / ⭐ 선정 (시안 한정, selected_design + 썸네일 갱신) / ↗ 원본 열기 버튼",
+      "선정된 시안은 노란 테두리 + ⭐ 선정 배지, 현재 대표는 초록 테두리",
+      "외부 의존성 없음 — CSS translate+scale 로 구현",
+      "단축키 추가 — N: 어디서나 새 아이디어 추가 모달 오픈",
+    ],
+  },
   {
     version: "1.10.25",
     date: "2026-04-24",
@@ -4905,6 +4917,359 @@ function SortSelect({ value, onChange }) {
   );
 }
 
+// 🖼 갤러리 캔버스 (v1.10.26) — 상세 모달이 열린 상태에서 단축키 F 로 전체 화면.
+// 카드의 모든 이미지(대표/참조 · 시안 · 현재 시트 · 과거 시트) 를 4개 그룹 row 로 배치하고
+// 전체 캔버스에 translate+scale 로 pan/zoom. 외부 의존성 없음.
+function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
+  const [view, setView] = React.useState({ x: 0, y: 0, scale: 1 });
+  const [dragging, setDragging] = React.useState(false);
+  const wrapRef = React.useRef(null);
+  const panStart = React.useRef(null);
+
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+  // 이미지 수집 — 그룹 단위.
+  const groups = React.useMemo(() => {
+    const out = [];
+    const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+    const hero = card.thumbnail_url;
+    const headRefs = [];
+    if (hero && !refs.includes(hero)) headRefs.push(hero);
+    headRefs.push(...refs);
+    if (headRefs.length) {
+      out.push({
+        key: "refs",
+        title: "🖼 대표 / 참조",
+        items: headRefs.map((url) => ({
+          url, type: "ref",
+          isCover: url === hero,
+          label: url === hero ? "⭐ 대표" : null,
+        })),
+      });
+    }
+    const designs = (Array.isArray(card.data?.designs) ? card.data.designs : []).filter((d) => d?.imageUrl);
+    if (designs.length) {
+      out.push({
+        key: "designs",
+        title: `🎨 시안 (${designs.length})`,
+        items: designs.map((d, i) => ({
+          url: d.imageUrl, type: "design", designIdx: i,
+          isSelected: card.data?.selected_design === i,
+          isCover: d.imageUrl === hero,
+          label: d._sheet ? "📑 시트"
+            : d._legacy ? "🗂 레거시"
+            : d.source === "upload" ? `📤 #${i + 1}`
+            : `#${i + 1}`,
+        })),
+      });
+    }
+    const v = card.data?.concept_sheet_views;
+    if (v && (v.front || v.side || v.back || v.top)) {
+      out.push({
+        key: "sheet-current",
+        title: `📑 현재 시트${v.model ? ` · ${v.model}` : ""}${v.generated_at ? ` · ${v.generated_at.slice(0, 10)}` : ""}`,
+        items: ["front", "side", "back", "top"].filter((k) => v[k]).map((k) => ({
+          url: v[k], type: "sheet",
+          label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
+          isCover: v[k] === hero,
+        })),
+      });
+    }
+    const history = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
+    history.forEach((h, hi) => {
+      const items = ["front", "side", "back", "top"].filter((k) => h[k]).map((k) => ({
+        url: h[k], type: "sheet-history",
+        label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
+        isCover: h[k] === hero,
+      }));
+      if (items.length) {
+        out.push({
+          key: `sheet-history-${hi}`,
+          title: `🗂 이전 시트 ${hi + 1}${h.generated_at ? ` · ${h.generated_at.slice(0, 10)}` : ""}${h.model ? ` · ${h.model}` : ""}`,
+          items,
+        });
+      }
+    });
+    return out;
+  }, [card]);
+
+  // 휠 줌 (커서 기준).
+  const onWheel = React.useCallback((e) => {
+    e.preventDefault();
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const delta = -e.deltaY * 0.0015;
+    setView((prev) => {
+      const nextScale = clamp(prev.scale * Math.exp(delta), 0.1, 6);
+      const ratio = nextScale / prev.scale;
+      return { scale: nextScale, x: px - (px - prev.x) * ratio, y: py - (py - prev.y) * ratio };
+    });
+  }, []);
+
+  // passive: false 로 wheel 리스너 등록 (기본 브라우저 줌 방지).
+  React.useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const handler = (e) => onWheel(e);
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [onWheel]);
+
+  const onPointerDown = (e) => {
+    if (e.button !== 0) return;
+    // 이미지 타일 내부 버튼은 팬 시작 막기 — target 이 button/action 이면 무시.
+    if (e.target.closest("[data-action]")) return;
+    setDragging(true);
+    panStart.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
+    wrapRef.current?.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    if (!panStart.current) return;
+    const { sx, sy, vx, vy } = panStart.current;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) + Math.abs(dy) > 3) panStart.current.moved = true;
+    setView((prev) => ({ ...prev, x: vx + dx, y: vy + dy }));
+  };
+  const onPointerUp = (e) => {
+    panStart.current = null;
+    setDragging(false);
+    try { wrapRef.current?.releasePointerCapture?.(e.pointerId); } catch {}
+  };
+
+  // 키보드.
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "0") { setView({ x: 0, y: 0, scale: 1 }); return; }
+      if (e.key === "+" || e.key === "=") { setView((v) => ({ ...v, scale: clamp(v.scale * 1.2, 0.1, 6) })); return; }
+      if (e.key === "-" || e.key === "_") { setView((v) => ({ ...v, scale: clamp(v.scale / 1.2, 0.1, 6) })); return; }
+      if (e.key === "ArrowUp")    { setView((v) => ({ ...v, y: v.y + 80 })); return; }
+      if (e.key === "ArrowDown")  { setView((v) => ({ ...v, y: v.y - 80 })); return; }
+      if (e.key === "ArrowLeft")  { setView((v) => ({ ...v, x: v.x + 80 })); return; }
+      if (e.key === "ArrowRight") { setView((v) => ({ ...v, x: v.x - 80 })); return; }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // 액션.
+  const setCover = async (url) => {
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ thumbnail_url: url, actor }),
+      });
+      await onSaved?.();
+    } catch (e) { alert("대표 지정 실패: " + e.message); }
+  };
+  const selectDesign = async (idx) => {
+    try {
+      const d = card.data?.designs?.[idx];
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), selected_design: idx },
+          thumbnail_url: d?.imageUrl || card.thumbnail_url,
+          actor,
+        }),
+      });
+      await onSaved?.();
+    } catch (e) { alert("선정 실패: " + e.message); }
+  };
+
+  const TILE = 260;
+  const totalImages = groups.reduce((n, g) => n + g.items.length, 0);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      background: "rgba(8, 12, 22, 0.98)",
+      display: "flex", flexDirection: "column",
+    }}>
+      {/* Top bar */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0,
+        padding: "10px 16px", zIndex: 10,
+        display: "flex", alignItems: "center", gap: 14,
+        background: "linear-gradient(to bottom, rgba(0,0,0,0.5), transparent)",
+        pointerEvents: "none",
+      }}>
+        <div style={{ color: "#fff", fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+          🖼 <span style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{card.title || "(제목 없음)"}</span>
+          <span style={{ fontWeight: 400, color: "rgba(255,255,255,0.55)", fontSize: 12 }}>— 갤러리 · {totalImages}개</span>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, pointerEvents: "auto" }}>
+          <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
+            휠 줌 · 드래그 팬 · 0 초기화 · ±/화살표 키 · Esc/F 닫기
+          </span>
+          <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "monospace", padding: "3px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)" }}>
+            {Math.round(view.scale * 100)}%
+          </span>
+          <button
+            onClick={() => setView({ x: 0, y: 0, scale: 1 })}
+            style={{
+              padding: "5px 10px", borderRadius: 6,
+              background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)",
+              color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
+            }}
+          >⟲ 초기화</button>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "5px 10px", borderRadius: 6,
+              background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)",
+              color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            }}
+          >✕ 닫기</button>
+        </div>
+      </div>
+
+      {/* Canvas */}
+      <div
+        ref={wrapRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        style={{
+          position: "absolute", inset: 0,
+          overflow: "hidden",
+          cursor: dragging ? "grabbing" : "grab",
+          userSelect: "none",
+          touchAction: "none",
+        }}
+      >
+        <div style={{
+          position: "absolute", left: 0, top: 0,
+          transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+          transformOrigin: "0 0",
+          padding: "60px 20px 20px",
+          display: "flex", flexDirection: "column", gap: 28,
+        }}>
+          {groups.length === 0 && (
+            <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, padding: 40 }}>
+              이 카드엔 아직 이미지가 없습니다.
+            </div>
+          )}
+          {groups.map((g) => (
+            <div key={g.key}>
+              <div style={{ color: "#fff", fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{g.title}</div>
+              <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                {g.items.map((it, i) => (
+                  <GalleryTile
+                    key={`${g.key}-${i}`}
+                    item={it}
+                    size={TILE}
+                    onSetCover={setCover}
+                    onSelectDesign={selectDesign}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GalleryTile({ item, size, onSetCover, onSelectDesign }) {
+  const [hover, setHover] = React.useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: size, height: size, flexShrink: 0,
+        position: "relative", borderRadius: 10, overflow: "hidden",
+        border: item.isSelected ? "3px solid #fbbf24"
+          : item.isCover ? "2px solid #22c55e"
+          : "1px solid rgba(255,255,255,0.18)",
+        background: "#000",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+      }}
+    >
+      <img
+        src={item.url}
+        alt=""
+        draggable={false}
+        style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block", pointerEvents: "none" }}
+      />
+      {item.label && (
+        <div style={{
+          position: "absolute", top: 6, left: 6,
+          padding: "2px 8px", borderRadius: 4,
+          background: "rgba(0,0,0,0.75)", color: "#fff",
+          fontSize: 10, fontWeight: 700, pointerEvents: "none",
+        }}>{item.label}</div>
+      )}
+      {item.isSelected && (
+        <div style={{
+          position: "absolute", top: 6, right: 6,
+          padding: "2px 8px", borderRadius: 4,
+          background: "#fbbf24", color: "#000",
+          fontSize: 10, fontWeight: 800, pointerEvents: "none",
+        }}>⭐ 선정</div>
+      )}
+      {/* 액션 오버레이 (hover) */}
+      {hover && (
+        <div
+          data-action="overlay"
+          style={{
+            position: "absolute", inset: 0,
+            background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent 55%)",
+            display: "flex", alignItems: "flex-end", justifyContent: "center",
+            padding: 10,
+          }}
+        >
+          <div data-action="btns" style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+            {!item.isCover && (
+              <button
+                data-action="cover"
+                onClick={(e) => { e.stopPropagation(); onSetCover(item.url); }}
+                title="카드 대표(썸네일) 지정"
+                style={{
+                  padding: "4px 10px", borderRadius: 6,
+                  background: "#fff", border: "none", color: "#000",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer",
+                }}
+              >☆ 대표</button>
+            )}
+            {item.type === "design" && !item.isSelected && (
+              <button
+                data-action="select"
+                onClick={(e) => { e.stopPropagation(); onSelectDesign(item.designIdx); }}
+                title="이 시안을 대표로 선정 (썸네일 갱신)"
+                style={{
+                  padding: "4px 10px", borderRadius: 6,
+                  background: "#fbbf24", border: "none", color: "#000",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer",
+                }}
+              >⭐ 선정</button>
+            )}
+            <a
+              data-action="open"
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                padding: "4px 10px", borderRadius: 6,
+                background: "rgba(255,255,255,0.2)", color: "#fff",
+                fontSize: 11, fontWeight: 700, textDecoration: "none",
+              }}
+            >↗ 원본</a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 카드 공유 링크 복사 — 제목 옆 작은 🔗 아이콘, 클릭 시 현재 카드 URL 을 클립보드에 복사 (v1.10.24).
 function CardShareLink({ slug, cardId }) {
   const [copied, setCopied] = React.useState(false);
@@ -6226,6 +6591,7 @@ export default function InZOIConceptTool() {
   const [archivedCards, setArchivedCards] = useState([]);  // 서버에서 가져온 아카이브 카드
   const [activityFilter, setActivityFilter] = useState("all"); // 카드 활동 이력 필터
   const [activitiesExpanded, setActivitiesExpanded] = useState(true); // 상세 모달 활동 이력 펼침 (v1.10.17)
+  const [galleryOpen, setGalleryOpen] = useState(false); // 상세 갤러리 캔버스 (F, v1.10.26)
   const [newItemId, setNewItemId] = useState(null);
   // 워크플로우 탭 상세 전개 여부. 기본 false 라 그리드만 보이고, 카드 클릭하거나
   // ＋ 새 시안 눌렀을 때만 true 로 전환되어 입력/단계 UI 가 드러난다.
@@ -6569,6 +6935,30 @@ export default function InZOIConceptTool() {
       alert(`태그 이름 변경 실패: ${e.message}`);
     }
   }, [cards, projectSlug, actorName]);
+
+  // 전역 단축키 (v1.10.26)
+  //   F: 상세 모달이 열려있을 때 갤러리 캔버스 토글
+  //   N: 어디서나 새 아이디어(위시 추가) 모달 오픈
+  // 입력창(input/textarea) 포커스 중엔 동작 안 함.
+  useEffect(() => {
+    const onKey = (e) => {
+      const tgt = e.target;
+      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.tagName === "SELECT" || tgt.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "f" || e.key === "F") {
+        if (detailCard) { e.preventDefault(); setGalleryOpen((v) => !v); }
+      } else if (e.key === "n" || e.key === "N") {
+        if (!wishAddOpen) { e.preventDefault(); setWishAddOpen(true); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailCard, wishAddOpen]);
+
+  // 상세 카드가 닫히면 갤러리도 함께 닫음.
+  useEffect(() => {
+    if (!detailCard && galleryOpen) setGalleryOpen(false);
+  }, [detailCard, galleryOpen]);
 
   // 상세 모달이 열려있을 때 ← → 키로 같은 탭의 이전/다음 카드로 이동.
   // input/textarea 입력 중이거나 이미지 lightbox 가 열려있을 땐 동작 안 함.
@@ -9657,6 +10047,22 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     {confirmed && <span style={{ fontSize: 11, color: "#22c55e", whiteSpace: "nowrap" }}>🔒 잠김</span>}
                     {/* 카드 딥링크 복사 (v1.10.24) — 제목 옆 아주 작게 */}
                     <CardShareLink slug={projectSlug} cardId={card.id} />
+                    {/* 갤러리 캔버스 진입 (v1.10.26) — 단축키 F */}
+                    <button
+                      onClick={() => setGalleryOpen(true)}
+                      title="이 카드의 모든 이미지 갤러리 (단축키: F)"
+                      style={{
+                        padding: "2px 6px", borderRadius: 6,
+                        background: "transparent", border: "1px solid var(--surface-border)",
+                        color: "var(--text-muted)", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                        display: "inline-flex", alignItems: "center", gap: 3, lineHeight: 1,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <span style={{ fontSize: 11 }}>🖼</span>
+                      갤러리
+                      <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace", opacity: 0.7 }}>F</span>
+                    </button>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", paddingLeft: 8 }}>
                     {meta.label} · 수정 {card.updated_at?.slice(0, 16).replace("T", " ") || "-"}
@@ -11128,6 +11534,23 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         <CatalogDetailModal
           id={catalogItemId}
           onClose={() => setCatalogItemId(null)}
+        />
+      )}
+
+      {/* 갤러리 캔버스 (v1.10.26) — 단축키 F / 헤더 🖼 버튼으로 오픈 */}
+      {galleryOpen && detailCard && (
+        <GalleryCanvas
+          card={detailCard}
+          projectSlug={projectSlug}
+          actor={actorName}
+          onClose={() => setGalleryOpen(false)}
+          onSaved={async () => {
+            const d = await fetchCardDetail(projectSlug, detailCard.id);
+            if (d) {
+              setDetailCard(d);
+              setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+            }
+          }}
         />
       )}
 
