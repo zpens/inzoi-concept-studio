@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.17";
+const APP_VERSION = "1.10.18";
 const CHANGELOG = [
+  {
+    version: "1.10.18",
+    date: "2026-04-24",
+    changes: [
+      "활동 이력 — '생성' 라벨을 용도별로 분리",
+      "  · 카드 신규 등록(created) → '신규'",
+      "  · 시안 이미지 생성(designs_added) → '생성'",
+      "서버가 PATCH 시 prev/next data.designs 길이를 비교해 증가했으면 designs_added 활동 기록 (+count)",
+      "활동 이력 필터 드롭다운에도 '시안 생성' 옵션 추가",
+    ],
+  },
   {
     version: "1.10.17",
     date: "2026-04-24",
@@ -9529,7 +9540,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   {/* 활동 이력 — 접기/펼치기 지원 (기본 펼침), 한글 액션 라벨 (v1.10.17) */}
                   {(() => {
                     const ACTION_LABEL = {
-                      created: "생성",
+                      created: "신규",           // 카드 신규 등록
+                      designs_added: "생성",     // 시안 이미지 생성 (Gemini)
                       moved: "상태 이동",
                       field_updated: "필드 수정",
                       comment_added: "댓글 작성",
@@ -9566,11 +9578,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           }}
                         >
                           <option value="all">모든 액션</option>
+                          <option value="designs_added">시안 생성</option>
                           <option value="moved">상태 이동</option>
                           <option value="field_updated">필드 수정</option>
                           <option value="comment_added">댓글</option>
                           <option value="confirmed">완료/재오픈</option>
-                          <option value="created">생성</option>
+                          <option value="created">신규</option>
                         </select>
                       )}
                     </div>

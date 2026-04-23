@@ -737,6 +737,18 @@ app.patch("/api/projects/:slug/cards/:id", async (c) => {
   if (changedFields.length) {
     logCardActivity(id, body.actor ?? null, "field_updated", { fields: changedFields });
   }
+  // 시안(designs) 개수 증가 감지 — 이미지 생성 이벤트를 별도 활동으로 기록 (v1.10.18).
+  if (body.data !== undefined) {
+    try {
+      const prevData = prev.data ? (typeof prev.data === "string" ? JSON.parse(prev.data) : prev.data) : {};
+      const nextData = typeof body.data === "string" ? JSON.parse(body.data) : body.data;
+      const prevCount = Array.isArray(prevData?.designs) ? prevData.designs.length : 0;
+      const nextCount = Array.isArray(nextData?.designs) ? nextData.designs.length : 0;
+      if (nextCount > prevCount) {
+        logCardActivity(id, body.actor ?? null, "designs_added", { count: nextCount - prevCount });
+      }
+    } catch { /* json 파싱 실패는 조용히 무시 */ }
+  }
   if (body.confirmed_at !== undefined && body.confirmed_at !== prev.confirmed_at) {
     logCardActivity(id, body.actor ?? null, body.confirmed_at ? "confirmed" : "reopened", null);
 
