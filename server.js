@@ -279,6 +279,29 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
 
+// /api/object-icon/:id — inzoiObjectList 의 /img/{id}.PNG 를 동일 오리진으로 프록시.
+// 브라우저가 cross-origin / 혼합 콘텐츠 걱정 없이 아이콘 이미지 로드 가능.
+// 24시간 브라우저 캐시 허용.
+app.get("/api/object-icon/:id", async (c) => {
+  const base = process.env.INZOI_OBJECT_LIST_URL || "http://localhost:8080";
+  const raw = c.req.param("id") || "";
+  const id = raw.replace(/[^A-Za-z0-9_\-]/g, "");
+  if (!id) return c.text("invalid id", 400);
+  try {
+    let r = await fetch(`${base}/img/${id}.PNG`);
+    if (!r.ok) r = await fetch(`${base}/img/${id}.png`);
+    if (!r.ok) r = await fetch(`${base}/img/${id}.jpg`);
+    if (!r.ok) return c.text("not found", 404);
+    const buf = await r.arrayBuffer();
+    return c.body(buf, 200, {
+      "content-type": r.headers.get("content-type") || "image/png",
+      "cache-control": "public, max-age=86400",
+    });
+  } catch (e) {
+    return c.text(`proxy error: ${e.message}`, 502);
+  }
+});
+
 // /api/object-meta — inzoiObjectList 의 meta.json + objects.json 을 읽어
 // 카테고리(스펙 포함) / 스타일 목록으로 변환해 반환.
 // 환경변수 INZOI_OBJECT_LIST_URL 로 대체 가능. 1시간 메모리 캐시.
@@ -373,10 +396,32 @@ app.get("/api/object-meta", async (c) => {
       // 구매 가능 / 언락 통계 — 일반 에셋인지 특수 에셋인지 파악용
       const unlockCount = assets.filter((a) => a.unlockable).length;
       const customCount = assets.filter((a) => a.cst).length;
+      // 시각 참조용 썸네일 상위 8개 — customize/unlockable 아닌 기본 에셋을 선호.
+      const prioritized = [...assets].sort((a, b) => {
+        const aScore = (a.unlockable ? 2 : 0) + (a.cst ? 1 : 0);
+        const bScore = (b.unlockable ? 2 : 0) + (b.cst ? 1 : 0);
+        return aScore - bScore;
+      });
+      const sampleThumbs = [];
+      const seenIcon = new Set();
+      for (const a of prioritized) {
+        const iconId = a.icon || a.id;
+        if (!iconId || seenIcon.has(iconId)) continue;
+        seenIcon.add(iconId);
+        sampleThumbs.push({
+          id: a.id,
+          name: a.name || a.id,
+          icon_url: `/api/object-icon/${iconId}`,
+          price: a.price ?? null,
+          tags: typeof a.tags === "string" ? a.tags : null,
+        });
+        if (sampleThumbs.length >= 8) break;
+      }
       return {
         asset_count: assets.length,
         sample_names: [...nameSet],
         sample_desc: sampleDesc,
+        sample_thumbs: sampleThumbs,
         common_tags: commonTags,
         styles: [...styleSet],
         price_range: priceRange,

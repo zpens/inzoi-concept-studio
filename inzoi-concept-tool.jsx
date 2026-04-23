@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.8.1";
 const CHANGELOG = [
+  {
+    version: "1.8.1",
+    date: "2026-04-23",
+    changes: [
+      "카테고리 스펙 배너에 '📦 기존 제작 에셋' 썸네일 그리드 추가 — inzoiObjectList 의 카탈로그 상위 8개 에셋 아이콘 표시",
+      "서버 /api/object-icon/:id 프록시 엔드포인트 — :8080/img/*.PNG 를 동일 오리진으로 프록시, 24시간 브라우저 캐시",
+      "spec.sample_thumbs = [{id, name, icon_url, price, tags}] 8개 반환, 썸네일 클릭 시 lightbox, hover 툴팁에 이름/가격/태그",
+      "📎 '카탈로그 전체 보기' 링크 버튼으로 inzoiObjectList :8080 홈 새 탭 오픈",
+    ],
+  },
   {
     version: "1.8.0",
     date: "2026-04-23",
@@ -2452,6 +2462,69 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 {spec.custom_count > 0 && `🎨 커스터마이즈 ${spec.custom_count}개`}
                 {spec.custom_count > 0 && spec.unlock_count > 0 && " · "}
                 {spec.unlock_count > 0 && `🔒 조건부 해금 ${spec.unlock_count}개`}
+              </div>
+            )}
+            {spec.sample_thumbs?.length > 0 && (
+              <div style={{
+                marginTop: 10, paddingTop: 10,
+                borderTop: "1px dashed rgba(7,110,232,0.2)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>
+                    📦 기존 제작 에셋 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>({spec.sample_thumbs.length} / {spec.asset_count})</span>
+                  </span>
+                  <a
+                    href={`${typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8080` : "http://localhost:8080"}/`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      marginLeft: "auto", fontSize: 10, fontWeight: 600,
+                      padding: "2px 8px", borderRadius: 6,
+                      background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                      color: "var(--primary)", textDecoration: "none",
+                    }}
+                  >📎 카탈로그 전체 보기 →</a>
+                </div>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))",
+                  gap: 6,
+                }}>
+                  {spec.sample_thumbs.map((t) => (
+                    <div
+                      key={t.id}
+                      title={`${t.name}${t.price ? ` · ${t.price.toLocaleString()}원` : ""}${t.tags ? `\n${t.tags}` : ""}`}
+                      onClick={() => onOpenImage?.(t.icon_url)}
+                      style={{
+                        cursor: onOpenImage ? "zoom-in" : "default",
+                        borderRadius: 6, overflow: "hidden",
+                        border: "1px solid var(--surface-border)",
+                        background: "#fff",
+                      }}
+                    >
+                      <div style={{
+                        width: "100%", aspectRatio: "1/1",
+                        background: "rgba(0,0,0,0.03)",
+                      }}>
+                        <img
+                          src={t.icon_url}
+                          alt={t.name}
+                          loading="lazy"
+                          onError={(e) => { e.currentTarget.style.display = "none"; }}
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      </div>
+                      <div style={{
+                        padding: "3px 5px",
+                        fontSize: 9, color: "var(--text-muted)",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        textAlign: "center",
+                      }}>
+                        {t.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
