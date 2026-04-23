@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.31";
+const APP_VERSION = "1.10.32";
 const CHANGELOG = [
+  {
+    version: "1.10.32",
+    date: "2026-04-24",
+    changes: [
+      "갤러리 타일 — 테두리/그림자 제거하고 이미지만 gap 0 으로 붙여 packing",
+      "타일 고정 크기 정사각(260 object-fit contain) → height 480 + width auto 로 원본 비율 그대로. 줌인 시 소스 해상도 사용해 덜 깨짐",
+      "갤러리 오픈 시 자동 fit-to-viewport — 콘텐츠 전체가 화면에 꽉 차게 scale 자동 계산 (마운트 후 120ms + 500ms + 모든 이미지 load 시점)",
+      "전체 보기 버튼(⊡) 과 '1:1 원본 크기' 버튼 분리. 0 키 = 전체 보기 (이전엔 scale=1 리셋)",
+      "각 그룹 헤더도 scale 역수로 counter-scale 해서 항상 읽히는 크기 유지",
+    ],
+  },
   {
     version: "1.10.31",
     date: "2026-04-24",
@@ -4988,6 +4999,48 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   // 초기/언마운트 시 transform 동기화.
   React.useEffect(() => { applyTransform(); }, [applyTransform]);
 
+  // 화면에 가득 맞추기 (v1.10.32) — 콘텐츠 bounding box 를 뷰포트에 fit.
+  const fitToViewport = React.useCallback(() => {
+    const content = contentRef.current;
+    const wrap = wrapRef.current;
+    if (!content || !wrap) return;
+    // 현재 transform 제거하고 계산해야 자연 크기 얻음.
+    const prev = content.style.transform;
+    content.style.transform = "";
+    const cw = content.scrollWidth;
+    const ch = content.scrollHeight;
+    const vw = wrap.clientWidth;
+    const vh = wrap.clientHeight;
+    content.style.transform = prev;
+    if (cw === 0 || ch === 0) return;
+    const fitScale = Math.min((vw - 40) / cw, (vh - 100) / ch, 1);
+    const safe = Math.max(0.05, fitScale);
+    viewRef.current = {
+      scale: safe,
+      x: Math.max(20, (vw - cw * safe) / 2),
+      y: 70, // top 상단 바 아래에서 시작
+    };
+    applyTransform();
+    setScale(safe);
+  }, [applyTransform]);
+
+  // 마운트 직후 + 이미지들 load 다 끝난 뒤 한번 더 fit.
+  const loadedCountRef = React.useRef(0);
+  const totalImagesRef = React.useRef(0);
+  React.useEffect(() => {
+    totalImagesRef.current = groups.reduce((n, g) => n + g.items.length, 0);
+    const t1 = setTimeout(fitToViewport, 120);
+    const t2 = setTimeout(fitToViewport, 500); // 이미지 로드 대기
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const onImageLoad = React.useCallback(() => {
+    loadedCountRef.current += 1;
+    if (loadedCountRef.current === totalImagesRef.current) {
+      fitToViewport();
+    }
+  }, [fitToViewport]);
+
   // 이미지 수집 — 그룹 단위.
   const groups = React.useMemo(() => {
     const out = [];
@@ -5111,12 +5164,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   React.useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") { onClose(); return; }
-      if (e.key === "0") {
-        viewRef.current = { x: 0, y: 0, scale: 1 };
-        applyTransform();
-        setScale(1);
-        return;
-      }
+      if (e.key === "0") { fitToViewport(); return; }
       if (e.key === "+" || e.key === "=") {
         const s = clamp(viewRef.current.scale * 1.2, 0.1, 20);
         viewRef.current.scale = s; applyTransform(); setScale(s); return;
@@ -5132,7 +5180,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, applyTransform]);
+  }, [onClose, applyTransform, fitToViewport]);
 
   // 액션.
   const setCover = async (url) => {
@@ -5161,7 +5209,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     } catch (e) { alert("선정 실패: " + e.message); }
   };
 
-  const TILE = 260;
+  // 타일 기본 높이 — 원본 비율 유지, width 는 자연스럽게 늘어남 (v1.10.32).
+  const TILE_HEIGHT = 480;
   const totalImages = groups.reduce((n, g) => n + g.items.length, 0);
 
   return (
@@ -5184,23 +5233,33 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, pointerEvents: "auto" }}>
           <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
-            휠 줌 · 가운데/우클릭 드래그 팬 · 0 초기화 · ±/화살표 · Esc/F 닫기
+            휠 줌 · 가운데/우클릭 드래그 팬 · 0 전체 보기 · ±/화살표 · Esc/F 닫기
           </span>
           <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "monospace", padding: "3px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)" }}>
             {Math.round(scale * 100)}%
           </span>
           <button
-            onClick={() => {
-              viewRef.current = { x: 0, y: 0, scale: 1 };
-              applyTransform();
-              setScale(1);
-            }}
+            onClick={fitToViewport}
+            title="화면에 가득 맞추기"
             style={{
               padding: "5px 10px", borderRadius: 6,
               background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)",
               color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
             }}
-          >⟲ 초기화</button>
+          >⊡ 전체 보기</button>
+          <button
+            onClick={() => {
+              viewRef.current = { ...viewRef.current, scale: 1 };
+              applyTransform();
+              setScale(1);
+            }}
+            title="원본 1:1 보기"
+            style={{
+              padding: "5px 10px", borderRadius: 6,
+              background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)",
+              color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
+            }}
+          >1:1</button>
           <button
             onClick={onClose}
             style={{
@@ -5232,8 +5291,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           position: "absolute", left: 0, top: 0,
           transformOrigin: "0 0",
           willChange: "transform",
-          padding: "60px 20px 20px",
-          display: "flex", flexDirection: "column", gap: 28,
+          padding: 0,
+          display: "flex", flexDirection: "column", gap: 24,
         }}>
           {groups.length === 0 && (
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, padding: 40 }}>
@@ -5242,15 +5301,21 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           )}
           {groups.map((g) => (
             <div key={g.key}>
-              <div style={{ color: "#fff", fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{g.title}</div>
-              <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <div style={{
+                color: "rgba(255,255,255,0.85)", fontSize: 14, fontWeight: 700,
+                marginBottom: 6, padding: "0 2px",
+                transform: `scale(${1 / Math.max(scale, 0.01)})`,
+                transformOrigin: "top left",
+              }}>{g.title}</div>
+              <div style={{ display: "flex", gap: 0, alignItems: "flex-start", flexWrap: "wrap" }}>
                 {g.items.map((it, i) => (
                   <GalleryTile
                     key={`${g.key}-${i}`}
                     item={it}
-                    size={TILE}
+                    tileHeight={TILE_HEIGHT}
                     scale={scale}
                     onSetCover={setCover}
+                    onImageLoad={onImageLoad}
                   />
                 ))}
               </div>
@@ -5262,37 +5327,38 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   );
 }
 
-function GalleryTile({ item, size, scale, onSetCover }) {
-  // 대표 지정만 유지 (v1.10.31) — 시안 선정은 DesignsPanel 에서 계속 가능.
-  // 별 아이콘은 캔버스 scale 의 역수만큼 counter-scale 해서 줌인해도 비례로 작아짐.
+function GalleryTile({ item, tileHeight, scale, onSetCover, onImageLoad }) {
+  // 이미지 원본 비율 유지, 테두리/그림자 없이 그대로 붙여서 표시 (v1.10.32).
+  // height 고정 + width auto → 가로 방향으로 자연스럽게 패킹.
+  // 별 아이콘은 scale 의 역수로 counter-scale.
   const coverBtnTitle = item.isCover ? "현재 대표 이미지" : "카드 대표(썸네일)로 지정";
   const invScale = 1 / Math.max(scale || 1, 0.01);
   return (
-    <div
-      style={{
-        width: size, height: size, flexShrink: 0,
-        position: "relative", borderRadius: 10, overflow: "hidden",
-        border: item.isCover ? "2px solid #22c55e" : "1px solid rgba(255,255,255,0.18)",
-        background: "#000",
-        boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-      }}
-    >
+    <div style={{
+      height: tileHeight, position: "relative",
+      display: "inline-block", flexShrink: 0,
+      // 테두리 제거 — 대표 여부는 ⭐ 아이콘 색으로만 구분.
+    }}>
       <img
         src={item.url}
         alt=""
         draggable={false}
-        style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block", pointerEvents: "none" }}
+        onLoad={onImageLoad}
+        style={{
+          height: "100%", width: "auto",
+          display: "block", pointerEvents: "none",
+          imageRendering: "auto",
+        }}
       />
       {item.label && (
         <div style={{
           position: "absolute", top: 6, left: 6,
           padding: "2px 8px", borderRadius: 4,
-          background: "rgba(0,0,0,0.75)", color: "#fff",
+          background: "rgba(0,0,0,0.72)", color: "#fff",
           fontSize: 10, fontWeight: 700, pointerEvents: "none",
           transform: `scale(${invScale})`, transformOrigin: "top left",
         }}>{item.label}</div>
       )}
-      {/* 대표 지정 / 해제 — 우측 상단 고정 아이콘, 줌에 따라 사이즈 보정 */}
       <button
         data-action="cover"
         onClick={(e) => {
@@ -5304,13 +5370,14 @@ function GalleryTile({ item, size, scale, onSetCover }) {
         style={{
           position: "absolute", top: 6, right: 6,
           width: 30, height: 30, borderRadius: 15,
-          background: item.isCover ? "#22c55e" : "rgba(0,0,0,0.6)",
-          border: `1px solid ${item.isCover ? "#22c55e" : "rgba(255,255,255,0.35)"}`,
-          color: item.isCover ? "#fff" : "rgba(255,255,255,0.95)",
+          background: item.isCover ? "#22c55e" : "rgba(0,0,0,0.55)",
+          border: "none",
+          color: "#fff",
           fontSize: 15, cursor: item.isCover ? "default" : "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
           padding: 0, lineHeight: 1,
           transform: `scale(${invScale})`, transformOrigin: "top right",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
         }}
       >{item.isCover ? "⭐" : "☆"}</button>
     </div>
