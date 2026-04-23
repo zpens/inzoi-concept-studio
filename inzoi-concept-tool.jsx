@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.8";
+const APP_VERSION = "1.10.9";
 const CHANGELOG = [
+  {
+    version: "1.10.9",
+    date: "2026-04-24",
+    changes: [
+      "프롬프트 + 참조 이미지를 우측 프레임 최상단(시안 생성 위)으로 이동 — 좌측 AssetInfoEditor 에서 분리",
+      "PromptRefEditor 신규 컴포넌트 — 자체 state, PATCH, onRefresh 로 동기화, Ctrl+V 이미지 붙여넣기 유지",
+      "AssetInfoEditor 는 카테고리 / 스타일 / 크기 / 카탈로그 매칭에 집중 (프롬프트/참조 관련 state·effect 정리)",
+      "자동 분류는 여전히 refImages[0] || thumbnail_url 로 이미지를 받음 (card.data 직접 읽기)",
+    ],
+  },
   {
     version: "1.10.8",
     date: "2026-04-24",
@@ -2546,28 +2556,232 @@ async function uploadDataUrl(dataUrl) {
 }
 
 // 카드 상세 모달 안에 인라인으로 보이는 어셋 정보 에디터.
-// 카테고리 / 스타일 / 프롬프트 / 참조 이미지 4개 필드 자동 저장.
-// 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
-function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, onOpenCatalog, geminiApiKey, availableUpdates = [] }) {
-  // 참조 이미지 초기값: data.ref_images 가 비어있고 card.thumbnail_url 이 있으면
-  // 위시리스트에서 넘어온 이미지라 보고 자동 seed (아래 effect 에서 서버 저장).
+// 프롬프트 + 참조 이미지 전용 편집기 (v1.10.9 — AssetInfoEditor 에서 분리).
+// 우측 프레임 시안 생성 위에 배치. 자체 state + PATCH + onRefresh 로 동기화.
+function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpenImage }) {
   const initialRefs = (card.data?.ref_images && card.data.ref_images.length)
     ? card.data.ref_images
     : (card.thumbnail_url ? [card.thumbnail_url] : []);
-
-  const [category, setCategory] = React.useState(card.data?.category || "");
-  const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
   const [prompt, setPrompt] = React.useState(card.data?.prompt || card.description || "");
   const [refImages, setRefImages] = React.useState(initialRefs);
+  const fileRef = React.useRef(null);
+
+  React.useEffect(() => {
+    setPrompt(card.data?.prompt || card.description || "");
+    const next = (card.data?.ref_images && card.data.ref_images.length)
+      ? card.data.ref_images
+      : (card.thumbnail_url ? [card.thumbnail_url] : []);
+    setRefImages(next);
+  }, [card.id, card.updated_at]);
+
+  const save = async (patchFields) => {
+    if (disabled) return;
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: { ...(card.data || {}), ...patchFields }, actor }),
+      });
+      await onRefresh?.();
+    } catch (e) { console.warn("프롬프트/참조 저장 실패:", e); }
+  };
+
+  // 초기 진입 시 ref_images 서버에 없는데 thumbnail_url 로 seed 된 상태면 한번 저장.
+  React.useEffect(() => {
+    if (disabled) return;
+    const hasServerRefs = Array.isArray(card.data?.ref_images) && card.data.ref_images.length > 0;
+    if (!hasServerRefs && card.thumbnail_url && refImages.length > 0) {
+      save({ ref_images: refImages });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id]);
+
+  const addRefFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const url = await uploadDataUrl(ev.target.result);
+      setRefImages((prev) => {
+        if (prev.length >= 4) return prev;
+        const next = [...prev, url];
+        save({ ref_images: next });
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 상세 모달 열린 상태에서 Ctrl+V 로 이미지 붙여넣기 지원.
+  React.useEffect(() => {
+    if (disabled) return;
+    const onPaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) { addRefFile(f); e.preventDefault(); return; }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id, disabled]);
+
+  const fieldLabel = { fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 };
+  const fieldBox = {
+    width: "100%", padding: "8px 10px", borderRadius: 8,
+    border: "1px solid var(--surface-border)",
+    background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
+    fontSize: 13, color: "var(--text-main)", outline: "none", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{
+      padding: 14, borderRadius: 12,
+      background: "rgba(7,110,232,0.04)",
+      border: "1px solid rgba(7,110,232,0.18)",
+    }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={fieldLabel}>📝 프롬프트 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
+        <textarea
+          value={prompt}
+          disabled={disabled}
+          onChange={(e) => setPrompt(e.target.value)}
+          onBlur={() => {
+            if (prompt !== (card.data?.prompt || card.description || "")) {
+              save({ prompt: prompt.trim() });
+            }
+          }}
+          rows={4}
+          placeholder="원하는 어셋을 자세히 적어주세요 (blur 시 자동 저장)"
+          style={{ ...fieldBox, fontSize: 13, lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
+        />
+      </div>
+
+      <div>
+        <div style={fieldLabel}>🖼️ 참조 이미지 ({refImages.length}/4) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal · Ctrl+V 로 붙여넣기)</span></div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {refImages.map((url, i) => {
+            const isCover = card.thumbnail_url === url;
+            return (
+              <div
+                key={i}
+                onMouseEnter={(e) => { const ov = e.currentTarget.querySelector(".ref-hover-overlay"); if (ov) ov.style.opacity = 1; }}
+                onMouseLeave={(e) => { const ov = e.currentTarget.querySelector(".ref-hover-overlay"); if (ov) ov.style.opacity = 0; }}
+                style={{ position: "relative", borderRadius: 10, overflow: "hidden" }}
+              >
+                <img
+                  src={url}
+                  alt=""
+                  onClick={() => onOpenImage?.(url)}
+                  style={{
+                    width: 144, height: 144, objectFit: "cover", display: "block",
+                    border: isCover ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+                    cursor: onOpenImage ? "zoom-in" : "default",
+                  }}
+                />
+                {isCover && (
+                  <div style={{
+                    position: "absolute", top: 4, left: 4,
+                    padding: "2px 6px", borderRadius: 4,
+                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
+                    pointerEvents: "none",
+                  }}>⭐ 대표</div>
+                )}
+                {!disabled && (
+                  <div
+                    className="ref-hover-overlay"
+                    style={{
+                      position: "absolute", inset: 0,
+                      display: "flex", alignItems: "flex-end", justifyContent: "center",
+                      padding: 6,
+                      background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent 55%)",
+                      opacity: 0, transition: "opacity 0.2s",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+                              method: "PATCH",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify({ thumbnail_url: url, actor }),
+                            });
+                            await onRefresh?.();
+                          } catch (err) { alert("대표 지정 실패: " + err.message); }
+                        }}
+                        disabled={isCover}
+                        title={isCover ? "이미 대표" : "카드 썸네일로 지정"}
+                        style={{
+                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                          background: isCover ? "#fbbf24" : "rgba(255,255,255,0.9)",
+                          border: "none", color: isCover ? "#000" : "var(--text-main)",
+                          cursor: isCover ? "default" : "pointer",
+                        }}
+                      >{isCover ? "⭐ 대표" : "☆ 대표"}</button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const next = refImages.filter((_, idx) => idx !== i);
+                          setRefImages(next);
+                          await save({ ref_images: next });
+                        }}
+                        title="참조 이미지 삭제"
+                        style={{
+                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                          background: "rgba(239,68,68,0.9)", border: "none", color: "#fff", cursor: "pointer",
+                        }}
+                      >✕ 삭제</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {!disabled && refImages.length < 4 && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => { addRefFile(e.target.files?.[0]); e.target.value = ""; }}
+                style={{ display: "none" }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                style={{
+                  width: 144, height: 144, borderRadius: 10,
+                  background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                }}
+              >+ 추가</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 카테고리 / 스타일 필드 자동 저장 (v1.10.9 — 프롬프트 + 참조는 PromptRefEditor 로 분리).
+// 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
+function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, onOpenCatalog, geminiApiKey, availableUpdates = [] }) {
+  const [category, setCategory] = React.useState(card.data?.category || "");
+  const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
   const [saving, setSaving] = React.useState(false);
   const [suggesting, setSuggesting] = React.useState(false);
   const [suggestion, setSuggestion] = React.useState(null); // { category_id, confidence }
-  const fileRef = React.useRef(null);
 
   // 🤖 자동 분류 — Gemini Vision 으로 카테고리 추천. 자동 적용하지 않고 제안만.
   const runCategorySuggest = async () => {
     if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
-    const src = refImages[0] || card.thumbnail_url;
+    const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+    const src = refs[0] || card.thumbnail_url;
     if (!src) { alert("참조 이미지를 먼저 추가해주세요"); return; }
     setSuggesting(true);
     setSuggestion(null);
@@ -2631,11 +2845,6 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
   React.useEffect(() => {
     setCategory(card.data?.category || "");
     setStylePreset(card.data?.style_preset || "");
-    setPrompt(card.data?.prompt || card.description || "");
-    const nextRefs = (card.data?.ref_images && card.data.ref_images.length)
-      ? card.data.ref_images
-      : (card.thumbnail_url ? [card.thumbnail_url] : []);
-    setRefImages(nextRefs);
   }, [card.id, card.updated_at]);
 
   const save = async (patchFields) => {
@@ -2675,55 +2884,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, card.id]);
 
-  // 초기 진입 시 ref_images 가 서버에 없고 thumbnail_url 로 seed 된 상태라면
-  // 한번 서버에 저장해서 generate 시 Gemini multimodal 에 확실히 포함되도록 한다.
-  React.useEffect(() => {
-    if (disabled) return;
-    const hasServerRefs = Array.isArray(card.data?.ref_images) && card.data.ref_images.length > 0;
-    if (!hasServerRefs && card.thumbnail_url && refImages.length > 0) {
-      save({ ref_images: refImages });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [card.id]);
-
-  const addRefFile = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const url = await uploadDataUrl(ev.target.result);
-      // 최신 state 를 기반으로 append (연속 붙여넣기 시 덮어쓰기 방지).
-      setRefImages((prev) => {
-        if (prev.length >= 4) return prev;
-        const next = [...prev, url];
-        save({ ref_images: next });
-        return next;
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // 카드 상세 모달이 열린 상태에서 Ctrl+V 로 이미지 붙여넣기. 이미지 항목만
-  // 가로채고 입력창 텍스트 붙여넣기는 방해하지 않는다.
-  React.useEffect(() => {
-    if (disabled) return;
-    const onPaste = (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const it of items) {
-        if (it.type && it.type.startsWith("image/")) {
-          const f = it.getAsFile();
-          if (f) {
-            addRefFile(f);
-            e.preventDefault();
-            return;
-          }
-        }
-      }
-    };
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [disabled, card.id]);
+  // 참조 이미지 seed / paste / addRefFile 은 PromptRefEditor 로 이동됨 (v1.10.9).
 
   const fieldLabel = { fontSize: 11, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 5 };
   const fieldBox = {
@@ -3041,134 +3202,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         onSave={async (sizeInfo) => { await save({ size_info: sizeInfo }); }}
       />
 
-      <div style={{ marginBottom: 10 }}>
-        <div style={fieldLabel}>프롬프트 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
-        <textarea
-          value={prompt}
-          disabled={disabled}
-          onChange={(e) => setPrompt(e.target.value)}
-          onBlur={() => {
-            if (prompt !== (card.data?.prompt || card.description || "")) {
-              save({ prompt: prompt.trim() });
-            }
-          }}
-          rows={4}
-          placeholder="원하는 어셋을 자세히 적어주세요 (blur 시 자동 저장)"
-          style={{ ...fieldBox, fontSize: 13, lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
-        />
-      </div>
-
-      <div>
-        <div style={fieldLabel}>참조 이미지 ({refImages.length}/4) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal 에 함께 전송 · Ctrl+V 로 붙여넣기도 가능)</span></div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {refImages.map((url, i) => {
-            const isCover = card.thumbnail_url === url;
-            return (
-              <div
-                key={i}
-                onMouseEnter={(e) => {
-                  const ov = e.currentTarget.querySelector(".ref-hover-overlay");
-                  if (ov) ov.style.opacity = 1;
-                }}
-                onMouseLeave={(e) => {
-                  const ov = e.currentTarget.querySelector(".ref-hover-overlay");
-                  if (ov) ov.style.opacity = 0;
-                }}
-                style={{ position: "relative", borderRadius: 10, overflow: "hidden" }}
-              >
-                <img
-                  src={url}
-                  alt=""
-                  onClick={() => onOpenImage?.(url)}
-                  style={{
-                    width: 144, height: 144, objectFit: "cover", display: "block",
-                    border: isCover ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
-                    cursor: onOpenImage ? "zoom-in" : "default",
-                  }}
-                />
-                {isCover && (
-                  <div style={{
-                    position: "absolute", top: 4, left: 4,
-                    padding: "2px 6px", borderRadius: 4,
-                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
-                    pointerEvents: "none",
-                  }}>⭐ 대표</div>
-                )}
-                {!disabled && (
-                  <div
-                    className="ref-hover-overlay"
-                    style={{
-                      position: "absolute", inset: 0,
-                      display: "flex", alignItems: "flex-end", justifyContent: "center",
-                      padding: 6,
-                      background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent 55%)",
-                      opacity: 0, transition: "opacity 0.2s",
-                      pointerEvents: "none",
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          // 이 참조 이미지를 카드 대표(썸네일)로 설정.
-                          try {
-                            await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-                              method: "PATCH",
-                              headers: { "content-type": "application/json" },
-                              body: JSON.stringify({ thumbnail_url: url, actor }),
-                            });
-                            await onRefresh();
-                          } catch (err) { alert("대표 지정 실패: " + err.message); }
-                        }}
-                        disabled={isCover}
-                        title={isCover ? "이미 대표" : "카드 썸네일로 지정"}
-                        style={{
-                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                          background: isCover ? "#fbbf24" : "rgba(255,255,255,0.9)",
-                          border: "none", color: isCover ? "#000" : "var(--text-main)",
-                          cursor: isCover ? "default" : "pointer",
-                        }}
-                      >{isCover ? "⭐ 대표" : "☆ 대표"}</button>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          const next = refImages.filter((_, idx) => idx !== i);
-                          setRefImages(next);
-                          await save({ ref_images: next });
-                        }}
-                        title="참조 이미지 삭제"
-                        style={{
-                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                          background: "rgba(239,68,68,0.9)", border: "none", color: "#fff", cursor: "pointer",
-                        }}
-                      >✕ 삭제</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {!disabled && refImages.length < 4 && (
-            <>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                onChange={(e) => { addRefFile(e.target.files?.[0]); e.target.value = ""; }}
-                style={{ display: "none" }}
-              />
-              <button
-                onClick={() => fileRef.current?.click()}
-                style={{
-                  width: 144, height: 144, borderRadius: 10,
-                  background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
-                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
-                }}
-              >+ 추가</button>
-            </>
-          )}
-        </div>
-      </div>
+      {/* 프롬프트 + 참조 이미지는 우측 프레임 PromptRefEditor 로 분리됨 (v1.10.9) */}
     </div>
   );
 }
@@ -9084,8 +9118,24 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   )}
                 </div>
 
-                {/* 오른쪽: 시안 생성 + 시안 이력 + 댓글 + 활동 (v1.10.7) */}
+                {/* 오른쪽: 프롬프트/참조 → 시안 생성 → 시안 이력 → 댓글 → 활동 (v1.10.9) */}
                 <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
+                  {/* 0) 프롬프트 + 참조 이미지 (v1.10.9 — 좌 AssetInfoEditor 에서 이동) */}
+                  <PromptRefEditor
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                    onOpenImage={setPreviewImage}
+                    onRefresh={async () => {
+                      const d = await fetchCardDetail(projectSlug, card.id);
+                      if (d) {
+                        setDetailCard(d);
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      }
+                    }}
+                  />
+
                   {/* 1) 시안 생성 — 상태별 액션 (drafting: 생성, vote: 투표, sheet: 4뷰) */}
                   {!confirmed && (
                     <CardActionPanel
