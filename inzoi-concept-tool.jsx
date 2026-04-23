@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.18";
+const APP_VERSION = "1.10.19";
 const CHANGELOG = [
+  {
+    version: "1.10.19",
+    date: "2026-04-24",
+    changes: [
+      "[버그 수정] 컨셉시트(4뷰) 생성 중인 카드가 우하단 작업큐에 안 뜨던 문제 — makeSheet 에서 onGenerateProgress/onGenerateEnd 콜백 호출 추가 (시안 생성과 동일 패턴)",
+    ],
+  },
   {
     version: "1.10.18",
     date: "2026-04-24",
@@ -3590,7 +3597,10 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
       if (!geminiApiKey) { onOpenApiSettings?.(); return; }
       if (!sourceImageUrl) { alert("컨셉시트에 사용할 이미지가 없습니다."); return; }
       setBusy(true);
-      setProgress({ done: 0, total: SHEET_VIEWS.length });
+      const totalViews = SHEET_VIEWS.length;
+      setProgress({ done: 0, total: totalViews });
+      // 작업큐에도 등록 — 시안 생성과 동일하게 floating queue 에 노출 (v1.10.19 fix).
+      onGenerateProgress?.(card, 0, totalViews);
       try {
         const contextLabel = card.data?.category_label || card.title || "furniture asset";
         const results = await generateConceptSheetViews({
@@ -3598,7 +3608,10 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           sourceImageUrl,
           model: selectedModel,
           contextLabel,
-          onProgress: (done, total) => setProgress({ done, total }),
+          onProgress: (done, total) => {
+            setProgress({ done, total });
+            onGenerateProgress?.(card, done, total);
+          },
         });
         const viewsObj = {};
         for (const r of results) {
@@ -3633,7 +3646,10 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
         if (failed > 0) alert(`${failed}개 뷰 생성 실패 — 재생성으로 다시 시도할 수 있습니다.`);
       } catch (e) {
         alert("컨셉시트 생성 실패: " + e.message);
-      } finally { setBusy(false); setProgress(null); }
+      } finally {
+        setBusy(false); setProgress(null);
+        onGenerateEnd?.(card); // 작업큐에서 제거
+      }
     };
 
     return (
