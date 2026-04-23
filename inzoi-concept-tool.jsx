@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.14";
+const APP_VERSION = "1.10.15";
 const CHANGELOG = [
+  {
+    version: "1.10.15",
+    date: "2026-04-24",
+    changes: [
+      "카드 제목 앞 카테고리 아이콘 자동 노출 제거 — CardHubCard / CardListRow 둘 다 {catInfo.icon} 프리픽스 삭제. 카테고리는 별도 컬럼/배지로 이미 노출됨",
+    ],
+  },
   {
     version: "1.10.14",
     date: "2026-04-24",
@@ -4482,7 +4489,7 @@ function CardListRow({ card, tabId, onClick, profileByName }) {
           fontSize: 15, fontWeight: 700, color: "var(--text-main)",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
-          {catInfo?.icon || ""} {card.title || "(제목 없음)"}
+          {card.title || "(제목 없음)"}
         </div>
         {card.description && (
           <div style={{
@@ -5115,7 +5122,7 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
             fontSize: Math.round(14 * Math.sqrt(scale)), fontWeight: 800, color: "var(--text-main)",
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0,
           }}>
-            {catInfo?.icon || ""} {card.title}
+            {card.title}
           </span>
         </div>
         {(card.description || styleInfo) && (
