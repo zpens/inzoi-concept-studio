@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.10.1";
 const CHANGELOG = [
+  {
+    version: "1.10.1",
+    date: "2026-04-23",
+    changes: [
+      "헤더에 🔍 전체 카드 검색 추가 — Asset Studio 로고 바로 옆, 제목 / 설명 / 업데이트 태그 / 카테고리·스타일 라벨 매칭. 탭과 무관하게 모든 카드 대상",
+      "입력 즉시 상위 12개 결과 드롭다운 (썸네일 · 상태 · 카테고리 · 업데이트 태그). 클릭하면 상세 모달 오픈",
+      "ESC / ✕ 로 검색어 즉시 초기화, blur 시 드롭다운 자동 닫힘",
+    ],
+  },
   {
     version: "1.10.0",
     date: "2026-04-23",
@@ -4950,6 +4959,9 @@ export default function InZOIConceptTool() {
 
   // 업데이트 일정 필터 상태 (availableUpdates 는 cards 선언 이후에 정의 — TDZ 방지).
   const [selectedUpdates, setSelectedUpdates] = useState([]);
+  // 헤더 전체 카드 검색. 탭과 무관하게 모든 카드를 대상으로 제목/설명/태그/카테고리 라벨 매칭.
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
 
   // inzoiObjectList 의 meta.json 을 5분 주기로 가져와 카테고리/스타일 목록을 교체.
   // 실패하면 hardcoded fallback 사용. metaVersion bump 으로 하위 컴포넌트 re-render.
@@ -5015,6 +5027,29 @@ export default function InZOIConceptTool() {
     }
     return [...set].sort((a, b) => a.localeCompare(b, "ko"));
   }, [cards]);
+
+  // 전체 카드 검색 결과 — 제목 / 설명 / target_update / 카테고리 라벨 / 스타일 라벨 매칭.
+  // is_archived 제외. 최대 12개.
+  const globalSearchResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return [];
+    const hits = [];
+    for (const c of cards) {
+      if (c.is_archived) continue;
+      const title = (c.title || "").toLowerCase();
+      const desc = (c.description || "").toLowerCase();
+      const tu = (c.data?.target_update || "").toLowerCase();
+      const catId = c.data?.category;
+      const catLabel = catId ? (FURNITURE_CATEGORIES.find((x) => x.id === catId)?.label || "").toLowerCase() : "";
+      const styleId = c.data?.style_preset;
+      const styleLabel = styleId ? (STYLE_PRESETS.find((x) => x.id === styleId)?.label || "").toLowerCase() : "";
+      if (title.includes(q) || desc.includes(q) || tu.includes(q) || catLabel.includes(q) || styleLabel.includes(q)) {
+        hits.push(c);
+        if (hits.length >= 12) break;
+      }
+    }
+    return hits;
+  }, [cards, globalSearch]);
 
 
   // 상세 모달 ← → 키 네비게이션은 projectSlug 선언 이후에 정의 (TDZ 방지).
@@ -5810,28 +5845,141 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         position: "sticky", top: 0, zIndex: 100,
         boxShadow: "0 4px 30px rgba(0, 0, 0, 0.5)",
       }}>
-        <div
-          style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", userSelect: "none" }}
-          onClick={() => setVersionOpen(true)}
-          title="버전 정보 보기"
-        >
-          <img src="/InZOI_Logo.png" alt="inZOI" style={{ height: 28, objectFit: "contain" }} />
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="text-gradient" style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em" }}>
-                Asset Studio
-              </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", userSelect: "none" }}
+            onClick={() => setVersionOpen(true)}
+            title="버전 정보 보기"
+          >
+            <img src="/InZOI_Logo.png" alt="inZOI" style={{ height: 28, objectFit: "contain" }} />
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="text-gradient" style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em" }}>
+                  Asset Studio
+                </span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: "var(--accent)",
+                  background: "rgba(152,166,255,0.1)", border: "1px solid rgba(152,166,255,0.25)",
+                  padding: "1px 7px", borderRadius: 6, letterSpacing: "0.02em",
+                }}>
+                  v{APP_VERSION}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em", fontWeight: 500 }}>
+                AI-Powered Furniture Asset Concept Generator
+              </div>
+            </div>
+          </div>
+          {/* 헤더 전체 카드 검색 — 제목/설명/업데이트 태그/카테고리/스타일 라벨 매칭 */}
+          <div style={{ position: "relative" }}>
+            <div style={{ position: "relative" }}>
               <span style={{
-                fontSize: 10, fontWeight: 700, color: "var(--accent)",
-                background: "rgba(152,166,255,0.1)", border: "1px solid rgba(152,166,255,0.25)",
-                padding: "1px 7px", borderRadius: 6, letterSpacing: "0.02em",
+                position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+                fontSize: 13, pointerEvents: "none", opacity: 0.6,
+              }}>🔍</span>
+              <input
+                type="text"
+                value={globalSearch}
+                onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchOpen(true); }}
+                onFocus={() => setGlobalSearchOpen(true)}
+                onBlur={() => setTimeout(() => setGlobalSearchOpen(false), 200)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") { setGlobalSearch(""); setGlobalSearchOpen(false); e.currentTarget.blur(); }
+                }}
+                placeholder="전체 카드 검색 (제목 / 설명 / 태그 / 카테고리)"
+                style={{
+                  width: 280, padding: "8px 28px 8px 32px", borderRadius: 10,
+                  border: "1px solid var(--surface-border)",
+                  background: "rgba(0,0,0,0.03)",
+                  fontSize: 12, color: "var(--text-main)", outline: "none", boxSizing: "border-box",
+                }}
+              />
+              {globalSearch && (
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); setGlobalSearch(""); setGlobalSearchOpen(false); }}
+                  title="지우기"
+                  style={{
+                    position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                    width: 18, height: 18, borderRadius: 9,
+                    background: "rgba(0,0,0,0.08)", border: "none",
+                    color: "var(--text-muted)", fontSize: 10, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >✕</button>
+              )}
+            </div>
+            {globalSearchOpen && globalSearch.trim() && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 0,
+                width: 420, maxHeight: 380, overflowY: "auto",
+                background: "#fff", border: "1px solid var(--surface-border)",
+                borderRadius: 12, boxShadow: "0 8px 28px rgba(0,0,0,0.12)", zIndex: 150,
+                padding: 4,
               }}>
-                v{APP_VERSION}
-              </span>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em", fontWeight: 500 }}>
-              AI-Powered Furniture Asset Concept Generator
-            </div>
+                {globalSearchResults.length === 0 ? (
+                  <div style={{ padding: "16px 14px", fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
+                    검색 결과 없음
+                  </div>
+                ) : globalSearchResults.map((c) => {
+                  const data = c.data || {};
+                  const catInfo = data.category ? FURNITURE_CATEGORIES.find((x) => x.id === data.category) : null;
+                  const ds = Array.isArray(data.designs) ? data.designs : [];
+                  const single = ds.length === 1 && ds[0]?.imageUrl ? ds[0].imageUrl : null;
+                  const thumb = single || c.thumbnail_url;
+                  const list = lists.find((l) => l.id === c.list_id);
+                  const statusLabel = list ? (STATUS_META[list.status_key]?.label || list.name) : null;
+                  const tu = data.target_update?.trim?.();
+                  return (
+                    <div
+                      key={c.id}
+                      onMouseDown={async (e) => {
+                        e.preventDefault();
+                        if (!projectSlug) return;
+                        try {
+                          const detail = await fetchCardDetail(projectSlug, c.id);
+                          if (detail) {
+                            setDetailCard(detail);
+                            setGlobalSearchOpen(false);
+                          }
+                        } catch (err) { console.warn("검색 결과 열기 실패", err); }
+                      }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(7,110,232,0.06)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 6, overflow: "hidden", flexShrink: 0,
+                        background: thumb ? "#000" : "rgba(0,0,0,0.05)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {thumb
+                          ? <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : <span style={{ fontSize: 18, opacity: 0.6 }}>{catInfo?.icon || "📇"}</span>}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 13, fontWeight: 700, color: "var(--text-main)",
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        }}>{c.title || "(제목 없음)"}</div>
+                        <div style={{
+                          fontSize: 11, color: "var(--text-muted)",
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        }}>
+                          {[statusLabel, catInfo?.label, tu].filter(Boolean).join(" · ") || "—"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ padding: "6px 10px", fontSize: 10, color: "var(--text-muted)", borderTop: "1px solid var(--surface-border)" }}>
+                  {globalSearchResults.length > 0 ? `상위 ${globalSearchResults.length}개` : ""}
+                  {globalSearchResults.length >= 12 && " · 더 좁은 검색어로 좁혀보세요"}
+                </div>
+              </div>
+            )}
           </div>
         </div>
         {/* Tab Navigation — 5-step workflow */}
