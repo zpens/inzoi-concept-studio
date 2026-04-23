@@ -151,6 +151,11 @@ const stmts = {
   getCommentById: db.prepare("SELECT * FROM card_comments WHERE id = ? AND card_id = ?"),
   deleteComment: db.prepare("DELETE FROM card_comments WHERE id = ? AND card_id = ?"),
   updateCommentBody: db.prepare("UPDATE card_comments SET body = ? WHERE id = ? AND card_id = ?"),
+
+  // 프로필 (전역 공유)
+  listProfiles: db.prepare("SELECT id, name, icon, created_at FROM profiles ORDER BY created_at ASC"),
+  insertProfile: db.prepare("INSERT INTO profiles (id, name, icon) VALUES (?, ?, ?)"),
+  getProfileByName: db.prepare("SELECT id, name, icon, created_at FROM profiles WHERE name = ?"),
   listActivitiesByCard: db.prepare("SELECT * FROM card_activities WHERE card_id = ? ORDER BY created_at DESC LIMIT 200"),
 
   insertComment: db.prepare("INSERT INTO card_comments (id, card_id, body, actor) VALUES (?, ?, ?, ?)"),
@@ -793,6 +798,26 @@ app.post("/api/projects/:slug/cards/:id/comments", async (c) => {
   stmts.insertComment.run(id, cardId, body.body, body.actor ?? null);
   logCardActivity(cardId, body.actor ?? null, "comment_added", { preview: body.body.slice(0, 80) });
   return c.json({ id, body: body.body, actor: body.actor ?? null, created_at: new Date().toISOString() }, 201);
+});
+
+// GET /api/profiles — 전역 공유 프로필 목록.
+app.get("/api/profiles", (c) => {
+  const rows = stmts.listProfiles.all();
+  return c.json(rows);
+});
+
+// POST /api/profiles — 새 프로필 생성. 이름 중복 시 기존 반환.
+app.post("/api/profiles", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const name = (body.name || "").trim();
+  const icon = (body.icon || "🧑").slice(0, 4); // 이모지 1~2자
+  if (!name) return c.json({ error: "name required" }, 400);
+  if (name.length > 30) return c.json({ error: "name too long (max 30)" }, 400);
+  const existing = stmts.getProfileByName.get(name);
+  if (existing) return c.json(existing, 200);
+  const id = randomUUID();
+  stmts.insertProfile.run(id, name, icon);
+  return c.json(stmts.getProfileByName.get(name), 201);
 });
 
 // PATCH /api/projects/:slug/cards/:id/comments/:commentId — 본인 댓글 수정.

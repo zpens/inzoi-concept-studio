@@ -1,8 +1,21 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.7";
+const APP_VERSION = "1.10.8";
 const CHANGELOG = [
+  {
+    version: "1.10.8",
+    date: "2026-04-24",
+    changes: [
+      "👤 프로필 시스템 추가 — 헤더 맨 오른쪽에 프로필 선택기. 머리 이모지 + 이름, 여러 개 미리 등록 후 하나 선택 → localStorage 에 id 저장되어 새로고침 / 탭 전환해도 본인 프로필 유지",
+      "프로필은 전역 공유 (누구나 추가, 삭제 없음). 30초마다 서버 폴링으로 다른 사용자가 추가한 프로필 반영",
+      "서버: profiles 테이블 + GET/POST /api/profiles — 이름 unique, 중복 시 기존 반환",
+      "댓글 작성자 옆에 프로필 아이콘 표시 (👤 이름 · 날짜) — 이름으로 프로필 매칭, 없으면 기본 👤, 시스템은 ⚙️",
+      "활동 이력에도 작성자 아이콘 추가",
+      "actorName 은 선택된 프로필 이름에서 자동 파생 — 프로필 없으면 기존 inzoi_actor_name fallback (하위 호환)",
+      "아이콘 선택 후보 16종: 🧑 👤 👨 👩 🧔 👱 👴 👵 🧓 🧒 🤓 😊 🙂 🦊 🐻 🐰",
+    ],
+  },
   {
     version: "1.10.7",
     date: "2026-04-24",
@@ -2376,6 +2389,27 @@ async function patchCard(slug, cardId, patch) {
   return r.json();
 }
 
+async function fetchProfiles() {
+  try {
+    const r = await fetch("/api/profiles");
+    if (!r.ok) return [];
+    return r.json();
+  } catch { return []; }
+}
+
+async function createProfile(name, icon) {
+  const r = await fetch("/api/profiles", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, icon }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || `profile ${r.status}`);
+  }
+  return r.json();
+}
+
 async function postCardComment(slug, cardId, body, actor) {
   const r = await fetch(`/api/projects/${slug}/cards/${cardId}/comments`, {
     method: "POST",
@@ -4678,9 +4712,11 @@ function CardDescriptionEditor({ card, projectSlug, actor, disabled, onSaved }) 
 
 // 상세 모달 댓글 한 줄 — 본인 댓글은 인라인 편집 + 삭제 가능.
 // 편집 시 textarea, Ctrl/⌘+Enter 저장, Esc 취소, blur 자동 저장.
-function CommentRow({ comment, projectSlug, cardId, actorName, onChanged }) {
+function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, onChanged }) {
   // 본인 확인: 작성자 이름이 같으면 본인. null === null (양쪽 다 익명) 도 본인으로 인정.
   const mine = (comment.actor || null) === (actorName || null);
+  const authorProfile = comment.actor ? profileByName?.get?.(comment.actor) : null;
+  const authorIcon = authorProfile?.icon || (comment.actor ? "👤" : "❓");
   const [editing, setEditing] = React.useState(false);
   const [value, setValue] = React.useState(comment.body || "");
   const [saving, setSaving] = React.useState(false);
@@ -4710,8 +4746,13 @@ function CommentRow({ comment, projectSlug, cardId, actorName, onChanged }) {
       <div style={{
         fontSize: 11, color: "var(--text-muted)", marginBottom: 4,
         paddingRight: mine ? 46 : 0,
+        display: "flex", alignItems: "center", gap: 4,
       }}>
-        {comment.actor || "익명"} · {comment.created_at?.slice(0, 16).replace("T", " ")}
+        <span style={{ fontSize: 13 }}>{authorIcon}</span>
+        <span style={{ fontWeight: 600, color: "var(--text-lighter)" }}>
+          {comment.actor || "익명"}
+        </span>
+        <span>· {comment.created_at?.slice(0, 16).replace("T", " ")}</span>
       </div>
       {editing && mine ? (
         <textarea
@@ -5142,6 +5183,160 @@ function JobQueueCard({ job, active, onSelect, onRemove }) {
   );
 }
 
+// 프로필 아이콘 후보 — 간단한 사람 머리 이모지.
+const PROFILE_ICON_CHOICES = ["🧑","👤","👨","👩","🧔","👱","👴","👵","🧓","🧒","🤓","😊","🙂","🦊","🐻","🐰"];
+
+// 헤더 프로필 선택기 — 현재 프로필 표시 + 드롭다운으로 변경 / ＋ 새 프로필.
+function ProfilePicker({ profiles, current, onChange, onCreate }) {
+  const [open, setOpen] = React.useState(false);
+  const [creating, setCreating] = React.useState(false);
+  const [newName, setNewName] = React.useState("");
+  const [newIcon, setNewIcon] = React.useState(PROFILE_ICON_CHOICES[0]);
+  const wrapRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setCreating(false); } };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const submitNew = async () => {
+    const n = newName.trim();
+    if (!n) return;
+    try {
+      const p = await onCreate(n, newIcon);
+      if (p) { onChange(p); setOpen(false); setCreating(false); setNewName(""); }
+    } catch (e) { alert("프로필 생성 실패: " + e.message); }
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title={current ? `현재 프로필: ${current.name}` : "프로필 선택 (댓글/편집 작성자 구분)"}
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "6px 10px 6px 8px", borderRadius: 999,
+          background: current ? "rgba(7,110,232,0.08)" : "rgba(239,68,68,0.08)",
+          border: `1px solid ${current ? "rgba(7,110,232,0.25)" : "rgba(239,68,68,0.3)"}`,
+          color: current ? "var(--primary)" : "#dc2626",
+          fontSize: 13, fontWeight: 700, cursor: "pointer",
+          lineHeight: 1,
+        }}
+      >
+        <span style={{ fontSize: 16 }}>{current?.icon || "👤"}</span>
+        <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {current?.name || "프로필 선택"}
+        </span>
+        <span style={{ fontSize: 8, opacity: 0.6 }}>▼</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", right: 0,
+          width: 260,
+          background: "#fff", border: "1px solid var(--surface-border)",
+          borderRadius: 12, boxShadow: "0 8px 28px rgba(0,0,0,0.14)",
+          zIndex: 200, padding: 6,
+        }}>
+          <div style={{ maxHeight: 260, overflowY: "auto" }}>
+            {profiles.length === 0 && !creating && (
+              <div style={{ padding: "14px 10px", fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
+                아직 프로필이 없습니다.<br />＋ 로 추가하세요.
+              </div>
+            )}
+            {profiles.map((p) => {
+              const active = current?.id === p.id;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => { onChange(p); setOpen(false); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "7px 10px", borderRadius: 8, cursor: "pointer",
+                    background: active ? "rgba(7,110,232,0.1)" : "transparent",
+                  }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <span style={{ fontSize: 18 }}>{p.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--primary)" : "var(--text-main)", flex: 1 }}>{p.name}</span>
+                  {active && <span style={{ fontSize: 11, color: "var(--primary)" }}>✓</span>}
+                </div>
+              );
+            })}
+          </div>
+          {creating ? (
+            <div style={{ padding: 10, borderTop: "1px solid var(--surface-border)", marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>이름</div>
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); submitNew(); }
+                  else if (e.key === "Escape") { setCreating(false); setNewName(""); }
+                }}
+                placeholder="예) 김기획"
+                style={{
+                  width: "100%", padding: "6px 8px", borderRadius: 6,
+                  border: "1px solid var(--surface-border)", outline: "none",
+                  fontSize: 13, boxSizing: "border-box", marginBottom: 8,
+                }}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>아이콘</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4, marginBottom: 10 }}>
+                {PROFILE_ICON_CHOICES.map((ic) => (
+                  <button
+                    key={ic}
+                    onClick={() => setNewIcon(ic)}
+                    style={{
+                      aspectRatio: "1/1", padding: 0,
+                      background: newIcon === ic ? "rgba(7,110,232,0.14)" : "transparent",
+                      border: `1px solid ${newIcon === ic ? "var(--primary)" : "var(--surface-border)"}`,
+                      borderRadius: 6, cursor: "pointer", fontSize: 16,
+                    }}
+                  >{ic}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={submitNew}
+                  disabled={!newName.trim()}
+                  style={{
+                    flex: 1, padding: "6px 0", borderRadius: 6, border: "none",
+                    background: newName.trim() ? "var(--primary)" : "rgba(0,0,0,0.08)",
+                    color: newName.trim() ? "#fff" : "var(--text-muted)",
+                    fontSize: 12, fontWeight: 700, cursor: newName.trim() ? "pointer" : "not-allowed",
+                  }}
+                >추가</button>
+                <button
+                  onClick={() => { setCreating(false); setNewName(""); }}
+                  style={{
+                    padding: "6px 12px", borderRadius: 6,
+                    background: "transparent", border: "1px solid var(--surface-border)",
+                    color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
+                  }}
+                >취소</button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setCreating(true)}
+              style={{
+                width: "100%", padding: "8px 10px", marginTop: 4, borderRadius: 8,
+                background: "transparent", border: "1px dashed var(--surface-border)",
+                color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                textAlign: "left",
+              }}
+            >＋ 새 프로필</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main App ───
 export default function InZOIConceptTool() {
   // ─── Per-job state ──────────────────────────────────────────────
@@ -5486,9 +5681,50 @@ export default function InZOIConceptTool() {
   const [syncStatus, setSyncStatus] = useState("idle"); // "idle" | "saving" | "error"
   const [connection, setConnection] = useState({ state: "connected", failStreak: 0 });
   // state: "connected" | "reconnecting" | "offline"
-  const actorName = useMemo(() => {
-    try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
+  // 프로필 (전역 공유, v1.10.8).
+  // profiles 는 서버에서 로드, currentProfile 은 localStorage 에 id 저장.
+  const [profiles, setProfiles] = useState([]);
+  const [currentProfileId, setCurrentProfileIdRaw] = useState(() => {
+    try { return localStorage.getItem("inzoi_profile_id") || null; } catch { return null; }
+  });
+  const setCurrentProfileId = (id) => {
+    setCurrentProfileIdRaw(id);
+    try {
+      if (id) localStorage.setItem("inzoi_profile_id", id);
+      else localStorage.removeItem("inzoi_profile_id");
+    } catch {}
+  };
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const list = await fetchProfiles();
+      if (!cancelled) setProfiles(list);
+    }
+    load();
+    const t = setInterval(load, 30 * 1000); // 다른 사용자가 추가한 프로필 30초마다 반영
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
+  const currentProfile = useMemo(
+    () => profiles.find((p) => p.id === currentProfileId) || null,
+    [profiles, currentProfileId]
+  );
+  // 새 프로필 생성 (바로 현재 프로필로 설정).
+  const handleCreateProfile = async (name, icon) => {
+    const p = await createProfile(name, icon);
+    setProfiles((prev) => prev.find((x) => x.id === p.id) ? prev : [...prev, p]);
+    return p;
+  };
+  // actor 이름은 프로필에서 파생 — 프로필 없으면 localStorage 의 예전 inzoi_actor_name fallback.
+  const actorName = useMemo(() => {
+    if (currentProfile?.name) return currentProfile.name;
+    try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
+  }, [currentProfile]);
+  // actor 이름으로 프로필 찾기 (댓글/활동에 아이콘 표시용).
+  const profileByName = useMemo(() => {
+    const m = new Map();
+    for (const p of profiles) m.set(p.name, p);
+    return m;
+  }, [profiles]);
 
   // 업데이트 태그 일괄 이름 변경 — chip 의 ✏️ 에서 호출. 해당 태그가 붙은
   // 모든 카드에 PATCH 를 병렬로 날리고, 응답으로 로컬 cards/detailCard 도 동기화.
@@ -6396,6 +6632,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <span style={{ fontSize: 16, lineHeight: 1 }}>＋</span> 새 시안
             </button>
           )}
+          {/* 프로필 선택기 — 헤더 맨 오른쪽 끝 (v1.10.8) */}
+          <ProfilePicker
+            profiles={profiles}
+            current={currentProfile}
+            onChange={(p) => setCurrentProfileId(p.id)}
+            onCreate={handleCreateProfile}
+          />
         </div>
       </header>
 
@@ -8959,6 +9202,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           projectSlug={projectSlug}
                           cardId={card.id}
                           actorName={actorName}
+                          profileByName={profileByName}
                           onChanged={async () => {
                             const detail = await fetchCardDetail(projectSlug, card.id);
                             if (detail) setDetailCard(detail);
@@ -9003,11 +9247,15 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       {(card.activities || [])
                         .filter((a) => activityFilter === "all" || a.action === activityFilter ||
                           (activityFilter === "confirmed" && (a.action === "confirmed" || a.action === "reopened")))
-                        .map((a) => (
+                        .map((a) => {
+                          const authorProfile = a.actor ? profileByName.get(a.actor) : null;
+                          const authorIcon = authorProfile?.icon || (a.actor ? "👤" : "⚙️");
+                          return (
                         <div key={a.id} style={{
                           fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6,
                           padding: "3px 0",
                         }}>
+                          <span style={{ fontSize: 12, marginRight: 3 }}>{authorIcon}</span>
                           <span style={{ color: "var(--text-lighter)", fontWeight: 600 }}>
                             {a.actor || "시스템"}
                           </span>
@@ -9022,7 +9270,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             {a.created_at?.slice(5, 16).replace("T", " ")}
                           </span>
                         </div>
-                      ))}
+                          );
+                        })}
                       {(!card.activities || card.activities.length === 0) && (
                         <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "16px 0" }}>
                           활동 이력 없음.

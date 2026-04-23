@@ -229,3 +229,12 @@ CREATE TABLE IF NOT EXISTS card_members (
   FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
   FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
 );
+
+-- ─── 프로필 (v1.10.8) — 댓글·편집·투표 작성자 구분용 ──────────────
+-- 팀 내 누구나 추가 가능, 삭제 없음. 전역 공유.
+CREATE TABLE IF NOT EXISTS profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  icon TEXT NOT NULL DEFAULT '🧑',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
