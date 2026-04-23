@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.2";
+const APP_VERSION = "1.10.3";
 const CHANGELOG = [
+  {
+    version: "1.10.3",
+    date: "2026-04-23",
+    changes: [
+      "리스트 뷰 컬럼 헤더(제목 / 우선순위 / 업데이트 / 카테고리 …) 도 sticky 영역으로 이동 — 카드 스크롤 시 컬럼 라벨이 따라다님",
+      "카드 뷰에서는 컬럼 헤더 숨김 (불필요)",
+    ],
+  },
   {
     version: "1.10.2",
     date: "2026-04-23",
@@ -6221,12 +6229,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   />
                 );
               })()}
+              {viewMode === "list" && totalCount > 0 && (
+                <CardListHeader tabId={activeTab} sortBy={sortBy} onSortChange={setSortBy} />
+              )}
             </div>
 
             {totalCount > 0 ? (
               viewMode === "list" ? (
                 <div style={{ marginBottom: 40 }}>
-                  <CardListHeader tabId={activeTab} sortBy={sortBy} onSortChange={setSortBy} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
                       <CardListRow
@@ -7603,6 +7613,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 />
               );
             })()}
+            {viewMode === "list" && completedList.length > 0 && (
+              <CardListHeader tabId="completed" sortBy={sortBy} onSortChange={setSortBy} />
+            )}
           </div>
 
           {completedList.length === 0 ? (
@@ -7626,7 +7639,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <>
                 {viewMode === "list" ? (
                   <div>
-                    <CardListHeader tabId="completed" sortBy={sortBy} onSortChange={setSortBy} />
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {sortCardArray(
                         visibleList, sortBy, "completedAt", "categoryLabel",
@@ -7728,6 +7740,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 />
               );
             })()}
+            {viewMode === "list" && wishlist.length > 0 && (
+              <CardListHeader tabId="wishlist" sortBy={sortBy} onSortChange={setSortBy} />
+            )}
           </div>
 
           <div>
@@ -7754,7 +7769,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <>
                     {viewMode === "list" ? (
                       <div>
-                        <CardListHeader tabId="wishlist" sortBy={sortBy} onSortChange={setSortBy} />
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                           {sortCardArray(
                             visibleList, sortBy, "createdAt", "title",
