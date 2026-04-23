@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.8.5";
+const APP_VERSION = "1.8.6";
 const CHANGELOG = [
+  {
+    version: "1.8.6",
+    date: "2026-04-23",
+    changes: [
+      "카탈로그 상세 모달이 inzoiObjectList 의 모달과 동일한 구성으로 대폭 확장 — 서버가 object_templates / posmap_scores / state_variations / customize_data / grab_types / collection_items / item_history / recommendations / similar_items 까지 한 번에 통합 캐시",
+      "포지셔닝맵 분석 섹션 (스타일/무드/크기/재질/색상 팔레트), 배치 정보 (carriable/handStyle/placement), 커스터마이즈 정보 (파트·AI 텍스처 지원 여부), 변형 (state_variations), 함께 배치된 아이템, 유사 아이템(벡터 유사도) 전부 표시",
+      "헤더 태그 라인에 inzoiObjectList 와 동일한 pill (카테고리 경로·가격·커마 가능/재질·잠금해제 조건·grab 유형·컬렉션·추가/수정일) 배치",
+      "재질/잠금조건/grab/컬렉션 한글 라벨 맵 (MAT_KO/COND_KO/GRAB_KO/COLL_KO) 클라이언트 복사",
+    ],
+  },
   {
     version: "1.8.5",
     date: "2026-04-23",
@@ -3206,6 +3216,88 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") 
   return cpy;
 }
 
+// 한글 라벨 맵 — inzoiObjectList 의 showDetail 과 동일한 표기 쓰도록 클라이언트에
+// 복사. 서버 응답의 raw 값을 여기서 한글화.
+const MAT_KO = { Fabric: "패브릭", Leather: "가죽", Wood: "목재", Metal: "금속", PaintedMetal: "도장금속", Plastic: "플라스틱", Marble: "대리석", Ceramic: "세라믹", Concrete: "콘크리트", Rubber: "고무" };
+const COND_KO = { Object_Lock: "잠금", Object_Housework_Lv3: "가사 Lv3", Object_Housework_Lv7: "가사 Lv7", Object_Gardening_Lv2: "원예 Lv2", Object_Gardening_Lv6: "원예 Lv6", Object_Cooking_Lv5: "요리 Lv5", Object_Filming_Lv3: "촬영 Lv3", Object_Filming_Lv7: "촬영 Lv7", Object_MiniTank01: "미니 수조", Object_MediumTank01: "중형 수조", Object_LargeTank01: "대형 수조", Object_ExtraLargeTank01: "특대형 수조", Object_SuperLargeTank01: "초대형 수조", Object_Medium_DisplayCase01: "중형 진열장", Object_Large_DisplayCase01: "대형 진열장", Object_Medium_DisplayCase02: "중형 진열장2" };
+const GRAB_KO = { Food: "음식", Drink: "음료", Book: "책", Umbrella_Grab: "우산", Handbag_Grab: "핸드백", Skewer: "꼬치", Fryingpan: "프라이팬", Coffee_TeaCup: "찻잔", Coffee_Mug: "머그컵", Joypad: "게임패드", Tablet: "태블릿", Pickaxe: "곡괭이", Snack_Plate: "스낵", Lighting06: "조명", Lighting07: "조명", Lighting08: "조명", Paperlantern: "랜턴", Portafilter: "포타필터" };
+const GRAB_ICON = { Food: "🍽", Drink: "🥤", Book: "📖", Umbrella_Grab: "☂️", Handbag_Grab: "👜", Skewer: "🍢", Fryingpan: "🍳", Coffee_TeaCup: "☕", Coffee_Mug: "☕", Joypad: "🎮", Tablet: "📱", Pickaxe: "⛏️", Snack_Plate: "🍽", Lighting06: "💡", Lighting07: "💡", Lighting08: "💡", Paperlantern: "🏮", Portafilter: "☕" };
+const COLL_KO = { Coll_Jewel: "보석", Coll_Fish: "물고기", Coll_Crop: "작물", Coll_Ore: "광석", Coll_Tool: "도구" };
+const COLL_ICON = { Coll_Jewel: "💎", Coll_Fish: "🐟", Coll_Crop: "🌾", Coll_Ore: "⛏️", Coll_Tool: "🔧" };
+
+// 상세 모달 내부 섹션 공통 렌더 헬퍼들.
+function Section({ title, color = "var(--primary)", children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6, marginBottom: 8,
+        fontSize: 13, fontWeight: 700, color: "var(--text-main)",
+      }}>
+        <span style={{ width: 3, height: 14, background: color, borderRadius: 2 }} />
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function InfoCell({ k, v }) {
+  return (
+    <div style={{
+      padding: "6px 10px", borderRadius: 8,
+      background: "rgba(0,0,0,0.03)", border: "1px solid var(--surface-border)",
+    }}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 700, marginBottom: 2 }}>{k}</div>
+      <div style={{ fontSize: 12, color: "var(--text-main)", fontWeight: 600 }}>{v}</div>
+    </div>
+  );
+}
+
+function ThumbGrid({ items, onClick, subText }) {
+  return (
+    <div style={{
+      display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4,
+    }}>
+      {items.map((t) => (
+        <div
+          key={t.id}
+          onClick={() => onClick?.(t.id)}
+          className="hover-lift"
+          style={{
+            flexShrink: 0, width: 96,
+            cursor: onClick ? "pointer" : "default",
+            borderRadius: 8, overflow: "hidden",
+            border: "1px solid var(--surface-border)",
+            background: "#fff",
+          }}
+          title={t.name}
+        >
+          <div style={{ width: "100%", aspectRatio: "1/1", background: "rgba(0,0,0,0.03)" }}>
+            <img
+              src={t.icon_url}
+              alt={t.name}
+              loading="lazy"
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+          </div>
+          <div style={{
+            padding: "4px 5px", fontSize: 10, color: "var(--text-main)", fontWeight: 600,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            textAlign: "center",
+          }}>{t.name}</div>
+          {subText && subText(t) && (
+            <div style={{
+              padding: "0 5px 4px", fontSize: 9, color: "var(--text-muted)",
+              textAlign: "center", fontFamily: "monospace",
+            }}>{subText(t)}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // inzoiObjectList 에셋 상세 모달 — /api/object-detail/:id fetch → 네이티브 렌더.
 // 카탈로그 전체 페이지를 로드하지 않고 해당 에셋 정보만 보여준다.
 function CatalogDetailModal({ id, onClose, onOpenSibling, onOpenImage }) {
@@ -3295,6 +3387,7 @@ function CatalogDetailModal({ id, onClose, onOpenSibling, onOpenImage }) {
             </div>
           ) : (
             <>
+              {/* 헤더 — 아이콘 + 이름/설명/배지 */}
               <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 20, marginBottom: 20 }}>
                 <img
                   src={data.icon_url}
@@ -3313,104 +3406,148 @@ function CatalogDetailModal({ id, onClose, onOpenSibling, onOpenImage }) {
                     {data.name}
                   </div>
                   {data.desc && (
-                    <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.7, marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, color: "var(--text-lighter)", lineHeight: 1.7, marginBottom: 10 }}>
                       {data.desc}
                     </div>
                   )}
-                  <div style={row}><span style={label}>필터</span><span style={value}>{data.filter || "—"}</span></div>
-                  {data.category && data.category !== "None" && (
-                    <div style={row}><span style={label}>카테고리</span><span style={value}>{data.category}</span></div>
-                  )}
-                  {data.price != null && (
-                    <div style={row}><span style={label}>가격</span><span style={value}>{data.price.toLocaleString()}원</span></div>
-                  )}
-                  {data.tags.length > 0 && (
-                    <div style={row}>
-                      <span style={label}>태그</span>
-                      <span style={value}>
-                        {data.tags.map((t) => (
-                          <span key={t} style={{
-                            display: "inline-block", marginRight: 4, marginBottom: 4,
-                            padding: "1px 7px", borderRadius: 8, fontSize: 10,
-                            background: "rgba(7,110,232,0.08)", color: "var(--primary)", fontWeight: 600,
-                          }}>{t}</span>
-                        ))}
+                  {/* 태그 라인 — inzoiObjectList 모달과 동일한 pill 구성 */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+                    {data.cat_path && (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 600, background: "rgba(7,110,232,0.1)", color: "var(--primary)" }}>{data.cat_path}</span>
+                    )}
+                    {data.category && data.category !== "None" && (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 600, background: "rgba(0,0,0,0.04)" }}>{data.category}</span>
+                    )}
+                    {data.tags.map((t) => (
+                      <span key={t} style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 600, background: "rgba(0,0,0,0.04)", color: "var(--text-lighter)" }}>{t}</span>
+                    ))}
+                    {data.price != null && (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700, background: "rgba(234,179,8,0.15)", color: "#92400e" }}>§{data.price.toLocaleString()}</span>
+                    )}
+                    {data.cst ? (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700, background: "#00b894", color: "#fff" }}>
+                        커마 가능{data.mats.length > 0 ? ` (${data.mats.map((m) => MAT_KO[m] || m).join(", ")})` : ""}
                       </span>
-                    </div>
-                  )}
+                    ) : (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 600, background: "rgba(0,0,0,0.04)", color: "var(--text-muted)" }}>커마 불가</span>
+                    )}
+                    {data.unlockable && (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700, background: "#fdcb6e", color: "#2d3436" }}>
+                        🔒 잠금해제 필요{data.cond_id ? ` — ${COND_KO[data.cond_id] || data.cond_id.replace("Object_", "")}` : ""}
+                      </span>
+                    )}
+                    {data.grab_type && (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700, background: "#74b9ff", color: "#2d3436" }}>
+                        {GRAB_ICON[data.grab_type] || "🤲"} {GRAB_KO[data.grab_type] || data.grab_type}
+                      </span>
+                    )}
+                    {data.coll_type && (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700, background: "#f39c12", color: "#fff" }}>
+                        {COLL_ICON[data.coll_type] || "📦"} 컬렉션: {COLL_KO[data.coll_type] || data.coll_type}
+                      </span>
+                    )}
+                    {data.added_date && (
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 600, background: "rgba(0,0,0,0.04)", color: "var(--text-muted)" }}>
+                        추가 {data.added_date}{data.modified_date ? ` · 수정 ${data.modified_date}` : ""}
+                      </span>
+                    )}
+                  </div>
                   {data.style_tags.length > 0 && (
                     <div style={row}>
                       <span style={label}>스타일 태그</span>
                       <span style={value}>
                         {data.style_tags.map((t) => (
-                          <span key={t} style={{
-                            display: "inline-block", marginRight: 4, marginBottom: 4,
-                            padding: "1px 7px", borderRadius: 8, fontSize: 10,
-                            background: "rgba(234,179,8,0.12)", color: "#b45309", fontWeight: 600,
-                          }}>{t}</span>
+                          <span key={t} style={{ display: "inline-block", marginRight: 4, marginBottom: 4, padding: "1px 7px", borderRadius: 8, fontSize: 10, background: "rgba(234,179,8,0.12)", color: "#b45309", fontWeight: 600 }}>{t}</span>
                         ))}
-                      </span>
-                    </div>
-                  )}
-                  {data.mats.length > 0 && (
-                    <div style={row}>
-                      <span style={label}>재질 세트</span>
-                      <span style={{ ...value, fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace" }}>
-                        {data.mats.join(" · ")}
-                      </span>
-                    </div>
-                  )}
-                  {(data.unlockable || data.cst) && (
-                    <div style={{ ...row, marginTop: 8 }}>
-                      <span style={label}>속성</span>
-                      <span style={value}>
-                        {data.cst && <span style={{ marginRight: 6 }}>🎨 커스터마이즈</span>}
-                        {data.unlockable && <span>🔒 조건부 해금</span>}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* 포지셔닝맵 분석 */}
+              {data.posmap && (
+                <Section title="📊 포지셔닝맵 분석 (ML)" color="#6c5ce7">
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, fontSize: 12 }}>
+                    {data.posmap.style && <InfoCell k="스타일" v={data.posmap.style} />}
+                    {data.posmap.mood && <InfoCell k="무드" v={data.posmap.mood} />}
+                    {data.posmap.size && <InfoCell k="크기" v={data.posmap.size} />}
+                    {data.posmap.materials.length > 0 && <InfoCell k="재질" v={data.posmap.materials.join(", ")} />}
+                  </div>
+                  {data.posmap.colors.length > 0 && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {data.posmap.colors.map((c, i) => (
+                        <div key={i} title={c} style={{
+                          width: 24, height: 24, borderRadius: 6,
+                          background: c, border: "1px solid var(--surface-border)",
+                        }} />
+                      ))}
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {/* 배치 정보 */}
+              {data.placement && (
+                <Section title="📍 배치 정보" color="#00b894">
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, fontSize: 12 }}>
+                    {data.placement.placement != null && <InfoCell k="배치 ID" v={String(data.placement.placement)} />}
+                    <InfoCell k="이동 가능" v={data.placement.carriable ? "✓ 예" : "✕ 아니오"} />
+                    {data.placement.hand_style && data.placement.hand_style !== "Invalid" && <InfoCell k="손 동작" v={data.placement.hand_style} />}
+                    {data.placement.selection_set && <InfoCell k="선택 세트" v={data.placement.selection_set} />}
+                  </div>
+                  {data.placement.tags.length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+                      태그: {data.placement.tags.join(", ")}
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {/* 커스터마이즈 정보 */}
+              {data.customize && (
+                <Section title="🎨 커스터마이즈" color="#00b894">
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, fontSize: 12, marginBottom: 8 }}>
+                    {data.customize.type && <InfoCell k="타입" v={data.customize.type} />}
+                    <InfoCell k="AI 텍스처" v={data.customize.ai_texture ? "✓ 지원" : "—"} />
+                    <InfoCell k="이미지 업로드" v={data.customize.import_texture ? "✓ 지원" : "—"} />
+                    <InfoCell k="파트 수" v={`${data.customize.parts.length}개`} />
+                  </div>
+                  {data.customize.parts.length > 0 && (
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace", lineHeight: 1.6 }}>
+                      파트: {data.customize.parts.slice(0, 10).map((p) => typeof p === "string" ? p : p?.name || JSON.stringify(p)).join(" · ")}
+                      {data.customize.parts.length > 10 && ` … 외 ${data.customize.parts.length - 10}개`}
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {/* 변형 (state_variations) */}
+              {data.variants.length > 0 && (
+                <Section title={`🎭 변형 (${data.variants.length})`}>
+                  <ThumbGrid items={data.variants} onClick={onOpenSibling} />
+                </Section>
+              )}
+
+              {/* 함께 배치된 아이템 (recommendations) */}
+              {data.colocated.length > 0 && (
+                <Section title={`🧩 함께 배치된 아이템 (${data.colocated.length})`} color="#fdcb6e">
+                  <ThumbGrid items={data.colocated} onClick={onOpenSibling} subText={(x) => x.shared ? `${x.shared}개 부지` : null} />
+                </Section>
+              )}
+
+              {/* 유사 아이템 (similar_items, 벡터 유사도) */}
+              {data.similar.length > 0 && (
+                <Section title={`🎯 유사 아이템 (${data.similar.length})`} color="#e84393">
+                  <ThumbGrid items={data.similar} onClick={onOpenSibling} subText={(x) => x.score != null ? `${Math.round(x.score * 100)}%` : null} />
+                </Section>
+              )}
+
+              {/* 같은 필터의 다른 변형 — fallback */}
               {data.siblings.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>
-                    같은 필터의 다른 변형 ({data.siblings.length})
-                  </div>
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))",
-                    gap: 6,
-                  }}>
-                    {data.siblings.map((s) => (
-                      <div
-                        key={s.id}
-                        onClick={() => onOpenSibling?.(s.id)}
-                        title={`${s.name}${s.price ? ` · ${s.price.toLocaleString()}원` : ""}`}
-                        className="hover-lift"
-                        style={{
-                          cursor: "pointer", borderRadius: 6, overflow: "hidden",
-                          border: "1px solid var(--surface-border)", background: "#fff",
-                        }}
-                      >
-                        <div style={{ width: "100%", aspectRatio: "1/1", background: "rgba(0,0,0,0.03)" }}>
-                          <img
-                            src={s.icon_url}
-                            alt={s.name}
-                            loading="lazy"
-                            onError={(e) => { e.currentTarget.style.display = "none"; }}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                          />
-                        </div>
-                        <div style={{
-                          padding: "3px 5px", fontSize: 9, color: "var(--text-muted)",
-                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                          textAlign: "center",
-                        }}>{s.name}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <Section title={`📦 같은 필터의 다른 에셋 (${data.siblings.length})`}>
+                  <ThumbGrid items={data.siblings} onClick={onOpenSibling} subText={(x) => x.price ? `§${x.price.toLocaleString()}` : null} />
+                </Section>
               )}
             </>
           )}

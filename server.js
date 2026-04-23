@@ -279,8 +279,6 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
 
-// 단일 에셋 상세 조회용 캐시 — objects.json + meta.objTags 병합. 1시간 TTL.
-let _objectsCache = { fetchedAt: 0, byId: null, objTags: null };
 // upstream fetch 에 5초 타임아웃 — :8080 이 꺼져있거나 느릴 때 요청이 무한 대기하지 않게.
 async function timedFetch(url, ms = 5000) {
   const ctrl = new AbortController();
@@ -289,62 +287,191 @@ async function timedFetch(url, ms = 5000) {
   finally { clearTimeout(t); }
 }
 
-async function loadObjectsCache(base) {
+// 상세 조회용 합성 캐시 — inzoiObjectList 의 여러 JSON 을 모아 한 번에 사용.
+// 1시간 TTL, :8080 이 불안정해도 부분 데이터 로드 허용.
+let _catalogCache = { fetchedAt: 0, data: null };
+async function loadCatalogCache(base) {
   const now = Date.now();
-  if (_objectsCache.byId && now - _objectsCache.fetchedAt < META_CACHE_TTL) return _objectsCache;
-  const [r1, r2] = await Promise.all([
-    timedFetch(`${base}/data/objects.json`),
-    timedFetch(`${base}/data/meta.json`),
+  if (_catalogCache.data && now - _catalogCache.fetchedAt < META_CACHE_TTL) return _catalogCache.data;
+  const fetchJson = async (path) => {
+    try {
+      const r = await timedFetch(`${base}${path}`);
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  };
+  const [
+    objects, meta, templates, posmap,
+    stateVariations, customizeData,
+    grabTypes, collItems, itemHistory, recommendations, similar,
+  ] = await Promise.all([
+    fetchJson("/data/objects.json"),
+    fetchJson("/data/meta.json"),
+    fetchJson("/data/object_templates.json"),
+    fetchJson("/data/posmap_scores.json"),
+    fetchJson("/data/state_variations.json"),
+    fetchJson("/data/customize_data.json"),
+    fetchJson("/data/grab_types.json"),
+    fetchJson("/data/collection_items.json"),
+    fetchJson("/data/item_history.json"),
+    fetchJson("/data/recommendations.json"),
+    fetchJson("/data/similar_items.json"),
   ]);
-  if (!r1.ok) throw new Error(`objects.json upstream ${r1.status}`);
-  const objects = await r1.json();
-  const meta = r2.ok ? await r2.json() : {};
+  if (!objects || !Array.isArray(objects)) throw new Error("objects.json upstream unreachable");
   const byId = new Map();
   for (const o of objects) { if (o?.id) byId.set(o.id, o); }
-  _objectsCache = { fetchedAt: now, byId, objTags: meta.objTags || {} };
-  return _objectsCache;
+  const data = {
+    byId,
+    objTags: meta?.objTags || {},
+    catHier: meta?.catHier || {},
+    filterKo: meta?.filterKo || {},
+    templates: templates || {},
+    posmap: posmap || {},
+    stateVariations: stateVariations || {},
+    customizeData: customizeData || {},
+    grabTypes: grabTypes || {},
+    collItems: collItems || {},
+    itemHistory: itemHistory || {},
+    recommendations: recommendations || {},
+    similar: similar || {},
+  };
+  _catalogCache = { fetchedAt: now, data };
+  return data;
 }
 
-// /api/object-detail/:id — 특정 에셋의 상세 정보 JSON 반환.
+// filter id → 한글 카테고리 경로 ("가구 / 침실") 계산.
+function getCatPath(filterId, catHier, filterKo) {
+  for (const [lv1, lv2map] of Object.entries(catHier)) {
+    for (const [lv2, filters] of Object.entries(lv2map)) {
+      if (Array.isArray(filters) && filters.includes(filterId)) {
+        const ko = filterKo[filterId] || filterId;
+        return `${lv1} / ${lv2} / ${ko}`;
+      }
+    }
+  }
+  return filterKo[filterId] || filterId;
+}
+
+// /api/object-detail/:id — 상세 정보 (inzoiObjectList 의 모달과 동일한 구성).
 app.get("/api/object-detail/:id", async (c) => {
   const base = process.env.INZOI_OBJECT_LIST_URL || "http://localhost:8080";
   const rawId = c.req.param("id") || "";
   const id = rawId.replace(/[^A-Za-z0-9_\-]/g, "");
   if (!id) return c.json({ error: "invalid id" }, 400);
   try {
-    const { byId, objTags } = await loadObjectsCache(base);
-    const o = byId.get(id);
+    const cat = await loadCatalogCache(base);
+    const o = cat.byId.get(id);
     if (!o) return c.json({ error: "not found" }, 404);
+
     const tags = typeof o.tags === "string"
-      ? o.tags.split(",").map((s) => s.trim()).filter(Boolean)
-      : [];
-    const styleTags = (objTags[o.id] || []).filter(Boolean);
+      ? o.tags.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const styleTags = (cat.objTags[o.id] || []).filter(Boolean);
     const mats = Array.isArray(o.mats) ? o.mats : [];
-    // 같은 filter 안의 다른 변형 (최대 10개, 자기 제외)
+    const catPath = getCatPath(o.filter, cat.catHier, cat.filterKo);
+    const filterLabelKo = cat.filterKo[o.filter] || o.filter;
+    // 같은 filter 안의 다른 변형 (최대 12개, 자기 제외)
     const siblings = [];
-    for (const v of byId.values()) {
+    for (const v of cat.byId.values()) {
       if (v.id === o.id) continue;
       if (v.filter !== o.filter) continue;
       siblings.push({
-        id: v.id,
-        name: v.name || v.id,
+        id: v.id, name: v.name || v.id,
         icon_url: `/api/object-icon/${encodeURIComponent(v.icon || v.id)}`,
         price: v.price ?? null,
       });
-      if (siblings.length >= 10) break;
+      if (siblings.length >= 12) break;
     }
+    // 템플릿 (placement, carriable, handStyle)
+    const tplKey = o.templateId || `${o.id}_Template`;
+    const tpl = cat.templates[tplKey] || cat.templates[`${o.id}_Template`] || null;
+    // 포지셔닝 맵 분석 (style / mood / colors / materials / size / posx,posy)
+    const posmap = cat.posmap[o.id] || null;
+    // state variations (색상·스타일 변형 목록)
+    const variants = [];
+    const sv = cat.stateVariations[o.stateVariationId || o.id] || cat.stateVariations[o.id];
+    if (sv && Array.isArray(sv.variants)) {
+      for (const v of sv.variants) {
+        if (!v?.id || v.id === o.id) continue;
+        const vo = cat.byId.get(v.id);
+        if (!vo) continue;
+        variants.push({
+          id: vo.id, name: vo.name || vo.id,
+          icon_url: `/api/object-icon/${encodeURIComponent(vo.icon || vo.id)}`,
+          price: vo.price ?? null,
+        });
+        if (variants.length >= 12) break;
+      }
+    }
+    // customize (parts, textures)
+    const customize = cat.customizeData[o.id] || null;
+    // grab / collection type
+    const grabType = cat.grabTypes[o.id] || null;
+    const collType = (cat.collItems && typeof cat.collItems === "object")
+      ? (Object.entries(cat.collItems).find(([t, ids]) => Array.isArray(ids) && ids.includes(o.id))?.[0] || null)
+      : null;
+    // 추가/수정 날짜
+    const history = cat.itemHistory[o.id] || {};
+    // 함께 배치된 아이템 (최대 8개)
+    const colocated = Array.isArray(cat.recommendations[o.id])
+      ? cat.recommendations[o.id].slice(0, 8).map((r) => {
+          const d = cat.byId.get(r.id);
+          if (!d) return null;
+          return {
+            id: d.id, name: d.name || d.id,
+            icon_url: `/api/object-icon/${encodeURIComponent(d.icon || d.id)}`,
+            shared: r.shared ?? null,
+          };
+        }).filter(Boolean) : [];
+    // 유사 아이템 (최대 8개)
+    const similarItems = Array.isArray(cat.similar[o.id])
+      ? cat.similar[o.id].slice(0, 8).map((r) => {
+          const d = cat.byId.get(r.id);
+          if (!d) return null;
+          return {
+            id: d.id, name: d.name || d.id,
+            icon_url: `/api/object-icon/${encodeURIComponent(d.icon || d.id)}`,
+            score: r.score ?? null,
+          };
+        }).filter(Boolean) : [];
+
     return c.json({
       id: o.id,
       name: o.name || o.id,
       desc: o.desc || null,
       category: o.category || null,
       filter: o.filter || null,
+      filter_label: filterLabelKo,
+      cat_path: catPath,
       icon_url: `/api/object-icon/${encodeURIComponent(o.icon || o.id)}`,
       price: typeof o.price === "number" ? o.price : null,
       tags, style_tags: styleTags, mats,
       unlockable: !!o.unlockable,
+      cond_id: o.condId || null,
       cst: !!o.cst,
-      siblings,
+      grab_type: grabType,
+      coll_type: collType,
+      added_date: history.added || null,
+      modified_date: history.modified || null,
+      placement: tpl ? {
+        carriable: !!tpl.carriable,
+        hand_style: tpl.handStyle || null,
+        placement: tpl.placement ?? null,
+        tags: Array.isArray(tpl.tags) ? tpl.tags : [],
+        selection_set: tpl.selectionSet || null,
+      } : null,
+      posmap: posmap ? {
+        style: posmap.style || null,
+        mood: posmap.mood || null,
+        size: posmap.size || null,
+        colors: Array.isArray(posmap.colors) ? posmap.colors : [],
+        materials: Array.isArray(posmap.materials) ? posmap.materials : [],
+      } : null,
+      customize: customize ? {
+        type: customize.type || null,
+        ai_texture: !!customize.aiTexture,
+        import_texture: !!customize.importTexture,
+        parts: Array.isArray(customize.parts) ? customize.parts : [],
+      } : null,
+      variants, siblings, colocated, similar: similarItems,
       source_hash_url: `${base}/#item=${encodeURIComponent(o.id)}`,
     });
   } catch (err) {
