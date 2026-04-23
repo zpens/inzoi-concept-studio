@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.1";
+const APP_VERSION = "1.10.2";
 const CHANGELOG = [
+  {
+    version: "1.10.2",
+    date: "2026-04-23",
+    changes: [
+      "탭 상단(제목 · 뷰 토글 · 카드 크기 · 정렬 · ＋새 시안 · 업데이트 chip 바) 전부 sticky 고정 — 카드 스크롤 시 상단이 남아 필터/정렬 접근 유지",
+      "메인 / 완료 / 위시 탭 3곳 모두 적용 (top: 64px 전역 헤더 바로 아래)",
+    ],
+  },
   {
     version: "1.10.1",
     date: "2026-04-23",
@@ -6165,48 +6173,55 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
         return (
           <main style={{ padding: "32px 40px 0", maxWidth: 1400, margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
-              <div>
-                <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>
-                  {tabMeta.icon} {tabMeta.title}
-                </h2>
-                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                  {totalCount > 0
-                    ? `이 단계에 ${totalCount}개의 작업이 있습니다. 카드를 선택해 진행하세요.`
-                    : tabMeta.desc}
-                </p>
+            {/* 제목 ~ 업데이트 chip 까지는 sticky 로 고정, 아래 카드만 스크롤 */}
+            <div style={{
+              position: "sticky", top: 64, zIndex: 50,
+              background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
+              marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
+                <div>
+                  <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>
+                    {tabMeta.icon} {tabMeta.title}
+                  </h2>
+                  <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                    {totalCount > 0
+                      ? `이 단계에 ${totalCount}개의 작업이 있습니다. 카드를 선택해 진행하세요.`
+                      : tabMeta.desc}
+                  </p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                  {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
+                  <SortSelect value={sortBy} onChange={setSortBy} />
+                  {activeTab === "create" && (
+                    <button
+                      onClick={spawnNewJob}
+                      className="btn-primary hover-lift"
+                      style={{
+                        padding: "12px 22px", borderRadius: 12, border: "none",
+                        color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: 6,
+                        boxShadow: "0 4px 14px var(--primary-glow)",
+                      }}
+                    >＋ 새 시안</button>
+                  )}
+                </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
-                <SortSelect value={sortBy} onChange={setSortBy} />
-                {activeTab === "create" && (
-                  <button
-                    onClick={spawnNewJob}
-                    className="btn-primary hover-lift"
-                    style={{
-                      padding: "12px 22px", borderRadius: 12, border: "none",
-                      color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 6,
-                      boxShadow: "0 4px 14px var(--primary-glow)",
-                    }}
-                  >＋ 새 시안</button>
-                )}
-              </div>
-            </div>
 
-            {(() => {
-              const chips = collectUpdateChips(inRangeCards);
-              return (
-                <UpdateChipBar
-                  chips={chips}
-                  selected={selectedUpdates}
-                  onChange={setSelectedUpdates}
-                  totalCount={inRangeCards.length}
-                  onRename={renameUpdateTag}
-                />
-              );
-            })()}
+              {(() => {
+                const chips = collectUpdateChips(inRangeCards);
+                return (
+                  <UpdateChipBar
+                    chips={chips}
+                    selected={selectedUpdates}
+                    onChange={setSelectedUpdates}
+                    totalCount={inRangeCards.length}
+                    onRename={renameUpdateTag}
+                  />
+                );
+              })()}
+            </div>
 
             {totalCount > 0 ? (
               viewMode === "list" ? (
@@ -7544,28 +7559,50 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {/* ═══ Completed Tab ═══ */}
       {activeTab === "completed" && (
         <main style={{ padding: "40px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
-            <div>
-              <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>완료된 컨셉시트</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 에셋 컨셉시트가 완성됐습니다.</p>
+          {/* 제목 ~ 업데이트 chip 까지 sticky */}
+          <div style={{
+            position: "sticky", top: 64, zIndex: 50,
+            background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
+            marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: completedList.length === 0 ? 36 : 20 }}>
+              <div>
+                <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>완료된 컨셉시트</h2>
+                <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 에셋 컨셉시트가 완성됐습니다.</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
+                <SortSelect value={sortBy} onChange={setSortBy} />
+                <button
+                  onClick={() => setActiveTab("create")}
+                  className="btn-primary hover-lift"
+                  style={{
+                    padding: "12px 24px", borderRadius: 14, border: "none",
+                    color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                    boxShadow: "0 4px 20px var(--primary-glow)",
+                    display: "flex", alignItems: "center", gap: 8,
+                  }}
+                >
+                  <span>✨</span> 새 시안 생성
+                </button>
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <ViewModeToggle value={viewMode} onChange={setViewMode} />
-              {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
-              <SortSelect value={sortBy} onChange={setSortBy} />
-              <button
-                onClick={() => setActiveTab("create")}
-                className="btn-primary hover-lift"
-                style={{
-                  padding: "12px 24px", borderRadius: 14, border: "none",
-                  color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                  boxShadow: "0 4px 20px var(--primary-glow)",
-                  display: "flex", alignItems: "center", gap: 8,
-                }}
-              >
-                <span>✨</span> 새 시안 생성
-              </button>
-            </div>
+            {completedList.length > 0 && (() => {
+              const completedCards = completedList
+                .map((item) => cards.find((c) => c.id === item._cardId))
+                .filter(Boolean);
+              const chips = collectUpdateChips(completedCards);
+              return (
+                <UpdateChipBar
+                  chips={chips}
+                  selected={selectedUpdates}
+                  onChange={setSelectedUpdates}
+                  totalCount={completedList.length}
+                  onRename={renameUpdateTag}
+                />
+              );
+            })()}
           </div>
 
           {completedList.length === 0 ? (
@@ -7580,11 +7617,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </button>
             </div>
           ) : (() => {
-            // 완료 탭은 업데이트 일정 필터가 가장 중요한 곳. 상단에 chip 바 항상 노출.
-            const completedCards = completedList
-              .map((item) => cards.find((c) => c.id === item._cardId))
-              .filter(Boolean);
-            const chips = collectUpdateChips(completedCards);
             const filterItem = (item) => {
               const card = cards.find((c) => c.id === item._cardId);
               return card && matchesUpdateFilter(card, selectedUpdates);
@@ -7592,13 +7624,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             const visibleList = completedList.filter(filterItem);
             return (
               <>
-                <UpdateChipBar
-                  chips={chips}
-                  selected={selectedUpdates}
-                  onChange={setSelectedUpdates}
-                  totalCount={completedList.length}
-                  onRename={renameUpdateTag}
-                />
                 {viewMode === "list" ? (
                   <div>
                     <CardListHeader tabId="completed" sortBy={sortBy} onSortChange={setSortBy} />
@@ -7658,29 +7683,51 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {/* ═══ Wishlist Tab ═══ */}
       {activeTab === "wishlist" && (
         <main style={{ padding: "32px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
-            <div>
-              <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>⭐ 위시리스트</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                {wishlist.length > 0 ? `${wishlist.length}개의 아이디어` : "만들고 싶은 가구 아이디어를 기록하세요."}
-              </p>
+          {/* 제목 ~ 업데이트 chip 까지 sticky */}
+          <div style={{
+            position: "sticky", top: 64, zIndex: 50,
+            background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
+            marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: wishlist.length === 0 ? 24 : 16 }}>
+              <div>
+                <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>⭐ 위시리스트</h2>
+                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                  {wishlist.length > 0 ? `${wishlist.length}개의 아이디어` : "만들고 싶은 가구 아이디어를 기록하세요."}
+                </p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
+                <SortSelect value={sortBy} onChange={setSortBy} />
+                <button
+                  onClick={() => setWishAddOpen(true)}
+                  className="hover-lift"
+                  style={{
+                    padding: "12px 22px", borderRadius: 12, border: "none",
+                    background: "linear-gradient(135deg, #eab308, #f59e0b)",
+                    color: "#000", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 6,
+                    boxShadow: "0 4px 14px rgba(234,179,8,0.3)",
+                  }}
+                >＋ 새 아이디어</button>
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <ViewModeToggle value={viewMode} onChange={setViewMode} />
-              {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
-              <SortSelect value={sortBy} onChange={setSortBy} />
-              <button
-                onClick={() => setWishAddOpen(true)}
-                className="hover-lift"
-                style={{
-                  padding: "12px 22px", borderRadius: 12, border: "none",
-                  background: "linear-gradient(135deg, #eab308, #f59e0b)",
-                  color: "#000", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                  display: "flex", alignItems: "center", gap: 6,
-                  boxShadow: "0 4px 14px rgba(234,179,8,0.3)",
-                }}
-              >＋ 새 아이디어</button>
-            </div>
+            {wishlist.length > 0 && (() => {
+              const wishCards = wishlist
+                .map((item) => cards.find((c) => c.id === item._cardId))
+                .filter(Boolean);
+              const chips = collectUpdateChips(wishCards);
+              return (
+                <UpdateChipBar
+                  chips={chips}
+                  selected={selectedUpdates}
+                  onChange={setSelectedUpdates}
+                  totalCount={wishlist.length}
+                  onRename={renameUpdateTag}
+                />
+              );
+            })()}
           </div>
 
           <div>
@@ -7698,10 +7745,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   >＋ 첫 아이디어 추가</button>
                 </div>
               ) : (() => {
-                const wishCards = wishlist
-                  .map((item) => cards.find((c) => c.id === item._cardId))
-                  .filter(Boolean);
-                const chips = collectUpdateChips(wishCards);
                 const filterItem = (item) => {
                   const card = cards.find((c) => c.id === item._cardId);
                   return card && matchesUpdateFilter(card, selectedUpdates);
@@ -7709,13 +7752,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 const visibleList = wishlist.filter(filterItem);
                 return (
                   <>
-                    <UpdateChipBar
-                      chips={chips}
-                      selected={selectedUpdates}
-                      onChange={setSelectedUpdates}
-                      totalCount={wishlist.length}
-                      onRename={renameUpdateTag}
-                    />
                     {viewMode === "list" ? (
                       <div>
                         <CardListHeader tabId="wishlist" sortBy={sortBy} onSortChange={setSortBy} />
