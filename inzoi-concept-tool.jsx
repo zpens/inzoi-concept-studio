@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.12";
+const APP_VERSION = "1.10.13";
 const CHANGELOG = [
+  {
+    version: "1.10.13",
+    date: "2026-04-24",
+    changes: [
+      "[HOTFIX — 카드 선택 시 화면이 하얗게 되던 문제] AssetInfoEditor 에서 v1.10.9 에 refImages state 를 PromptRefEditor 로 분리했는데 runCategorySuggest 버튼의 disabled / cursor 조건에 refImages[0] 참조가 남아 있어 ReferenceError 로 모달 렌더 실패. card.data.ref_images / thumbnail_url 로 이미지 유무 판정하도록 수정",
+      "(이번 재발 사례 TDZ 메모에 추가 — state 제거 시 잔여 참조 grep 필수)",
+    ],
+  },
   {
     version: "1.10.12",
     date: "2026-04-24",
@@ -2951,20 +2959,26 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         <div>
           <div style={{ ...fieldLabel, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>카테고리</span>
-            {!disabled && (
-              <button
-                onClick={runCategorySuggest}
-                disabled={suggesting || (!refImages[0] && !card.thumbnail_url)}
-                title="이미지를 분석해 카테고리 추천 (Gemini Vision)"
-                style={{
-                  padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                  background: suggesting ? "rgba(0,0,0,0.06)" : "rgba(7,110,232,0.08)",
-                  border: "1px solid rgba(7,110,232,0.3)",
-                  color: suggesting ? "var(--text-muted)" : "var(--primary)",
-                  cursor: suggesting || (!refImages[0] && !card.thumbnail_url) ? "not-allowed" : "pointer",
-                }}
-              >{suggesting ? "⏳ 분석 중…" : "🤖 자동 분류"}</button>
-            )}
+            {!disabled && (() => {
+              // 참조 이미지는 v1.10.9 에 PromptRefEditor 로 이동되어 local state 가 없음.
+              // card.data.ref_images / thumbnail_url 로 이미지 유무만 판단.
+              const firstRef = Array.isArray(card.data?.ref_images) ? card.data.ref_images[0] : null;
+              const noImage = !firstRef && !card.thumbnail_url;
+              return (
+                <button
+                  onClick={runCategorySuggest}
+                  disabled={suggesting || noImage}
+                  title="이미지를 분석해 카테고리 추천 (Gemini Vision)"
+                  style={{
+                    padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                    background: suggesting ? "rgba(0,0,0,0.06)" : "rgba(7,110,232,0.08)",
+                    border: "1px solid rgba(7,110,232,0.3)",
+                    color: suggesting ? "var(--text-muted)" : "var(--primary)",
+                    cursor: (suggesting || noImage) ? "not-allowed" : "pointer",
+                  }}
+                >{suggesting ? "⏳ 분석 중…" : "🤖 자동 분류"}</button>
+              );
+            })()}
           </div>
           <CategoryPicker
             value={category}
