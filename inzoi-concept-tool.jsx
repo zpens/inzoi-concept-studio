@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 const CHANGELOG = [
+  {
+    version: "1.9.1",
+    date: "2026-04-23",
+    changes: [
+      "[버그 수정] /api/object-meta 가 5초 타임아웃으로 abort 되어 posmap 유사도 매칭이 작동 안 하던 문제 — object-meta upstream fetch 만 20초로 상향 (objects.json 1.8MB + posmap_scores.json 333KB 동시 수신)",
+      "개별 파일 실패 시 fallback (meta 필수, objects/posmap 빈 배열) 로 부분 성공 허용 → 하나가 느려도 전체 응답 막히지 않음",
+    ],
+  },
   {
     version: "1.9.0",
     date: "2026-04-23",

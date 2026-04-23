@@ -325,15 +325,24 @@ app.get("/api/object-meta", async (c) => {
     return c.json(_metaCache.data);
   }
   try {
-    const [r1, r2, r3] = await Promise.all([
-      timedFetch(`${base}/data/meta.json`),
-      timedFetch(`${base}/data/objects.json`),
-      timedFetch(`${base}/data/posmap_scores.json`),
+    // Python http.server 는 단일 스레드라 병렬 요청도 서버 쪽에서 직렬화됨.
+    // 3개 파일(meta 74KB + objects 1.8MB + posmap 333KB) 합산 시간 고려해 20초 여유.
+    // 개별 실패는 무시 (meta 는 필수, 나머지는 부분 성공 허용).
+    const safeJson = async (path, opts = {}) => {
+      try {
+        const r = await timedFetch(`${base}${path}`, 20000);
+        return r.ok ? await r.json() : (opts.fallback ?? null);
+      } catch (e) {
+        console.warn(`object-meta upstream ${path} failed: ${e.message}`);
+        return opts.fallback ?? null;
+      }
+    };
+    const [meta, objects, posmapScores] = await Promise.all([
+      safeJson("/data/meta.json"),
+      safeJson("/data/objects.json", { fallback: [] }),
+      safeJson("/data/posmap_scores.json", { fallback: {} }),
     ]);
-    if (!r1.ok) throw new Error(`meta.json upstream ${r1.status}`);
-    const meta = await r1.json();
-    const objects = r2.ok ? await r2.json() : [];
-    const posmapScores = r3.ok ? await r3.json() : {};
+    if (!meta) throw new Error("meta.json upstream unreachable");
 
     const filterKo = meta.filterKo || {};
     const catHier = meta.catHier || {};
