@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.8.7";
+const APP_VERSION = "1.9.0";
 const CHANGELOG = [
+  {
+    version: "1.9.0",
+    date: "2026-04-23",
+    changes: [
+      "기존 제작 에셋 top-12 컷오프(기본 카테고리 정렬) · 자동 분류 시 posmap_scores 유사도 기반 재정렬",
+      "/api/object-meta 응답에 posmap_scores (전 에셋 ML 분석) 포함 — style/mood/size/colors/materials/filter",
+      "Gemini 자동 분류 1콜이 posmap 스키마와 동일한 한글 feature 추출 (posmap_style/mood/size/colors/materials) — 추가 호출 없음",
+      "클라이언트가 카드 feature 로 전 5,790개 에셋 전수 스캔, inzoiObjectList 의 calcSimilarity 알고리즘 그대로 사용 (스타일 +30, 무드 +20, 색상 ×15, 재질 ×10, 같은 카테고리 -30 크로스 카테고리 유도) — 즉시 완료",
+      "card.data.catalog_matches 에 features + top-12 items 저장, 썸네일 그리드가 이 우선, 각 썸네일에 유사도 % + 카테고리 배지 표시",
+    ],
+  },
   {
     version: "1.8.7",
     date: "2026-04-23",
@@ -1037,6 +1048,10 @@ let FURNITURE_CATEGORIES = [
   { id: "arch-other", label: "기타", icon: "🏗️", room: "기타 건축", preset: "architectural element" },
 ];
 
+// 에셋별 posmap ML 분석 결과. /api/object-meta 에서 내려와 교체됨.
+// { id: { style, mood, size, colors[], materials[], posx, posy, filter } }
+let POSMAP_SCORES = {};
+
 let STYLE_PRESETS = [
   { id: "modern", label: "모던", color: "#64748b" },
   { id: "scandinavian", label: "스칸디나비안", color: "#d4a574" },
@@ -1708,6 +1723,13 @@ async function generateImageWithGemini(apiKey, prompt, model, refImages = []) {
 
 // 이미지 한 장을 받아 FURNITURE_CATEGORIES 중 가장 적합한 카테고리 id 와
 // confidence(0~1) 를 돌려준다. Gemini 2.5 Flash(vision) 로 호출하고 JSON 응답만 요청.
+// posmap_scores 가 사용하는 한글 enum — Gemini 응답 검증용.
+const POSMAP_STYLES = ["내추럴", "모던", "미니멀", "미드센추리", "보헤미안", "빈티지", "스칸디나비안", "아르데코", "인더스트리얼", "전통", "캐주얼", "컨트리", "클래식", "키치"];
+const POSMAP_MOODS = ["럭셔리", "세련된", "아늑한", "차분한", "캐주얼", "활기찬"];
+const POSMAP_SIZES = ["대", "소", "중"];
+const POSMAP_COLORS = ["갈색", "검정", "금색", "노랑", "베이지", "보라", "분홍", "빨강", "은색", "주황", "초록", "파랑", "회색", "흰색"];
+const POSMAP_MATERIALS = ["가죽", "금속", "대리석", "라탄", "목재", "석재", "세라믹", "유리", "콘크리트", "패브릭", "플라스틱"];
+
 async function classifyCategoryWithGemini(apiKey, imageUrl) {
   const part = await fetchImagePart(imageUrl);
   if (!part) throw new Error("이미지 로드 실패");
@@ -1719,7 +1741,7 @@ async function classifyCategoryWithGemini(apiKey, imageUrl) {
     .map((s) => `- ${s.id}: ${s.label}`)
     .join("\n");
 
-  const prompt = `이 이미지를 분석해 카테고리, 스타일, 실제 크기(cm)를 모두 추정하세요.
+  const prompt = `이 이미지를 분석해 아래 정보를 모두 추출하세요.
 반드시 JSON 형식만 응답:
 {
   "category_id":"<id>",
@@ -1730,15 +1752,27 @@ async function classifyCategoryWithGemini(apiKey, imageUrl) {
   "depth_cm":<정수>,
   "height_cm":<정수>,
   "size_confidence":0.0~1.0,
-  "size_reason":"<짧은 근거>"
+  "size_reason":"<짧은 근거>",
+  "posmap_style":"<한글 스타일>",
+  "posmap_mood":"<한글 무드>",
+  "posmap_size":"<한글 크기>",
+  "posmap_colors":["<한글 색상1>", "<한글 색상2>", ...],
+  "posmap_materials":["<한글 재질1>", "<한글 재질2>", ...]
 }
 
-규칙:
-- category_id / style_id 는 반드시 아래 목록 id 중에서.
-- 스타일 특정 어려우면 "Modern".
-- width = 정면 기준 좌우 길이(cm), depth = 앞뒤, height = 바닥→꼭대기.
-- 해당 카테고리의 일반적 크기 범위 기반으로 실제 cm 단위 추정.
+규칙 (카테고리 / 스타일 / 크기):
+- category_id / style_id 는 반드시 아래 '카테고리' / '스타일' 목록의 id 중에서.
+- width/depth/height 는 실제 cm 단위 정수.
 - 크기 판단 어려우면 size_confidence < 0.5.
+
+규칙 (posmap_* — 카탈로그 검색용 한글 enum, 반드시 아래 목록에서만 고르세요):
+- posmap_style: ${POSMAP_STYLES.join(" / ")}
+- posmap_mood: ${POSMAP_MOODS.join(" / ")}
+- posmap_size: ${POSMAP_SIZES.join(" / ")} (소=작은가구·소품, 중=일반가구, 대=큰가구)
+- posmap_colors: 최대 4개. 위 목록에서만. 주 색상 순.
+- posmap_materials: 최대 3개. 위 목록에서만. 주 재질 순.
+- 사용 가능 한글 색상: ${POSMAP_COLORS.join(", ")}
+- 사용 가능 한글 재질: ${POSMAP_MATERIALS.join(", ")}
 
 카테고리:
 ${categoryList}
@@ -1785,6 +1819,18 @@ ${styleList}`;
       confidence: typeof obj.size_confidence === "number" ? obj.size_confidence : 0.5,
       reason: typeof obj.size_reason === "string" ? obj.size_reason.slice(0, 200) : null,
     } : null;
+    // posmap feature 검증 — 허용된 한글 enum 만.
+    const filterInList = (arr, allowed, cap) => {
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((v) => typeof v === "string" && allowed.includes(v)).slice(0, cap);
+    };
+    const posmapFeatures = {
+      style: POSMAP_STYLES.includes(obj.posmap_style) ? obj.posmap_style : null,
+      mood: POSMAP_MOODS.includes(obj.posmap_mood) ? obj.posmap_mood : null,
+      size: POSMAP_SIZES.includes(obj.posmap_size) ? obj.posmap_size : null,
+      colors: filterInList(obj.posmap_colors, POSMAP_COLORS, 4),
+      materials: filterInList(obj.posmap_materials, POSMAP_MATERIALS, 3),
+    };
     return {
       category_id: catId,
       confidence: typeof obj.category_confidence === "number"
@@ -1793,8 +1839,47 @@ ${styleList}`;
       style_id: validStyle,
       style_confidence: typeof obj.style_confidence === "number" ? obj.style_confidence : null,
       size_info: sizeInfo,
+      posmap_features: posmapFeatures,
     };
   } catch { return null; }
+}
+
+// posmap 유사도 계산 — inzoiObjectList 의 calcSimilarity 알고리즘을 그대로 사용.
+// userFeatures: { style, mood, size, colors[], materials[] } + userCategoryId
+// 반환: 점수 (높을수록 유사)
+function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId) {
+  if (!assetScore?.style) return -999;
+  let score = 0;
+  if (userFeatures.style && assetScore.style === userFeatures.style) score += 30;
+  if (userFeatures.mood && assetScore.mood === userFeatures.mood) score += 20;
+  const ic = userFeatures.colors || [];
+  const oc = assetScore.colors || [];
+  score += ic.filter((c) => oc.includes(c)).length * 15;
+  const im = userFeatures.materials || [];
+  const om = assetScore.materials || [];
+  score += im.filter((m) => om.includes(m)).length * 10;
+  if (userFeatures.size && assetScore.size === userFeatures.size) score += 5;
+  // 같은 카테고리 페널티 — 크로스 카테고리 유사한 아이템이 상위로 올라오게
+  if (userCategoryId && assetScore.filter === userCategoryId) score -= 30;
+  return score;
+}
+
+// 사용자 feature 로 POSMAP_SCORES 전수 스캔해 top-N 유사 에셋 반환.
+function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
+  const entries = [];
+  for (const [id, score] of Object.entries(POSMAP_SCORES)) {
+    const s = calcPosmapSimilarity(userFeatures, score, userCategoryId);
+    if (s > 0) entries.push({ id, score: s, filter: score.filter });
+  }
+  entries.sort((a, b) => b.score - a.score);
+  // 최대 점수로 정규화 (0~1)
+  const maxScore = entries.length ? entries[0].score : 1;
+  return entries.slice(0, topN).map((e) => ({
+    id: e.id,
+    score: e.score,
+    normalized: maxScore > 0 ? e.score / maxScore : 0,
+    filter: e.filter,
+  }));
 }
 
 // 컨셉시트 4뷰(front/side/back/top) 를 Gemini 3 Flash Image (나노바나나2) 로 생성.
@@ -2237,6 +2322,22 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         updated_at: new Date().toISOString(),
       };
     }
+    // posmap 유사도로 카탈로그 매칭 — 전 카탈로그 스캔해 top-12 저장.
+    if (suggestion.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+      const matches = findSimilarCatalogAssets(suggestion.posmap_features, suggestion.category_id, 12);
+      if (matches.length > 0) {
+        patch.catalog_matches = {
+          features: suggestion.posmap_features,
+          items: matches.map((m) => ({
+            id: m.id,
+            score: m.score,
+            normalized: m.normalized,
+            filter: m.filter,
+          })),
+          generated_at: new Date().toISOString(),
+        };
+      }
+    }
     setSuggestion(null);
     await save(patch);
   };
@@ -2518,89 +2619,140 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 {spec.unlock_count > 0 && `🔒 조건부 해금 ${spec.unlock_count}개`}
               </div>
             )}
-            {spec.sample_thumbs?.length > 0 && (
-              <div style={{
-                marginTop: 10, paddingTop: 10,
-                borderTop: "1px dashed rgba(7,110,232,0.2)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>
-                    📦 기존 제작 에셋 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>({spec.sample_thumbs.length} / {spec.asset_count})</span>
-                  </span>
-                  <button
-                    onClick={() => onOpenCatalog?.("")}
-                    title="카탈로그 전체 브라우즈"
-                    style={{
-                      marginLeft: "auto", fontSize: 10, fontWeight: 600,
-                      padding: "3px 10px", borderRadius: 6,
-                      background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                      color: "var(--primary)", cursor: "pointer",
-                    }}
-                  >📎 카탈로그 전체 보기</button>
-                </div>
+            {(() => {
+              // catalog_matches 우선 — posmap 유사도 기반 top-12 (자동 분류 후 저장됨).
+              // 없으면 spec.sample_thumbs (기본 카테고리 정렬) 로 fallback.
+              const cm = card.data?.catalog_matches;
+              const useMatches = cm && Array.isArray(cm.items) && cm.items.length > 0;
+              const items = useMatches
+                ? cm.items.map((m) => {
+                    // objects.json 에서 name 을 클라 사이드에 다 갖고있지 않아
+                    // sample_thumbs 에서 매칭 가능하면 이름을 땅겨온다.
+                    // 없으면 id 를 그대로 표시 (대부분 spec 기반이라 존재).
+                    const fromSpec = spec.sample_thumbs?.find((s) => s.id === m.id);
+                    return {
+                      id: m.id,
+                      name: fromSpec?.name || m.id,
+                      icon_url: fromSpec?.icon_url || `/api/object-icon/${encodeURIComponent(m.id)}`,
+                      filter: m.filter,
+                      score: m.score,
+                      normalized: m.normalized,
+                    };
+                  })
+                : (spec.sample_thumbs || []).map((t) => ({ ...t }));
+              if (items.length === 0) return null;
+              return (
                 <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))",
-                  gap: 6,
+                  marginTop: 10, paddingTop: 10,
+                  borderTop: "1px dashed rgba(7,110,232,0.2)",
                 }}>
-                  {spec.sample_thumbs.map((t) => {
-                    return (
-                      <div
-                        key={t.id}
-                        onClick={() => onOpenCatalog?.(t.id)}
-                        title={`카탈로그에서 상세 보기: ${t.name}${t.price ? ` · ${t.price.toLocaleString()}원` : ""}${t.tags ? `\n${t.tags}` : ""}`}
-                        style={{
-                          cursor: onOpenCatalog ? "pointer" : "default",
-                          borderRadius: 6, overflow: "hidden",
-                          border: "1px solid var(--surface-border)",
-                          background: "#fff",
-                          transition: "border-color 0.15s, transform 0.15s",
-                        }}
-                        onMouseOver={(e) => {
-                          e.currentTarget.style.borderColor = "var(--primary)";
-                          e.currentTarget.style.transform = "translateY(-1px)";
-                        }}
-                        onMouseOut={(e) => {
-                          e.currentTarget.style.borderColor = "var(--surface-border)";
-                          e.currentTarget.style.transform = "none";
-                        }}
-                      >
-                        <div style={{
-                          width: "100%", aspectRatio: "1/1",
-                          background: "rgba(0,0,0,0.03)",
-                          position: "relative",
-                        }}>
-                          <img
-                            src={t.icon_url}
-                            alt={t.name}
-                            loading="lazy"
-                            onError={(e) => { e.currentTarget.style.display = "none"; }}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                          />
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>
+                      {useMatches ? "🎯 유사 에셋 (posmap 매칭)" : "📦 기존 제작 에셋"}
+                      <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> ({items.length}{useMatches ? "" : ` / ${spec.asset_count}`})</span>
+                    </span>
+                    {useMatches && cm.features && (
+                      <span style={{ marginLeft: 8, fontSize: 10, color: "var(--text-muted)" }}>
+                        기준: {cm.features.style || "—"} · {cm.features.mood || "—"}
+                        {cm.features.colors?.length > 0 && ` · ${cm.features.colors.slice(0, 2).join(",")}`}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => onOpenCatalog?.("")}
+                      title="카탈로그 전체 브라우즈"
+                      style={{
+                        marginLeft: "auto", fontSize: 10, fontWeight: 600,
+                        padding: "3px 10px", borderRadius: 6,
+                        background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                        color: "var(--primary)", cursor: "pointer",
+                      }}
+                    >📎 카탈로그 전체 보기</button>
+                  </div>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))",
+                    gap: 6,
+                  }}>
+                    {items.map((t) => {
+                      const filterKo = t.filter ? FURNITURE_CATEGORIES.find((c) => c.id === t.filter)?.label : null;
+                      const filterIcon = t.filter ? FURNITURE_CATEGORIES.find((c) => c.id === t.filter)?.icon : null;
+                      const pct = t.normalized != null ? Math.round(t.normalized * 100) : null;
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => onOpenCatalog?.(t.id)}
+                          title={`카탈로그 상세: ${t.name}${t.filter ? ` · ${filterKo || t.filter}` : ""}${pct != null ? ` · 유사도 ${pct}%` : ""}`}
+                          style={{
+                            cursor: onOpenCatalog ? "pointer" : "default",
+                            borderRadius: 6, overflow: "hidden",
+                            border: "1px solid var(--surface-border)",
+                            background: "#fff",
+                            transition: "border-color 0.15s, transform 0.15s",
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.borderColor = "var(--primary)";
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.borderColor = "var(--surface-border)";
+                            e.currentTarget.style.transform = "none";
+                          }}
+                        >
                           <div style={{
-                            position: "absolute", top: 3, right: 3,
-                            width: 16, height: 16, borderRadius: 8,
-                            background: "rgba(7,110,232,0.85)", color: "#fff",
-                            fontSize: 9, fontWeight: 700,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            pointerEvents: "none",
-                            opacity: 0.9,
-                          }} title="카탈로그 상세">↗</div>
+                            width: "100%", aspectRatio: "1/1",
+                            background: "rgba(0,0,0,0.03)",
+                            position: "relative",
+                          }}>
+                            <img
+                              src={t.icon_url}
+                              alt={t.name}
+                              loading="lazy"
+                              onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                            />
+                            {pct != null && (
+                              <div style={{
+                                position: "absolute", bottom: 3, left: 3,
+                                padding: "1px 5px", borderRadius: 4,
+                                background: pct >= 70 ? "rgba(34,197,94,0.9)" : pct >= 40 ? "rgba(234,179,8,0.9)" : "rgba(0,0,0,0.6)",
+                                color: "#fff", fontSize: 9, fontWeight: 700, pointerEvents: "none",
+                              }}>{pct}%</div>
+                            )}
+                            <div style={{
+                              position: "absolute", top: 3, right: 3,
+                              width: 16, height: 16, borderRadius: 8,
+                              background: "rgba(7,110,232,0.85)", color: "#fff",
+                              fontSize: 9, fontWeight: 700,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              pointerEvents: "none",
+                              opacity: 0.9,
+                            }} title="카탈로그 상세">↗</div>
+                          </div>
+                          <div style={{
+                            padding: "3px 5px",
+                            fontSize: 9, color: "var(--text-main)", fontWeight: 600,
+                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            textAlign: "center",
+                          }}>
+                            {t.name}
+                          </div>
+                          {filterKo && (
+                            <div style={{
+                              padding: "0 5px 3px",
+                              fontSize: 8, color: "var(--text-muted)",
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                              textAlign: "center",
+                            }}>
+                              {filterIcon} {filterKo}
+                            </div>
+                          )}
                         </div>
-                        <div style={{
-                          padding: "3px 5px",
-                          fontSize: 9, color: "var(--text-muted)",
-                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                          textAlign: "center",
-                        }}>
-                          {t.name}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         );
       })()}
@@ -4378,6 +4530,10 @@ export default function InZOIConceptTool() {
         }
         if (Array.isArray(d.styles) && d.styles.length > 0) {
           STYLE_PRESETS = d.styles;
+          changed = true;
+        }
+        if (d.posmap && typeof d.posmap === "object") {
+          POSMAP_SCORES = d.posmap;
           changed = true;
         }
         if (changed) setMetaVersion((v) => v + 1);

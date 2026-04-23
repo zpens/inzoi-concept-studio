@@ -325,13 +325,15 @@ app.get("/api/object-meta", async (c) => {
     return c.json(_metaCache.data);
   }
   try {
-    const [r1, r2] = await Promise.all([
+    const [r1, r2, r3] = await Promise.all([
       timedFetch(`${base}/data/meta.json`),
       timedFetch(`${base}/data/objects.json`),
+      timedFetch(`${base}/data/posmap_scores.json`),
     ]);
     if (!r1.ok) throw new Error(`meta.json upstream ${r1.status}`);
     const meta = await r1.json();
     const objects = r2.ok ? await r2.json() : [];
+    const posmapScores = r3.ok ? await r3.json() : {};
 
     const filterKo = meta.filterKo || {};
     const catHier = meta.catHier || {};
@@ -423,7 +425,7 @@ app.get("/api/object-meta", async (c) => {
           price: a.price ?? null,
           tags: typeof a.tags === "string" ? a.tags : null,
         });
-        if (sampleThumbs.length >= 8) break;
+        if (sampleThumbs.length >= 12) break;
       }
       return {
         asset_count: assets.length,
@@ -471,6 +473,26 @@ app.get("/api/object-meta", async (c) => {
       .filter((id) => stylePresent.size === 0 || stylePresent.has(id))
       .map((id) => ({ id, label: styleMap[id] }));
 
+    // posmap_scores 를 전 에셋 feature vector 형태로 클라에 내려줌.
+    // { id: { style, mood, size, colors[], materials[], posx, posy, filter } }
+    // id 별 filter 값을 objects.json 기준으로 붙여 유사도 계산 시 카테고리 페널티 활용 가능.
+    const byIdFilter = new Map();
+    for (const o of objects) { if (o?.id && o.filter) byIdFilter.set(o.id, o.filter); }
+    const posmap = {};
+    for (const [id, v] of Object.entries(posmapScores)) {
+      if (!v || typeof v !== "object") continue;
+      posmap[id] = {
+        style: v.style || null,
+        mood: v.mood || null,
+        size: v.size || null,
+        colors: Array.isArray(v.colors) ? v.colors : [],
+        materials: Array.isArray(v.materials) ? v.materials : [],
+        posx: typeof v.posx === "number" ? v.posx : null,
+        posy: typeof v.posy === "number" ? v.posy : null,
+        filter: byIdFilter.get(id) || null,
+      };
+    }
+
     const out = {
       categories, styles,
       source: base,
@@ -478,6 +500,8 @@ app.get("/api/object-meta", async (c) => {
       category_count: categories.length,
       style_count: styles.length,
       asset_count: objects.length,
+      posmap_count: Object.keys(posmap).length,
+      posmap, // 전 에셋 ML feature — 클라이언트 유사도 매칭에 사용
       has_specs: objects.length > 0,
     };
     _metaCache = { fetchedAt: now, data: out };
