@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.15";
+const APP_VERSION = "1.10.16";
 const CHANGELOG = [
+  {
+    version: "1.10.16",
+    date: "2026-04-24",
+    changes: [
+      "상세 모달 좌/우 프레임 동일 폭 — gridTemplateColumns '1.3fr 1fr' → '1fr 1fr'",
+      "모달 전체 폭 1250 → 1440px — 좌측 크기 유지하면서 우측 확장 (maxWidth 96vw 는 유지, 좁은 화면에선 자동 축소)",
+    ],
+  },
   {
     version: "1.10.15",
     date: "2026-04-24",
@@ -9076,7 +9084,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <div style={{
               position: "fixed", top: "50%", left: "50%",
               transform: "translate(-50%, -50%)",
-              width: 1250, maxWidth: "96vw", maxHeight: "94vh",
+              width: 1440, maxWidth: "96vw", maxHeight: "94vh",
               background: "rgba(255, 255, 255, 0.98)",
               backdropFilter: "blur(20px)",
               border: "1px solid var(--surface-border)",
@@ -9224,8 +9232,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 >✕</button>
               </div>
 
-              {/* Body */}
-              <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 0 }}>
+              {/* Body — 좌우 동일 폭 (v1.10.16) */}
+              <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
                 {/* 왼쪽: 업데이트 일정 · 우선순위 · 대표이미지 · 어셋정보 (v1.10.7) */}
                 <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
                   {/* 1) 업데이트 일정 */}
