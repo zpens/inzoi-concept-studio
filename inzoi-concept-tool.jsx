@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.8.4";
+const APP_VERSION = "1.8.5";
 const CHANGELOG = [
+  {
+    version: "1.8.5",
+    date: "2026-04-23",
+    changes: [
+      "[버그 수정] 카탈로그 상세 모달이 '로딩 중' 에서 멈추던 문제 — inzoiObjectList :8080 upstream fetch 에 5초 AbortController 타임아웃 추가",
+      "서버 timedFetch 헬퍼로 모든 upstream (/api/object-meta, /api/object-detail, /api/object-icon) 통일",
+      "클라이언트 모달 에러 UI 개선 — '카탈로그 데이터 불러오기 실패' + 구체적 안내 ('운영자 PC 의 object catalog 서버 확인')",
+    ],
+  },
   {
     version: "1.8.4",
     date: "2026-04-23",
@@ -3268,12 +3277,21 @@ function CatalogDetailModal({ id, onClose, onOpenSibling, onOpenImage }) {
         </div>
         <div style={{ padding: 20, overflow: "auto", flex: 1 }}>
           {error ? (
-            <div style={{ color: "#ef4444", fontSize: 13, padding: 20, textAlign: "center" }}>
-              상세 불러오기 실패: {error}
+            <div style={{ padding: 30, textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
+              <div style={{ color: "var(--text-main)", fontSize: 14, fontWeight: 700, marginBottom: 6 }}>
+                카탈로그 데이터 불러오기 실패
+              </div>
+              <div style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6 }}>
+                {error.includes("fetch failed") || error.includes("upstream") || error === "AbortError"
+                  ? <>inzoiObjectList 서버(:8080) 에 연결할 수 없습니다.<br />운영자 PC 에서 object catalog 서버가 실행 중인지 확인해주세요.</>
+                  : error}
+              </div>
             </div>
           ) : !data ? (
             <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 40, textAlign: "center" }}>
               로딩 중…
+              <div style={{ fontSize: 11, marginTop: 6 }}>(5초 내 응답 없으면 타임아웃)</div>
             </div>
           ) : (
             <>

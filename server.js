@@ -281,12 +281,20 @@ app.get("/api/health", (c) =>
 
 // 단일 에셋 상세 조회용 캐시 — objects.json + meta.objTags 병합. 1시간 TTL.
 let _objectsCache = { fetchedAt: 0, byId: null, objTags: null };
+// upstream fetch 에 5초 타임아웃 — :8080 이 꺼져있거나 느릴 때 요청이 무한 대기하지 않게.
+async function timedFetch(url, ms = 5000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try { return await fetch(url, { signal: ctrl.signal }); }
+  finally { clearTimeout(t); }
+}
+
 async function loadObjectsCache(base) {
   const now = Date.now();
   if (_objectsCache.byId && now - _objectsCache.fetchedAt < META_CACHE_TTL) return _objectsCache;
   const [r1, r2] = await Promise.all([
-    fetch(`${base}/data/objects.json`),
-    fetch(`${base}/data/meta.json`),
+    timedFetch(`${base}/data/objects.json`),
+    timedFetch(`${base}/data/meta.json`),
   ]);
   if (!r1.ok) throw new Error(`objects.json upstream ${r1.status}`);
   const objects = await r1.json();
@@ -354,9 +362,9 @@ app.get("/api/object-icon/:id", async (c) => {
   const id = raw.replace(/[^A-Za-z0-9_\-]/g, "");
   if (!id) return c.text("invalid id", 400);
   try {
-    let r = await fetch(`${base}/img/${id}.PNG`);
-    if (!r.ok) r = await fetch(`${base}/img/${id}.png`);
-    if (!r.ok) r = await fetch(`${base}/img/${id}.jpg`);
+    let r = await timedFetch(`${base}/img/${id}.PNG`, 3000);
+    if (!r.ok) r = await timedFetch(`${base}/img/${id}.png`, 3000);
+    if (!r.ok) r = await timedFetch(`${base}/img/${id}.jpg`, 3000);
     if (!r.ok) return c.text("not found", 404);
     const buf = await r.arrayBuffer();
     return c.body(buf, 200, {
@@ -384,8 +392,8 @@ app.get("/api/object-meta", async (c) => {
   }
   try {
     const [r1, r2] = await Promise.all([
-      fetch(`${base}/data/meta.json`),
-      fetch(`${base}/data/objects.json`),
+      timedFetch(`${base}/data/meta.json`),
+      timedFetch(`${base}/data/objects.json`),
     ]);
     if (!r1.ok) throw new Error(`meta.json upstream ${r1.status}`);
     const meta = await r1.json();
