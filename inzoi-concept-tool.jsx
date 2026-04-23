@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.28";
+const APP_VERSION = "1.10.29";
 const CHANGELOG = [
+  {
+    version: "1.10.29",
+    date: "2026-04-24",
+    changes: [
+      "상세 모달 Esc 로 닫기 지원 — 단, 갤러리(F) / 미리보기 lightbox / 카탈로그 iframe 모달이 열려있으면 그쪽이 먼저 닫힘 (각자 자체 Esc 핸들러 유지)",
+      "입력창(input/textarea/select/contenteditable) 포커스 중엔 동작 안 함 — 평소 입력 방해 없음",
+    ],
+  },
   {
     version: "1.10.28",
     date: "2026-04-24",
@@ -6942,10 +6950,11 @@ export default function InZOIConceptTool() {
     }
   }, [cards, projectSlug, actorName]);
 
-  // 전역 단축키 (v1.10.26)
-  //   F: 상세 모달이 열려있을 때 갤러리 캔버스 토글
+  // 전역 단축키 (v1.10.26~)
+  //   F: 상세 모달 열려있을 때 갤러리 캔버스 토글
   //   N: 어디서나 새 아이디어(위시 추가) 모달 오픈
-  // 입력창(input/textarea) 포커스 중엔 동작 안 함.
+  //   Esc: 상세 모달 닫기 (v1.10.29) — 단 갤러리/미리보기/카탈로그가 먼저 닫힘
+  // 입력창(input/textarea/select/contenteditable) 포커스 중엔 동작 안 함.
   useEffect(() => {
     const onKey = (e) => {
       const tgt = e.target;
@@ -6955,11 +6964,15 @@ export default function InZOIConceptTool() {
         if (detailCard) { e.preventDefault(); setGalleryOpen((v) => !v); }
       } else if (e.key === "n" || e.key === "N") {
         if (!wishAddOpen) { e.preventDefault(); setWishAddOpen(true); }
+      } else if (e.key === "Escape") {
+        // 우선순위: 갤러리 / 미리보기 / 카탈로그 모달이 열려있으면 자체 Esc 핸들러에 양보.
+        if (galleryOpen || previewImage || catalogItemId) return;
+        if (detailCard) { e.preventDefault(); setDetailCard(null); }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detailCard, wishAddOpen]);
+  }, [detailCard, wishAddOpen, galleryOpen, previewImage, catalogItemId]);
 
   // 상세 카드가 닫히면 갤러리도 함께 닫음.
   useEffect(() => {
