@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.20";
+const APP_VERSION = "1.10.21";
 const CHANGELOG = [
+  {
+    version: "1.10.21",
+    date: "2026-04-24",
+    changes: [
+      "시안 이력에 외부 이미지 수동 추가 — 섹션 헤더 우측 '＋ 이미지 추가' 버튼, 파일 선택 시 /api/upload 거쳐 card.data.designs 끝에 추가 (source: 'upload' 태그)",
+      "업로드된 시안은 📤 배지로 AI 생성 시안과 구분",
+      "시안 이력 섹션을 drafting 단계에서도 표시 (이전엔 drafting 외 단계만 보였음) — 빈 상태일 땐 안내 메시지",
+    ],
+  },
   {
     version: "1.10.20",
     date: "2026-04-24",
@@ -9507,8 +9516,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     />
                   )}
 
-                  {/* 2) 시안 이력 (drafting 외 단계에서 그동안 생성된 시안들) */}
-                  {statusKey !== "drafting" && (() => {
+                  {/* 2) 시안 이력 — 생성된 시안 + 외부 이미지 수동 추가 (v1.10.21) */}
+                  {(() => {
                     const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
                     const extras = [];
                     if (raw.length === 0) {
@@ -9518,8 +9527,39 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       extras.push({ imageUrl: card.data.concept_sheet_url, seed: null, _sheet: true });
                     }
                     const displayDesigns = [...raw, ...extras];
-                    if (displayDesigns.length === 0) return null;
                     const selectedIdx = card.data?.selected_design;
+
+                    const addExternalImage = async (file) => {
+                      if (!file || confirmed) return;
+                      const reader = new FileReader();
+                      reader.onload = async (ev) => {
+                        try {
+                          const url = await uploadDataUrl(ev.target.result);
+                          const existing = Array.isArray(card.data?.designs) ? card.data.designs : [];
+                          const newDesign = {
+                            seed: null,
+                            imageUrl: url,
+                            source: "upload",
+                            createdAt: new Date().toISOString(),
+                          };
+                          await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+                            method: "PATCH",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({
+                              data: { ...(card.data || {}), designs: [...existing, newDesign] },
+                              actor: actorName,
+                            }),
+                          });
+                          const d = await fetchCardDetail(projectSlug, card.id);
+                          if (d) {
+                            setDetailCard(d);
+                            setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                          }
+                        } catch (err) { alert("이미지 추가 실패: " + err.message); }
+                      };
+                      reader.readAsDataURL(file);
+                    };
+
                     return (
                       <div style={{
                         padding: 14, borderRadius: 12,
@@ -9530,9 +9570,37 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             🎨 시안 이력 ({displayDesigns.length}개)
                           </div>
                           <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                            그동안 생성된 시안 — 클릭해서 원본 확인
+                            AI 생성 시안 + 외부 이미지 추가 가능
                           </div>
+                          {!confirmed && (
+                            <label
+                              title="다른 곳에서 만든 이미지를 시안으로 추가"
+                              style={{
+                                marginLeft: "auto",
+                                padding: "4px 10px", borderRadius: 6,
+                                background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                                color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                              }}
+                            >
+                              ＋ 이미지 추가
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => { addExternalImage(e.target.files?.[0]); e.target.value = ""; }}
+                                style={{ display: "none" }}
+                              />
+                            </label>
+                          )}
                         </div>
+                        {displayDesigns.length === 0 ? (
+                          <div style={{
+                            padding: 20, borderRadius: 8, textAlign: "center",
+                            background: "rgba(0,0,0,0.02)", border: "1px dashed var(--surface-border)",
+                            fontSize: 12, color: "var(--text-muted)",
+                          }}>
+                            시안이 아직 없습니다. 위의 시안 생성 버튼 또는 ＋ 이미지 추가로 시작하세요.
+                          </div>
+                        ) : (
                         <div style={{
                           display: "grid",
                           gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
@@ -9540,7 +9608,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         }}>
                           {displayDesigns.map((d, i) => {
                             const isSelected = selectedIdx === i;
-                            const badge = d._sheet ? "📑 시트" : (d._legacy ? "🗂 레거시" : `#${i + 1}`);
+                            const badge = d._sheet ? "📑 시트"
+                              : d._legacy ? "🗂 레거시"
+                              : d.source === "upload" ? `📤 #${i + 1}`
+                              : `#${i + 1}`;
                             return (
                               <div key={i} style={{
                                 position: "relative", borderRadius: 8, overflow: "hidden",
@@ -9575,6 +9646,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             );
                           })}
                         </div>
+                        )}
                       </div>
                     );
                   })()}
