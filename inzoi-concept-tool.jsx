@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.26";
+const APP_VERSION = "1.10.27";
 const CHANGELOG = [
+  {
+    version: "1.10.27",
+    date: "2026-04-24",
+    changes: [
+      "갤러리 캔버스 — hover 시 떠있던 그라데이션 오버레이 제거. 이미지 줌인 시야를 가리지 않음",
+      "대표 지정은 타일 우측 상단 고정 ⭐/☆ 원형 아이콘 클릭 — 현재 대표는 초록 ⭐, 아니면 검정 ☆",
+      "시안 선정 버튼도 우측 상단 대표 아이콘 바로 아래 작은 pill 로 배치 (design 타입만)",
+      "↗ 원본 링크는 제거 — 캔버스 자체가 팬/줌 으로 원본 탐색 가능",
+    ],
+  },
   {
     version: "1.10.26",
     date: "2026-04-24",
@@ -5178,11 +5188,11 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
 }
 
 function GalleryTile({ item, size, onSetCover, onSelectDesign }) {
-  const [hover, setHover] = React.useState(false);
+  // 호버 오버레이 제거 (v1.10.27) — 이미지 전체를 줌인해서 크게 볼 수 있도록.
+  // 대표 지정은 우측 상단 고정 아이콘(⭐/☆) 클릭.
+  const coverBtnTitle = item.isCover ? "현재 대표 이미지" : "카드 대표(썸네일)로 지정";
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       style={{
         width: size, height: size, flexShrink: 0,
         position: "relative", borderRadius: 10, overflow: "hidden",
@@ -5207,64 +5217,48 @@ function GalleryTile({ item, size, onSetCover, onSelectDesign }) {
           fontSize: 10, fontWeight: 700, pointerEvents: "none",
         }}>{item.label}</div>
       )}
+      {/* 대표 지정 / 해제 — 우측 상단 고정 아이콘 (v1.10.27) */}
+      <button
+        data-action="cover"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (item.isCover) return; // 이미 대표면 무시
+          onSetCover(item.url);
+        }}
+        title={coverBtnTitle}
+        style={{
+          position: "absolute", top: 6, right: 6,
+          width: 30, height: 30, borderRadius: 15,
+          background: item.isCover ? "#22c55e" : "rgba(0,0,0,0.6)",
+          border: `1px solid ${item.isCover ? "#22c55e" : "rgba(255,255,255,0.35)"}`,
+          color: item.isCover ? "#fff" : "rgba(255,255,255,0.95)",
+          fontSize: 15, cursor: item.isCover ? "default" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 0, lineHeight: 1,
+        }}
+      >{item.isCover ? "⭐" : "☆"}</button>
+      {/* 시안 선정 버튼 — design 타입 한정, 대표 아이콘 아래 배치 */}
+      {item.type === "design" && !item.isSelected && (
+        <button
+          data-action="select"
+          onClick={(e) => { e.stopPropagation(); onSelectDesign(item.designIdx); }}
+          title="이 시안을 선정 (대표 이미지도 자동 갱신)"
+          style={{
+            position: "absolute", top: 42, right: 6,
+            padding: "3px 8px", borderRadius: 12,
+            background: "rgba(0,0,0,0.6)", border: "1px solid rgba(251,191,36,0.6)",
+            color: "#fbbf24", fontSize: 10, fontWeight: 700, cursor: "pointer",
+            lineHeight: 1.2,
+          }}
+        >⭐ 선정</button>
+      )}
       {item.isSelected && (
         <div style={{
-          position: "absolute", top: 6, right: 6,
-          padding: "2px 8px", borderRadius: 4,
+          position: "absolute", top: 42, right: 6,
+          padding: "3px 8px", borderRadius: 12,
           background: "#fbbf24", color: "#000",
           fontSize: 10, fontWeight: 800, pointerEvents: "none",
         }}>⭐ 선정</div>
-      )}
-      {/* 액션 오버레이 (hover) */}
-      {hover && (
-        <div
-          data-action="overlay"
-          style={{
-            position: "absolute", inset: 0,
-            background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent 55%)",
-            display: "flex", alignItems: "flex-end", justifyContent: "center",
-            padding: 10,
-          }}
-        >
-          <div data-action="btns" style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
-            {!item.isCover && (
-              <button
-                data-action="cover"
-                onClick={(e) => { e.stopPropagation(); onSetCover(item.url); }}
-                title="카드 대표(썸네일) 지정"
-                style={{
-                  padding: "4px 10px", borderRadius: 6,
-                  background: "#fff", border: "none", color: "#000",
-                  fontSize: 11, fontWeight: 700, cursor: "pointer",
-                }}
-              >☆ 대표</button>
-            )}
-            {item.type === "design" && !item.isSelected && (
-              <button
-                data-action="select"
-                onClick={(e) => { e.stopPropagation(); onSelectDesign(item.designIdx); }}
-                title="이 시안을 대표로 선정 (썸네일 갱신)"
-                style={{
-                  padding: "4px 10px", borderRadius: 6,
-                  background: "#fbbf24", border: "none", color: "#000",
-                  fontSize: 11, fontWeight: 700, cursor: "pointer",
-                }}
-              >⭐ 선정</button>
-            )}
-            <a
-              data-action="open"
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                padding: "4px 10px", borderRadius: 6,
-                background: "rgba(255,255,255,0.2)", color: "#fff",
-                fontSize: 11, fontWeight: 700, textDecoration: "none",
-              }}
-            >↗ 원본</a>
-          </div>
-        </div>
       )}
     </div>
   );
