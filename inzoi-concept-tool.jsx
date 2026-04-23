@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.27";
+const APP_VERSION = "1.10.28";
 const CHANGELOG = [
+  {
+    version: "1.10.28",
+    date: "2026-04-24",
+    changes: [
+      "갤러리 팬 제스처 변경 — 좌클릭 드래그 대신 '가운데 버튼' 또는 '우클릭' 누른 채 드래그",
+      "좌클릭은 타일 내부 버튼(⭐/☆, 선정) 클릭용으로 예약되어 의도치 않은 팬 방지",
+      "우클릭 팬 중 브라우저 컨텍스트 메뉴는 onContextMenu preventDefault 로 차단",
+      "상단 안내 문구도 '가운데/우클릭 드래그 팬' 으로 수정",
+    ],
+  },
   {
     version: "1.10.27",
     date: "2026-04-24",
@@ -5028,9 +5038,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   }, [onWheel]);
 
   const onPointerDown = (e) => {
-    if (e.button !== 0) return;
-    // 이미지 타일 내부 버튼은 팬 시작 막기 — target 이 button/action 이면 무시.
-    if (e.target.closest("[data-action]")) return;
+    // 팬 트리거: 마우스 가운데 버튼(1) 또는 우측 버튼(2) 만 (v1.10.28).
+    // 좌클릭은 타일 내부 버튼 / 링크 클릭용으로 예약.
+    if (e.button !== 1 && e.button !== 2) return;
+    e.preventDefault();
     setDragging(true);
     panStart.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
     wrapRef.current?.setPointerCapture(e.pointerId);
@@ -5114,7 +5125,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, pointerEvents: "auto" }}>
           <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
-            휠 줌 · 드래그 팬 · 0 초기화 · ±/화살표 키 · Esc/F 닫기
+            휠 줌 · 가운데/우클릭 드래그 팬 · 0 초기화 · ±/화살표 · Esc/F 닫기
           </span>
           <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "monospace", padding: "3px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)" }}>
             {Math.round(view.scale * 100)}%
@@ -5145,10 +5156,11 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onContextMenu={(e) => e.preventDefault()} /* 우클릭 팬 중 브라우저 메뉴 차단 */
         style={{
           position: "absolute", inset: 0,
           overflow: "hidden",
-          cursor: dragging ? "grabbing" : "grab",
+          cursor: dragging ? "grabbing" : "default",
           userSelect: "none",
           touchAction: "none",
         }}
