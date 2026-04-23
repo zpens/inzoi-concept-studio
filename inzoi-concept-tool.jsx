@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.30";
+const APP_VERSION = "1.10.31";
 const CHANGELOG = [
+  {
+    version: "1.10.31",
+    date: "2026-04-24",
+    changes: [
+      "갤러리 ⭐ 선정 버튼 제거 — 대표 지정(⭐/☆)만 유지. 시안 선정은 DesignsPanel 에서 계속 가능",
+      "줌 한계 6x → 20x — 원본 이미지 더 크게 확대 가능",
+      "아이콘(⭐ 대표, label 배지) 이 캔버스 scale 의 역수로 counter-scale → 줌인해도 비례로 작아져 이미지를 가리지 않음",
+      "[성능] 팬/줌 리렌더 최소화 — x/y 를 React state 에서 ref 로 빼 직접 DOM transform 업데이트, setState 는 scale 변경 시에만. translate3d + will-change: transform 으로 GPU 레이어 승격",
+    ],
+  },
   {
     version: "1.10.30",
     date: "2026-04-24",
@@ -4956,12 +4966,27 @@ function SortSelect({ value, onChange }) {
 // 카드의 모든 이미지(대표/참조 · 시안 · 현재 시트 · 과거 시트) 를 4개 그룹 row 로 배치하고
 // 전체 캔버스에 translate+scale 로 pan/zoom. 외부 의존성 없음.
 function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
-  const [view, setView] = React.useState({ x: 0, y: 0, scale: 1 });
+  // 팬(x/y) 은 ref + 직접 DOM transform 으로 처리해 React 리렌더 회피 (v1.10.31).
+  // scale 만 state — 아이콘 counter-scale 계산에 React 가 필요.
+  const viewRef = React.useRef({ x: 0, y: 0, scale: 1 });
+  const [scale, setScale] = React.useState(1);
   const [dragging, setDragging] = React.useState(false);
   const wrapRef = React.useRef(null);
+  const contentRef = React.useRef(null);
   const panStart = React.useRef(null);
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+  // viewRef 기반 DOM transform 적용 — setState 없이 매 pointermove 처리.
+  const applyTransform = React.useCallback(() => {
+    const v = viewRef.current;
+    if (contentRef.current) {
+      contentRef.current.style.transform = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.scale})`;
+    }
+  }, []);
+
+  // 초기/언마운트 시 transform 동기화.
+  React.useEffect(() => { applyTransform(); }, [applyTransform]);
 
   // 이미지 수집 — 그룹 단위.
   const groups = React.useMemo(() => {
@@ -5028,7 +5053,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     return out;
   }, [card]);
 
-  // 휠 줌 (커서 기준).
+  // 휠 줌 (커서 기준) — scale 은 setState, x/y 는 ref 로 직접 반영.
   const onWheel = React.useCallback((e) => {
     e.preventDefault();
     const rect = wrapRef.current?.getBoundingClientRect();
@@ -5036,12 +5061,18 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     const delta = -e.deltaY * 0.0015;
-    setView((prev) => {
-      const nextScale = clamp(prev.scale * Math.exp(delta), 0.1, 6);
-      const ratio = nextScale / prev.scale;
-      return { scale: nextScale, x: px - (px - prev.x) * ratio, y: py - (py - prev.y) * ratio };
-    });
-  }, []);
+    const prev = viewRef.current;
+    const nextScale = clamp(prev.scale * Math.exp(delta), 0.1, 20);
+    if (nextScale === prev.scale) return;
+    const ratio = nextScale / prev.scale;
+    viewRef.current = {
+      scale: nextScale,
+      x: px - (px - prev.x) * ratio,
+      y: py - (py - prev.y) * ratio,
+    };
+    applyTransform();
+    setScale(nextScale);
+  }, [applyTransform]);
 
   // passive: false 로 wheel 리스너 등록 (기본 브라우저 줌 방지).
   React.useEffect(() => {
@@ -5053,20 +5084,22 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   }, [onWheel]);
 
   const onPointerDown = (e) => {
-    // 팬 트리거: 마우스 가운데 버튼(1) 또는 우측 버튼(2) 만 (v1.10.28).
-    // 좌클릭은 타일 내부 버튼 / 링크 클릭용으로 예약.
     if (e.button !== 1 && e.button !== 2) return;
     e.preventDefault();
     setDragging(true);
-    panStart.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
+    const v = viewRef.current;
+    panStart.current = { sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y, moved: false };
     wrapRef.current?.setPointerCapture(e.pointerId);
   };
+  // 팬: viewRef 업데이트 + 직접 transform — setState 안 불러 React 리렌더 없음.
   const onPointerMove = (e) => {
     if (!panStart.current) return;
     const { sx, sy, vx, vy } = panStart.current;
     const dx = e.clientX - sx, dy = e.clientY - sy;
     if (Math.abs(dx) + Math.abs(dy) > 3) panStart.current.moved = true;
-    setView((prev) => ({ ...prev, x: vx + dx, y: vy + dy }));
+    viewRef.current.x = vx + dx;
+    viewRef.current.y = vy + dy;
+    applyTransform();
   };
   const onPointerUp = (e) => {
     panStart.current = null;
@@ -5078,17 +5111,28 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   React.useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") { onClose(); return; }
-      if (e.key === "0") { setView({ x: 0, y: 0, scale: 1 }); return; }
-      if (e.key === "+" || e.key === "=") { setView((v) => ({ ...v, scale: clamp(v.scale * 1.2, 0.1, 6) })); return; }
-      if (e.key === "-" || e.key === "_") { setView((v) => ({ ...v, scale: clamp(v.scale / 1.2, 0.1, 6) })); return; }
-      if (e.key === "ArrowUp")    { setView((v) => ({ ...v, y: v.y + 80 })); return; }
-      if (e.key === "ArrowDown")  { setView((v) => ({ ...v, y: v.y - 80 })); return; }
-      if (e.key === "ArrowLeft")  { setView((v) => ({ ...v, x: v.x + 80 })); return; }
-      if (e.key === "ArrowRight") { setView((v) => ({ ...v, x: v.x - 80 })); return; }
+      if (e.key === "0") {
+        viewRef.current = { x: 0, y: 0, scale: 1 };
+        applyTransform();
+        setScale(1);
+        return;
+      }
+      if (e.key === "+" || e.key === "=") {
+        const s = clamp(viewRef.current.scale * 1.2, 0.1, 20);
+        viewRef.current.scale = s; applyTransform(); setScale(s); return;
+      }
+      if (e.key === "-" || e.key === "_") {
+        const s = clamp(viewRef.current.scale / 1.2, 0.1, 20);
+        viewRef.current.scale = s; applyTransform(); setScale(s); return;
+      }
+      if (e.key === "ArrowUp")    { viewRef.current.y += 80; applyTransform(); return; }
+      if (e.key === "ArrowDown")  { viewRef.current.y -= 80; applyTransform(); return; }
+      if (e.key === "ArrowLeft")  { viewRef.current.x += 80; applyTransform(); return; }
+      if (e.key === "ArrowRight") { viewRef.current.x -= 80; applyTransform(); return; }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, applyTransform]);
 
   // 액션.
   const setCover = async (url) => {
@@ -5143,10 +5187,14 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
             휠 줌 · 가운데/우클릭 드래그 팬 · 0 초기화 · ±/화살표 · Esc/F 닫기
           </span>
           <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "monospace", padding: "3px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)" }}>
-            {Math.round(view.scale * 100)}%
+            {Math.round(scale * 100)}%
           </span>
           <button
-            onClick={() => setView({ x: 0, y: 0, scale: 1 })}
+            onClick={() => {
+              viewRef.current = { x: 0, y: 0, scale: 1 };
+              applyTransform();
+              setScale(1);
+            }}
             style={{
               padding: "5px 10px", borderRadius: 6,
               background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)",
@@ -5180,10 +5228,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           touchAction: "none",
         }}
       >
-        <div style={{
+        <div ref={contentRef} style={{
           position: "absolute", left: 0, top: 0,
-          transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
           transformOrigin: "0 0",
+          willChange: "transform",
           padding: "60px 20px 20px",
           display: "flex", flexDirection: "column", gap: 28,
         }}>
@@ -5201,8 +5249,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                     key={`${g.key}-${i}`}
                     item={it}
                     size={TILE}
+                    scale={scale}
                     onSetCover={setCover}
-                    onSelectDesign={selectDesign}
                   />
                 ))}
               </div>
@@ -5214,18 +5262,17 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   );
 }
 
-function GalleryTile({ item, size, onSetCover, onSelectDesign }) {
-  // 호버 오버레이 제거 (v1.10.27) — 이미지 전체를 줌인해서 크게 볼 수 있도록.
-  // 대표 지정은 우측 상단 고정 아이콘(⭐/☆) 클릭.
+function GalleryTile({ item, size, scale, onSetCover }) {
+  // 대표 지정만 유지 (v1.10.31) — 시안 선정은 DesignsPanel 에서 계속 가능.
+  // 별 아이콘은 캔버스 scale 의 역수만큼 counter-scale 해서 줌인해도 비례로 작아짐.
   const coverBtnTitle = item.isCover ? "현재 대표 이미지" : "카드 대표(썸네일)로 지정";
+  const invScale = 1 / Math.max(scale || 1, 0.01);
   return (
     <div
       style={{
         width: size, height: size, flexShrink: 0,
         position: "relative", borderRadius: 10, overflow: "hidden",
-        border: item.isSelected ? "3px solid #fbbf24"
-          : item.isCover ? "2px solid #22c55e"
-          : "1px solid rgba(255,255,255,0.18)",
+        border: item.isCover ? "2px solid #22c55e" : "1px solid rgba(255,255,255,0.18)",
         background: "#000",
         boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
       }}
@@ -5242,14 +5289,15 @@ function GalleryTile({ item, size, onSetCover, onSelectDesign }) {
           padding: "2px 8px", borderRadius: 4,
           background: "rgba(0,0,0,0.75)", color: "#fff",
           fontSize: 10, fontWeight: 700, pointerEvents: "none",
+          transform: `scale(${invScale})`, transformOrigin: "top left",
         }}>{item.label}</div>
       )}
-      {/* 대표 지정 / 해제 — 우측 상단 고정 아이콘 (v1.10.27) */}
+      {/* 대표 지정 / 해제 — 우측 상단 고정 아이콘, 줌에 따라 사이즈 보정 */}
       <button
         data-action="cover"
         onClick={(e) => {
           e.stopPropagation();
-          if (item.isCover) return; // 이미 대표면 무시
+          if (item.isCover) return;
           onSetCover(item.url);
         }}
         title={coverBtnTitle}
@@ -5262,31 +5310,9 @@ function GalleryTile({ item, size, onSetCover, onSelectDesign }) {
           fontSize: 15, cursor: item.isCover ? "default" : "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
           padding: 0, lineHeight: 1,
+          transform: `scale(${invScale})`, transformOrigin: "top right",
         }}
       >{item.isCover ? "⭐" : "☆"}</button>
-      {/* 시안 선정 버튼 — design 타입 한정, 대표 아이콘 아래 배치 */}
-      {item.type === "design" && !item.isSelected && (
-        <button
-          data-action="select"
-          onClick={(e) => { e.stopPropagation(); onSelectDesign(item.designIdx); }}
-          title="이 시안을 선정 (대표 이미지도 자동 갱신)"
-          style={{
-            position: "absolute", top: 42, right: 6,
-            padding: "3px 8px", borderRadius: 12,
-            background: "rgba(0,0,0,0.6)", border: "1px solid rgba(251,191,36,0.6)",
-            color: "#fbbf24", fontSize: 10, fontWeight: 700, cursor: "pointer",
-            lineHeight: 1.2,
-          }}
-        >⭐ 선정</button>
-      )}
-      {item.isSelected && (
-        <div style={{
-          position: "absolute", top: 42, right: 6,
-          padding: "3px 8px", borderRadius: 12,
-          background: "#fbbf24", color: "#000",
-          fontSize: 10, fontWeight: 800, pointerEvents: "none",
-        }}>⭐ 선정</div>
-      )}
     </div>
   );
 }
