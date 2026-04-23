@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.24";
+const APP_VERSION = "1.10.25";
 const CHANGELOG = [
+  {
+    version: "1.10.25",
+    date: "2026-04-24",
+    changes: [
+      "시안 생성 패널에 '추가 프롬프트' 한 줄 입력 — 저장된 기본 프롬프트는 그대로 두고 이번 회차에만 '기본 — 추가지시' 형태로 뒤에 붙여 Gemini 호출",
+      "예: 기존 프롬프트 유지 + '더 단순하게', '파스텔 톤', '다리 없애기' 같은 변형 지시",
+      "Enter 로 바로 생성, 생성 중엔 비활성화. 값은 저장 안되고 모달 닫으면 초기화",
+    ],
+  },
   {
     version: "1.10.24",
     date: "2026-04-24",
@@ -3420,14 +3429,18 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   const [count, setCount] = React.useState(1);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(null);
+  // 이 생성 회차에만 프롬프트 끝에 붙일 추가 지시 (저장 안됨, v1.10.25).
+  const [extraPrompt, setExtraPrompt] = React.useState("");
 
   const designs = Array.isArray(card.data?.designs) ? card.data.designs : [];
   const selectedIdx = card.data?.selected_design;
 
   const doGenerate = async () => {
     if (!geminiApiKey) { onOpenApiSettings(); return; }
-    const prompt = card.data?.prompt || card.description || card.title;
-    if (!prompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
+    const basePrompt = card.data?.prompt || card.description || card.title;
+    if (!basePrompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
+    const extra = extraPrompt.trim();
+    const prompt = extra ? `${basePrompt} — ${extra}` : basePrompt;
     setBusy(true);
     setProgress({ done: 0, total: count });
     onGenerateProgress?.(card, 0, count);
@@ -3512,6 +3525,22 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
     return (
       <div style={sectionStyle}>
         <div style={titleStyle}>시안 생성 ({designs.length}개)</div>
+        {/* 추가 프롬프트 — 이 생성 회차에만 붙는 한 줄 지시 (저장 안됨). v1.10.25 */}
+        <input
+          type="text"
+          value={extraPrompt}
+          disabled={busy}
+          onChange={(e) => setExtraPrompt(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !busy) doGenerate(); }}
+          placeholder="추가 프롬프트 (선택) — 예: 더 단순하게, 파스텔 톤, 다리 없애기"
+          style={{
+            width: "100%", padding: "7px 10px", borderRadius: 8,
+            border: "1px solid var(--surface-border)",
+            background: busy ? "rgba(0,0,0,0.03)" : "#fff",
+            fontSize: 12, color: "var(--text-main)", outline: "none",
+            marginBottom: 10, boxSizing: "border-box",
+          }}
+        />
         {/* 개수 선택 + 생성 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           {[1, 2, 4, 8].map((n) => (
