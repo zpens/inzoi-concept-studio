@@ -482,9 +482,22 @@ app.get("/api/object-meta", async (c) => {
       .filter((id) => stylePresent.size === 0 || stylePresent.has(id))
       .map((id) => ({ id, label: styleMap[id] }));
 
+    // catHier 에서 filter → lv1 매핑 구축 (가구 / 건축 / 탑승물 / 제작·기타).
+    // 매칭 시 cross-lv1 페널티에 사용 — 가구 검색에 자동차 결과 안 섞이도록.
+    const filterToLv1 = new Map();
+    const filterToLv2 = new Map();
+    for (const [lv1, lv2map] of Object.entries(catHier)) {
+      for (const [lv2, filters] of Object.entries(lv2map)) {
+        if (!Array.isArray(filters)) continue;
+        for (const f of filters) {
+          if (!filterToLv1.has(f)) filterToLv1.set(f, lv1);
+          if (!filterToLv2.has(f)) filterToLv2.set(f, lv2);
+        }
+      }
+    }
+
     // posmap_scores 를 전 에셋 feature vector 형태로 클라에 내려줌.
-    // { id: { style, mood, size, shape[], colors[], materials[], posx, posy, filter, name } }
-    // id 별 filter / name 을 objects.json 기준으로 함께 붙여 키워드 매칭에 사용.
+    // { id: { style, mood, size, shape[], colors[], materials[], posx, posy, filter, lv1, lv2, name } }
     const byIdMeta = new Map();
     for (const o of objects) {
       if (o?.id) byIdMeta.set(o.id, { filter: o.filter || null, name: o.name || null });
@@ -493,6 +506,7 @@ app.get("/api/object-meta", async (c) => {
     for (const [id, v] of Object.entries(posmapScores)) {
       if (!v || typeof v !== "object") continue;
       const meta2 = byIdMeta.get(id) || {};
+      const f = meta2.filter;
       posmap[id] = {
         style: v.style || null,
         mood: v.mood || null,
@@ -502,8 +516,10 @@ app.get("/api/object-meta", async (c) => {
         materials: Array.isArray(v.materials) ? v.materials : [],
         posx: typeof v.posx === "number" ? v.posx : null,
         posy: typeof v.posy === "number" ? v.posy : null,
-        filter: meta2.filter,
-        name: meta2.name, // 키워드 매칭에 사용
+        filter: f,
+        lv1: f ? (filterToLv1.get(f) || null) : null,
+        lv2: f ? (filterToLv2.get(f) || null) : null,
+        name: meta2.name,
       };
     }
 

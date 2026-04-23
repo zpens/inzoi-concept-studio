@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.2";
+const APP_VERSION = "1.9.3";
 const CHANGELOG = [
+  {
+    version: "1.9.3",
+    date: "2026-04-23",
+    changes: [
+      "유사 에셋 매칭에 catHier lv1 분류 반영 — 가구 카드 검색 시 탑승물 / 건축 / 제작·기타 같은 다른 lv1 의 에셋은 -50 페널티로 자동 배제",
+      "서버가 catHier 를 파싱해 filter→lv1 / filter→lv2 매핑을 만들고 posmap 응답 각 entry 에 lv1/lv2 첨부",
+      "사용자 카드의 카테고리에서 lv1 자동 계산 (FURNITURE_CATEGORIES.group), 매칭 시 cross-lv1 강한 페널티",
+      "[데이터 출처 재확인] posmap_scores.json (shape/style/materials) + objects.json (filter/name) + meta.json (catHier lv1 매핑) 3개 모두 정상 소비",
+    ],
+  },
   {
     version: "1.9.2",
     date: "2026-04-23",
@@ -1879,21 +1889,21 @@ ${styleList}`;
   } catch { return null; }
 }
 
-// posmap 유사도 계산 — inzoiObjectList 의 calcSimilarity 를 확장.
-// shape 매칭 + 이름 키워드 매칭으로 검증 정확도 향상 (v1.9.2).
-// 같은 카테고리 페널티는 -30 → -10 으로 완화 (검증 용도엔 같은 종류 매칭이 핵심).
-function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId) {
+// posmap 유사도 계산.
+// 가중치: style+30 / mood+20 / shape×20 / colors×15 / materials×10 / size+5
+// 이름 키워드 매칭 ×25 (검증 정확도 향상)
+// 카테고리 페널티: 같은 filter -10, **다른 lv1 -50** (NEW v1.9.3)
+function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId, userLv1) {
   if (!assetScore?.style) return -999;
   let score = 0;
-  // 1. style / mood — 디자인 분위기
+  // 1. style / mood
   if (userFeatures.style && assetScore.style === userFeatures.style) score += 30;
   if (userFeatures.mood && assetScore.mood === userFeatures.mood) score += 20;
-  // 2. shape — 형태 (검증 정확도에 큰 기여, NEW v1.9.2)
+  // 2. shape
   const ush = userFeatures.shape || [];
   const osh = assetScore.shape || [];
   if (ush.length > 0 && osh.length > 0) {
-    const shapeOverlap = ush.filter((s) => osh.includes(s)).length;
-    score += shapeOverlap * 20;
+    score += ush.filter((s) => osh.includes(s)).length * 20;
   }
   // 3. colors / materials
   const ic = userFeatures.colors || [];
@@ -1904,8 +1914,7 @@ function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId) {
   score += im.filter((m) => om.includes(m)).length * 10;
   // 4. size
   if (userFeatures.size && assetScore.size === userFeatures.size) score += 5;
-  // 5. 이름 키워드 매칭 — "바구니" / "트레이" 등 (NEW v1.9.2)
-  // 검증 용도엔 가장 큰 신호. asset 이름에 키워드 포함 시 +25 per match.
+  // 5. 이름 키워드 매칭
   const kws = userFeatures.keywords || [];
   if (kws.length > 0 && assetScore.name) {
     const nameLower = assetScore.name.toLowerCase();
@@ -1915,26 +1924,33 @@ function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId) {
     }
     score += kwHits * 25;
   }
-  // 6. 같은 카테고리 페널티 (검증엔 같은 종류 매칭이 핵심이라 완화)
+  // 6. 카테고리 페널티
+  // - 같은 filter 는 -10 (검증엔 같은 종류 보임 OK)
+  // - 다른 lv1 (가구 vs 탑승물 등) 은 -50 (큰 분류 다르면 거의 무관)
   if (userCategoryId && assetScore.filter === userCategoryId) score -= 10;
+  if (userLv1 && assetScore.lv1 && assetScore.lv1 !== userLv1) score -= 50;
   return score;
 }
 
 // 사용자 feature 로 POSMAP_SCORES 전수 스캔해 top-N 유사 에셋 반환.
 function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
+  // 사용자 카테고리로부터 lv1 파악 (FURNITURE_CATEGORIES 의 group 필드).
+  const userCat = userCategoryId ? FURNITURE_CATEGORIES.find((c) => c.id === userCategoryId) : null;
+  const userLv1 = userCat?.group || null;
   const entries = [];
   for (const [id, score] of Object.entries(POSMAP_SCORES)) {
-    const s = calcPosmapSimilarity(userFeatures, score, userCategoryId);
-    if (s > 0) entries.push({ id, score: s, filter: score.filter });
+    const s = calcPosmapSimilarity(userFeatures, score, userCategoryId, userLv1);
+    if (s > 0) entries.push({ id, score: s, filter: score.filter, lv1: score.lv1, lv2: score.lv2 });
   }
   entries.sort((a, b) => b.score - a.score);
-  // 최대 점수로 정규화 (0~1)
   const maxScore = entries.length ? entries[0].score : 1;
   return entries.slice(0, topN).map((e) => ({
     id: e.id,
     score: e.score,
     normalized: maxScore > 0 ? e.score / maxScore : 0,
     filter: e.filter,
+    lv1: e.lv1,
+    lv2: e.lv2,
   }));
 }
 
@@ -2389,6 +2405,8 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
             score: m.score,
             normalized: m.normalized,
             filter: m.filter,
+            lv1: m.lv1,
+            lv2: m.lv2,
           })),
           generated_at: new Date().toISOString(),
         };
