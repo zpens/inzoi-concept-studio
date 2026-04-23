@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.22";
+const APP_VERSION = "1.10.23";
 const CHANGELOG = [
+  {
+    version: "1.10.23",
+    date: "2026-04-24",
+    changes: [
+      "생성 완료 시 상세 페이지 자동 오픈 중단 — 사용자가 도중 모달을 닫았다면 작업큐에 '✓ 완료' 알림만 뜸. 클릭 시에 상세 오픈",
+      "CardActionPanel onRefresh 가 setDetailCard((prev) => prev?.id === d.id ? d : prev) 로 변경 — 열려있는 카드만 갱신",
+      "작업큐에 완료 상태 디자인 추가 — 초록 배경 / '✓ 완료 · 클릭해서 열기' / ✕ 버튼으로 알림 닫기 가능",
+      "작업큐 타이틀도 '생성 중' → '작업 큐' 로 일반화, 전체 완료 시 아이콘 ✅",
+    ],
+  },
   {
     version: "1.10.22",
     date: "2026-04-24",
@@ -9770,20 +9780,22 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       onOpenImage={setPreviewImage}
                       onRefresh={async () => {
                         const d = await fetchCardDetail(projectSlug, card.id);
-                        if (d) {
-                          setDetailCard(d);
-                          setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                        }
+                        if (!d) return;
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                        // 사용자가 생성 도중 모달을 닫았다면 자동으로 다시 열지 않음 (v1.10.23).
+                        // 같은 카드가 열려있을 때만 detailCard 갱신.
+                        setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
                       }}
                       onOpenApiSettings={() => setShowApiSettings(true)}
                       onGenerateProgress={(c, done, total) => setGeneratingCards((prev) => ({
                         ...prev,
-                        [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total },
+                        [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total, completed: false },
                       }))}
                       onGenerateEnd={(c) => setGeneratingCards((prev) => {
-                        const n = { ...prev };
-                        delete n[c.id];
-                        return n;
+                        const cur = prev[c.id];
+                        if (!cur) return prev;
+                        // 작업큐에서 즉시 제거하지 않고 완료 상태로 남겨둠 — 사용자가 클릭해야 상세 열림 (v1.10.23).
+                        return { ...prev, [c.id]: { ...cur, completed: true, done: cur.total } };
                       })}
                     />
                   )}
@@ -10890,14 +10902,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               borderBottom: "1px solid var(--surface-border)",
               display: "flex", alignItems: "center", gap: 8,
             }}>
-              <span style={{ fontSize: 14 }}>⏳</span>
+              <span style={{ fontSize: 14 }}>
+                {runningCards.every(([, i]) => i.completed) && runningCards.length > 0 ? "✅" : "⏳"}
+              </span>
               <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
-                생성 중 ({total})
+                작업 큐 ({total})
               </div>
             </div>
             <div style={{ padding: 10, overflowY: "auto", flex: 1 }}>
               {runningCards.map(([cid, info]) => {
                 const pct = info.total > 0 ? Math.round((info.done / info.total) * 100) : 0;
+                const done = !!info.completed;
                 return (
                   <div
                     key={cid}
@@ -10906,11 +10921,20 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       try {
                         const d = await fetchCardDetail(projectSlug, cid);
                         if (d) setDetailCard(d);
+                        // 완료된 항목을 클릭한 경우 작업큐에서 제거 (v1.10.23).
+                        if (done) {
+                          setGeneratingCards((prev) => {
+                            const n = { ...prev };
+                            delete n[cid];
+                            return n;
+                          });
+                        }
                       } catch (e) { /* 무시 */ }
                     }}
                     style={{
                       padding: "8px 10px", borderRadius: 10, marginBottom: 6,
-                      background: "rgba(7,110,232,0.05)", border: "1px solid rgba(7,110,232,0.2)",
+                      background: done ? "rgba(34,197,94,0.08)" : "rgba(7,110,232,0.05)",
+                      border: `1px solid ${done ? "rgba(34,197,94,0.35)" : "rgba(7,110,232,0.2)"}`,
                       cursor: "pointer",
                     }}
                   >
@@ -10920,14 +10944,35 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {info.title || "(제목 없음)"}
                         </div>
-                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                          {info.done}/{info.total} · {pct}%
+                        <div style={{ fontSize: 10, color: done ? "#15803d" : "var(--text-muted)", fontWeight: done ? 700 : 500 }}>
+                          {done ? `✓ 완료 · 클릭해서 열기` : `${info.done}/${info.total} · ${pct}%`}
                         </div>
                       </div>
+                      {done && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setGeneratingCards((prev) => {
+                              const n = { ...prev };
+                              delete n[cid];
+                              return n;
+                            });
+                          }}
+                          title="알림 닫기"
+                          style={{
+                            width: 22, height: 22, borderRadius: 11,
+                            background: "rgba(0,0,0,0.05)", border: "none",
+                            color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                            flexShrink: 0,
+                          }}
+                        >✕</button>
+                      )}
                     </div>
-                    <div style={{ marginTop: 6, height: 4, borderRadius: 2, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, var(--primary), var(--secondary))", transition: "width 0.3s" }} />
-                    </div>
+                    {!done && (
+                      <div style={{ marginTop: 6, height: 4, borderRadius: 2, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, var(--primary), var(--secondary))", transition: "width 0.3s" }} />
+                      </div>
+                    )}
                   </div>
                 );
               })}
