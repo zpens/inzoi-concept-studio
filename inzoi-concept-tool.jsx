@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.29";
+const APP_VERSION = "1.10.30";
 const CHANGELOG = [
+  {
+    version: "1.10.30",
+    date: "2026-04-24",
+    changes: [
+      "상세 모달 헤더 제목 앞 상태 아이콘(meta.icon, 예: ⭐ ✨ 📑 ✅) 제거 — 카드 뷰 / 리스트 뷰에서 v1.10.15 에 이미 제거된 것과 일관",
+    ],
+  },
   {
     version: "1.10.29",
     date: "2026-04-24",
@@ -10042,12 +10049,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
               display: "flex", flexDirection: "column", overflow: "hidden",
             }}>
-              {/* Header */}
+              {/* Header — 상태 아이콘 프리픽스 제거 (v1.10.30) */}
               <div style={{
                 padding: "14px 24px", borderBottom: "1px solid var(--surface-border)",
                 display: "flex", alignItems: "center", gap: 14, flexShrink: 0,
               }}>
-                <span style={{ fontSize: 24 }}>{meta.icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <CardTitleEditor
