@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.32";
+const APP_VERSION = "1.10.33";
 const CHANGELOG = [
+  {
+    version: "1.10.33",
+    date: "2026-04-24",
+    changes: [
+      "[버그] 갤러리 이미지가 원본 해상도로 안 나오던 문제 — v1.10.32 의 height: 480 CSS 가 GPU 레이어를 480px 로 다운샘플 스냅샷 → 줌인 시 블러. 제거하고 img 는 natural size (max 1280px) 로 렌더 → GPU 텍스처 = 소스 해상도",
+      "갤러리 레이아웃 — 그룹 세로 스택 제거. 모든 이미지를 단일 flex-wrap 그리드로 평탄화, maxWidth 3200px 안에서 자연스럽게 줄바꿈 → 한 화면에 더 많이 표시",
+      "그룹 라벨은 각 타일 좌상단 배지로만 구분 (🎨 시안 #N / 📑 front / 📤 업로드 등). 별도 그룹 헤더 삭제",
+      "fit-to-viewport 가 이 wrap 그리드 기준으로 재계산 — 가로로 꽉 차면 세로로 쌓이고, 전체 박스가 뷰포트에 맞춤",
+    ],
+  },
   {
     version: "1.10.32",
     date: "2026-04-24",
@@ -5209,8 +5219,6 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     } catch (e) { alert("선정 실패: " + e.message); }
   };
 
-  // 타일 기본 높이 — 원본 비율 유지, width 는 자연스럽게 늘어남 (v1.10.32).
-  const TILE_HEIGHT = 480;
   const totalImages = groups.reduce((n, g) => n + g.items.length, 0);
 
   return (
@@ -5292,52 +5300,46 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           transformOrigin: "0 0",
           willChange: "transform",
           padding: 0,
-          display: "flex", flexDirection: "column", gap: 24,
+          // v1.10.33 — 그룹 세로 스택 제거. 모든 이미지를 한 wrap 그리드에 평탄화.
+          // maxWidth 로 한 줄 폭을 제한 → 다음 줄로 wrap 돼 한 화면에 많이 보임.
+          display: "flex", flexDirection: "row", flexWrap: "wrap",
+          gap: 0, alignItems: "flex-start",
+          maxWidth: 3200,
         }}>
           {groups.length === 0 && (
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, padding: 40 }}>
               이 카드엔 아직 이미지가 없습니다.
             </div>
           )}
-          {groups.map((g) => (
-            <div key={g.key}>
-              <div style={{
-                color: "rgba(255,255,255,0.85)", fontSize: 14, fontWeight: 700,
-                marginBottom: 6, padding: "0 2px",
-                transform: `scale(${1 / Math.max(scale, 0.01)})`,
-                transformOrigin: "top left",
-              }}>{g.title}</div>
-              <div style={{ display: "flex", gap: 0, alignItems: "flex-start", flexWrap: "wrap" }}>
-                {g.items.map((it, i) => (
-                  <GalleryTile
-                    key={`${g.key}-${i}`}
-                    item={it}
-                    tileHeight={TILE_HEIGHT}
-                    scale={scale}
-                    onSetCover={setCover}
-                    onImageLoad={onImageLoad}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+          {groups.flatMap((g) =>
+            g.items.map((it, i) => (
+              <GalleryTile
+                key={`${g.key}-${i}`}
+                item={it}
+                scale={scale}
+                onSetCover={setCover}
+                onImageLoad={onImageLoad}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function GalleryTile({ item, tileHeight, scale, onSetCover, onImageLoad }) {
-  // 이미지 원본 비율 유지, 테두리/그림자 없이 그대로 붙여서 표시 (v1.10.32).
-  // height 고정 + width auto → 가로 방향으로 자연스럽게 패킹.
-  // 별 아이콘은 scale 의 역수로 counter-scale.
+function GalleryTile({ item, scale, onSetCover, onImageLoad }) {
+  // 이미지 원본 해상도 그대로 렌더 (v1.10.33). CSS 크기 제약 없음 →
+  // 브라우저가 natural dimension 으로 래스터화 → GPU 텍스처 = 소스 해상도 →
+  // 줌인 시 bilinear 업스케일이 소스에서 시작되어 블러 최소화.
+  // 초기 너무 큰 레이아웃은 fit-to-viewport 로 화면에 맞춰 축소 표시.
   const coverBtnTitle = item.isCover ? "현재 대표 이미지" : "카드 대표(썸네일)로 지정";
   const invScale = 1 / Math.max(scale || 1, 0.01);
   return (
     <div style={{
-      height: tileHeight, position: "relative",
+      position: "relative",
       display: "inline-block", flexShrink: 0,
-      // 테두리 제거 — 대표 여부는 ⭐ 아이콘 색으로만 구분.
+      // 테두리 / 배경 / 그림자 없음 — 이미지만 붙여서 표시.
     }}>
       <img
         src={item.url}
@@ -5345,8 +5347,10 @@ function GalleryTile({ item, tileHeight, scale, onSetCover, onImageLoad }) {
         draggable={false}
         onLoad={onImageLoad}
         style={{
-          height: "100%", width: "auto",
           display: "block", pointerEvents: "none",
+          // 폭발적으로 큰 이미지는 1024 로 제한해 초기 레이아웃 폭주 방지.
+          maxWidth: 1280, maxHeight: 1280,
+          width: "auto", height: "auto",
           imageRendering: "auto",
         }}
       />
