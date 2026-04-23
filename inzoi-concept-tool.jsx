@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.8.2";
+const APP_VERSION = "1.8.3";
 const CHANGELOG = [
+  {
+    version: "1.8.3",
+    date: "2026-04-23",
+    changes: [
+      "카탈로그 상세를 새 탭 대신 현재 페이지의 iframe 모달로 표시 — 92vw × 88vh, 헤더에 에셋 id / '↗ 새 탭' / ✕",
+      "📎 카탈로그 전체 보기 버튼도 동일 iframe 모달로 (해시 없이 홈 로드)",
+      "기존 이미지 lightbox 는 그대로 유지 — 카탈로그 모달은 더 높은 z-index 로 오버레이",
+    ],
+  },
   {
     version: "1.8.2",
     date: "2026-04-23",
@@ -2134,7 +2143,7 @@ async function uploadDataUrl(dataUrl) {
 // 카드 상세 모달 안에 인라인으로 보이는 어셋 정보 에디터.
 // 카테고리 / 스타일 / 프롬프트 / 참조 이미지 4개 필드 자동 저장.
 // 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
-function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, geminiApiKey, availableUpdates = [] }) {
+function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, onOpenCatalog, geminiApiKey, availableUpdates = [] }) {
   // 참조 이미지 초기값: data.ref_images 가 비어있고 card.thumbnail_url 이 있으면
   // 위시리스트에서 넘어온 이미지라 보고 자동 seed (아래 effect 에서 서버 저장).
   const initialRefs = (card.data?.ref_images && card.data.ref_images.length)
@@ -2481,17 +2490,16 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                   <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>
                     📦 기존 제작 에셋 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>({spec.sample_thumbs.length} / {spec.asset_count})</span>
                   </span>
-                  <a
-                    href={`${typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8080` : "http://localhost:8080"}/`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    onClick={() => onOpenCatalog?.("")}
+                    title="카탈로그 전체 브라우즈"
                     style={{
                       marginLeft: "auto", fontSize: 10, fontWeight: 600,
-                      padding: "2px 8px", borderRadius: 6,
+                      padding: "3px 10px", borderRadius: 6,
                       background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                      color: "var(--primary)", textDecoration: "none",
+                      color: "var(--primary)", cursor: "pointer",
                     }}
-                  >📎 카탈로그 전체 보기 →</a>
+                  >📎 카탈로그 전체 보기</button>
                 </div>
                 <div style={{
                   display: "grid",
@@ -2499,25 +2507,16 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                   gap: 6,
                 }}>
                   {spec.sample_thumbs.map((t) => {
-                    const catalogBase = typeof window !== "undefined"
-                      ? `${window.location.protocol}//${window.location.hostname}:8080`
-                      : "http://localhost:8080";
-                    const detailUrl = `${catalogBase}/#item=${encodeURIComponent(t.id)}`;
                     return (
-                      <a
+                      <div
                         key={t.id}
-                        href={detailUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                        onClick={() => onOpenCatalog?.(t.id)}
                         title={`카탈로그에서 상세 보기: ${t.name}${t.price ? ` · ${t.price.toLocaleString()}원` : ""}${t.tags ? `\n${t.tags}` : ""}`}
                         style={{
-                          cursor: "pointer",
+                          cursor: onOpenCatalog ? "pointer" : "default",
                           borderRadius: 6, overflow: "hidden",
                           border: "1px solid var(--surface-border)",
                           background: "#fff",
-                          textDecoration: "none",
-                          color: "inherit",
-                          display: "block",
                           transition: "border-color 0.15s, transform 0.15s",
                         }}
                         onMouseOver={(e) => {
@@ -2559,7 +2558,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                         }}>
                           {t.name}
                         </div>
-                      </a>
+                      </div>
                     );
                   })}
                 </div>
@@ -4300,6 +4299,7 @@ export default function InZOIConceptTool() {
   const [lists, setLists] = useState([]);           // wishlist / drafting / sheet / done
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
   const [previewImage, setPreviewImage] = useState(null); // 이미지 원본 해상도 뷰어
+  const [catalogItemId, setCatalogItemId] = useState(null); // inzoiObjectList 카탈로그 상세 iframe
   // 카드별 Gemini 생성 진행 상황. 생성 중일 때만 작업큐에 노출하고 끝나면 제거.
   // shape: { [cardId]: { title, thumb, done, total } }
   const [generatingCards, setGeneratingCards] = useState({});
@@ -7571,6 +7571,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     actor={actorName}
                     disabled={confirmed}
                     onOpenImage={setPreviewImage}
+                    onOpenCatalog={setCatalogItemId}
                     geminiApiKey={geminiApiKey}
                     availableUpdates={availableUpdates}
                     onRefresh={async () => {
@@ -8807,6 +8808,66 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               ))}
             </div>
           </div>
+        );
+      })()}
+
+      {/* inzoiObjectList 카탈로그 상세 iframe 모달 — 새 탭 대신 현재 페이지에서 조회. */}
+      {catalogItemId !== null && (() => {
+        const base = typeof window !== "undefined"
+          ? `${window.location.protocol}//${window.location.hostname}:8080`
+          : "http://localhost:8080";
+        const src = catalogItemId ? `${base}/#item=${encodeURIComponent(catalogItemId)}` : `${base}/`;
+        return (
+          <>
+            <div className="sidebar-overlay" onClick={() => setCatalogItemId(null)} style={{ zIndex: 299 }} />
+            <div style={{
+              position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              width: "92vw", height: "88vh",
+              background: "#fff", border: "1px solid var(--surface-border)",
+              borderRadius: 14, zIndex: 300,
+              boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+              display: "flex", flexDirection: "column", overflow: "hidden",
+            }}>
+              <div style={{
+                padding: "10px 16px", borderBottom: "1px solid var(--surface-border)",
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+                  📦 inzoi 에셋 카탈로그
+                </span>
+                {catalogItemId && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>
+                    {catalogItemId}
+                  </span>
+                )}
+                <a
+                  href={src}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="새 탭에서 열기"
+                  style={{
+                    marginLeft: "auto",
+                    padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                    color: "var(--primary)", textDecoration: "none",
+                  }}
+                >↗ 새 탭</a>
+                <button
+                  onClick={() => setCatalogItemId(null)}
+                  style={{
+                    width: 32, height: 32, borderRadius: 8,
+                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                    color: "var(--text-muted)", fontSize: 16, cursor: "pointer",
+                  }}
+                >✕</button>
+              </div>
+              <iframe
+                src={src}
+                title="inzoi 에셋 카탈로그"
+                style={{ flex: 1, width: "100%", border: "none", background: "#fff" }}
+              />
+            </div>
+          </>
         );
       })()}
 
