@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.9.7";
+const APP_VERSION = "1.9.8";
 const CHANGELOG = [
+  {
+    version: "1.9.8",
+    date: "2026-04-23",
+    changes: [
+      "우선순위 필드를 상세 모달 좌측 최상단(썸네일 위)으로 이동 — 카드 열자마자 가장 먼저 눈에 들어오도록",
+      "리스트 뷰 컬럼 헤더 클릭 정렬 — 제목 / 우선순위 / 업데이트 / 카테고리 / 스타일 / 크기 / 상태 / 생성일 모두 클릭 가능",
+      "클릭 사이클 = 기본(생성일 역순) → ▲ 오름차순 → ▼ 내림차순 → 기본 (토글)",
+      "활성 정렬 컬럼은 primary 색상 + ▲/▼ 화살표로 강조, 나머지는 ↕ 힌트",
+      "sortCardArray 가 getCard 리졸버 받아 wishlist / 완료 탭(item 배열)에서도 card.data 기반 정렬 동작",
+      "우선순위 정렬은 '1 < 2 < 3 < 미정 < 보류' 순, 업데이트 정렬은 '미지정' 항상 뒤로, 크기는 W×D×H 부피 기준, 상태는 시안 수 기준 (컨펌은 최상위)",
+    ],
+  },
   {
     version: "1.9.7",
     date: "2026-04-23",
@@ -3457,18 +3469,86 @@ function WishlistToDraftingAction({ card, onMoveTo }) {
 
 // 카드 제목 인라인 에디터. 클릭(또는 포커스)하면 input 로 전환,
 // blur / Enter 로 저장, ESC 로 취소.
-// 카드 배열 정렬 헬퍼. sortBy 가 "date_desc" | "date_asc" | "title_asc" | "title_desc".
-// dateKey/titleKey 로 각 리스트의 필드 이름을 받는다.
-function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title") {
+// 카드 배열 정렬 헬퍼.
+// sortBy 기본값: "date_desc" | "date_asc" | "title_asc" | "title_desc"
+// 추가 (v1.9.8, 리스트 뷰 헤더 클릭 정렬용):
+//   priority_asc/desc, update_asc/desc, category_asc/desc,
+//   style_asc/desc, size_asc/desc, status_asc/desc
+// entries 가 card 가 아니라 item({_cardId}) 인 경우 getCard(entry) 로 card 를 얻는다.
+function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title", getCard) {
   const cpy = arr.slice();
+  const card = getCard || ((x) => x);
+  // 우선순위 정렬용 인덱스 (낮을수록 앞): "1" < "2" < "3" < "미정" < "보류"
+  const priorityRank = (p) => {
+    const idx = PRIORITY_OPTIONS.indexOf(p);
+    return idx === -1 ? 99 : idx;
+  };
+  const cmpStr = (av, bv) => (av || "").localeCompare(bv || "", "ko");
+  const cmpNum = (av, bv) => (av || 0) - (bv || 0);
   if (sortBy === "date_asc") {
-    cpy.sort((a, b) => (a[dateKey] || "").localeCompare(b[dateKey] || ""));
+    cpy.sort((a, b) => cmpStr(a[dateKey], b[dateKey]));
   } else if (sortBy === "title_asc") {
-    cpy.sort((a, b) => (a[titleKey] || "").localeCompare(b[titleKey] || "", "ko"));
+    cpy.sort((a, b) => cmpStr(a[titleKey], b[titleKey]));
   } else if (sortBy === "title_desc") {
-    cpy.sort((a, b) => (b[titleKey] || "").localeCompare(a[titleKey] || "", "ko"));
+    cpy.sort((a, b) => cmpStr(b[titleKey], a[titleKey]));
+  } else if (sortBy === "priority_asc" || sortBy === "priority_desc") {
+    const dir = sortBy === "priority_asc" ? 1 : -1;
+    cpy.sort((a, b) => dir * (priorityRank(getCardPriority(card(a))) - priorityRank(getCardPriority(card(b)))));
+  } else if (sortBy === "update_asc" || sortBy === "update_desc") {
+    const dir = sortBy === "update_asc" ? 1 : -1;
+    // 빈 값 ("미지정") 은 항상 뒤로.
+    cpy.sort((a, b) => {
+      const av = card(a)?.data?.target_update?.trim?.() || "";
+      const bv = card(b)?.data?.target_update?.trim?.() || "";
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+      return dir * cmpStr(av, bv);
+    });
+  } else if (sortBy === "category_asc" || sortBy === "category_desc") {
+    const dir = sortBy === "category_asc" ? 1 : -1;
+    cpy.sort((a, b) => {
+      const aId = card(a)?.data?.category;
+      const bId = card(b)?.data?.category;
+      const aLabel = aId ? (FURNITURE_CATEGORIES.find((c) => c.id === aId)?.label || aId) : "";
+      const bLabel = bId ? (FURNITURE_CATEGORIES.find((c) => c.id === bId)?.label || bId) : "";
+      if (!aLabel && !bLabel) return 0;
+      if (!aLabel) return 1;
+      if (!bLabel) return -1;
+      return dir * cmpStr(aLabel, bLabel);
+    });
+  } else if (sortBy === "style_asc" || sortBy === "style_desc") {
+    const dir = sortBy === "style_asc" ? 1 : -1;
+    cpy.sort((a, b) => {
+      const aId = card(a)?.data?.style_preset;
+      const bId = card(b)?.data?.style_preset;
+      const aLabel = aId ? (STYLE_PRESETS.find((s) => s.id === aId)?.label || aId) : "";
+      const bLabel = bId ? (STYLE_PRESETS.find((s) => s.id === bId)?.label || bId) : "";
+      if (!aLabel && !bLabel) return 0;
+      if (!aLabel) return 1;
+      if (!bLabel) return -1;
+      return dir * cmpStr(aLabel, bLabel);
+    });
+  } else if (sortBy === "size_asc" || sortBy === "size_desc") {
+    const dir = sortBy === "size_asc" ? 1 : -1;
+    const vol = (c) => {
+      const s = c?.data?.size_info || {};
+      const w = Number(s.width_cm) || 0, d = Number(s.depth_cm) || 0, h = Number(s.height_cm) || 0;
+      return w * d * h;
+    };
+    cpy.sort((a, b) => dir * cmpNum(vol(card(a)), vol(card(b))));
+  } else if (sortBy === "status_asc" || sortBy === "status_desc") {
+    const dir = sortBy === "status_asc" ? 1 : -1;
+    // 상태 지표: 컨펌된 카드(확정) > 시안 수 > 0
+    const rank = (c) => {
+      if (!c) return 0;
+      if (c.confirmed_at) return 9999;
+      const designs = Array.isArray(c.data?.designs) ? c.data.designs.length : 0;
+      return designs;
+    };
+    cpy.sort((a, b) => dir * cmpNum(rank(card(a)), rank(card(b))));
   } else {
-    cpy.sort((a, b) => (b[dateKey] || "").localeCompare(a[dateKey] || ""));
+    cpy.sort((a, b) => cmpStr(b[dateKey], a[dateKey]));
   }
   return cpy;
 }
@@ -4182,9 +4262,49 @@ function CardListRow({ card, tabId, onClick }) {
   );
 }
 
-// 리스트 뷰 헤더 행.
-function CardListHeader({ tabId }) {
-  const cell = { fontSize: 11, fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em", textTransform: "uppercase" };
+// sortBy 를 특정 컬럼 기준으로 toggle. 같은 컬럼 재클릭 = asc → desc → 해제 (기본 date_desc).
+function cycleSortBy(currentSortBy, ascKey, descKey, defaultSort = "date_desc") {
+  if (currentSortBy === ascKey) return descKey;
+  if (currentSortBy === descKey) return defaultSort;
+  return ascKey;
+}
+
+// 리스트 뷰 헤더 행. 클릭 가능한 셀은 sortBy 전환.
+function CardListHeader({ tabId, sortBy, onSortChange }) {
+  const cellBase = {
+    fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+    letterSpacing: "0.05em", textTransform: "uppercase",
+  };
+  const onSort = typeof onSortChange === "function" ? onSortChange : null;
+  // 각 컬럼의 (asc, desc) 키. 완료 탭은 날짜 키가 completedAt 이지만 date_asc/desc 로 공통 매핑.
+  const dateAsc = "date_asc", dateDesc = "date_desc";
+  const SortCell = ({ label, ascKey, descKey, align = "left" }) => {
+    const activeDir = sortBy === ascKey ? "asc" : sortBy === descKey ? "desc" : null;
+    const clickable = !!onSort && !!ascKey;
+    return (
+      <div
+        onClick={clickable ? () => onSort(cycleSortBy(sortBy, ascKey, descKey)) : undefined}
+        style={{
+          ...cellBase,
+          textAlign: align,
+          cursor: clickable ? "pointer" : "default",
+          userSelect: "none",
+          color: activeDir ? "var(--primary)" : cellBase.color,
+          display: "flex", alignItems: "center",
+          justifyContent: align === "right" ? "flex-end" : "flex-start",
+          gap: 4,
+        }}
+        title={clickable ? "클릭해서 정렬" : undefined}
+      >
+        <span>{label}</span>
+        {clickable && (
+          <span style={{ fontSize: 9, opacity: activeDir ? 1 : 0.35 }}>
+            {activeDir === "asc" ? "▲" : activeDir === "desc" ? "▼" : "↕"}
+          </span>
+        )}
+      </div>
+    );
+  };
   return (
     <div style={{
       display: "grid",
@@ -4193,14 +4313,14 @@ function CardListHeader({ tabId }) {
       padding: "6px 18px",
     }}>
       <div />
-      <div style={cell}>제목</div>
-      <div style={cell}>우선순위</div>
-      <div style={cell}>업데이트</div>
-      <div style={cell}>카테고리</div>
-      <div style={cell}>스타일</div>
-      <div style={cell}>크기 (W×D×H)</div>
-      <div style={cell}>{tabId === "completed" ? "결과" : "상태"}</div>
-      <div style={{ ...cell, textAlign: "right" }}>{tabId === "completed" ? "완료일" : "생성일"}</div>
+      <SortCell label="제목"            ascKey="title_asc"    descKey="title_desc" />
+      <SortCell label="우선순위"        ascKey="priority_asc" descKey="priority_desc" />
+      <SortCell label="업데이트"        ascKey="update_asc"   descKey="update_desc" />
+      <SortCell label="카테고리"        ascKey="category_asc" descKey="category_desc" />
+      <SortCell label="스타일"          ascKey="style_asc"    descKey="style_desc" />
+      <SortCell label="크기 (W×D×H)"    ascKey="size_asc"     descKey="size_desc" />
+      <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
+      <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
     </div>
   );
 }
@@ -5853,7 +5973,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             {totalCount > 0 ? (
               viewMode === "list" ? (
                 <div style={{ marginBottom: 40 }}>
-                  <CardListHeader tabId={activeTab} />
+                  <CardListHeader tabId={activeTab} sortBy={sortBy} onSortChange={setSortBy} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates) && matchesPriorityFilter(c, selectedPriorities)), sortBy).map((c) => (
                       <CardListRow
@@ -7249,9 +7369,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 />
                 {viewMode === "list" ? (
                   <div>
-                    <CardListHeader tabId="completed" />
+                    <CardListHeader tabId="completed" sortBy={sortBy} onSortChange={setSortBy} />
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {sortCardArray(visibleList, sortBy, "completedAt", "categoryLabel").map((item) => {
+                      {sortCardArray(
+                        visibleList, sortBy, "completedAt", "categoryLabel",
+                        (item) => cards.find((c) => c.id === item._cardId)
+                      ).map((item) => {
                         const card = cards.find((c) => c.id === item._cardId);
                         if (!card) return null;
                         return (
@@ -7369,9 +7492,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     />
                     {viewMode === "list" ? (
                       <div>
-                        <CardListHeader tabId="wishlist" />
+                        <CardListHeader tabId="wishlist" sortBy={sortBy} onSortChange={setSortBy} />
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {sortCardArray(visibleList, sortBy, "createdAt", "title").map((item) => {
+                          {sortCardArray(
+                            visibleList, sortBy, "createdAt", "title",
+                            (item) => cards.find((c) => c.id === item._cardId)
+                          ).map((item) => {
                             const card = cards.find((c) => c.id === item._cardId);
                             if (!card) return null;
                             return (
@@ -8079,6 +8205,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 0 }}>
                 {/* 왼쪽: 썸네일 + 액션 + 설명 */}
                 <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
+                  {/* 우선순위 — 모달 좌측 최상단 (썸네일보다 위, 가장 먼저 눈에 들어오도록) */}
+                  <PriorityField
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                  />
+
                   {card.thumbnail_url && (
                     <div style={{
                       background: "rgba(0,0,0,0.04)", padding: 16, borderRadius: 12,
@@ -8097,14 +8231,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       />
                     </div>
                   )}
-
-                  {/* 우선순위 — 어셋 정보 위에 별도로 표시 */}
-                  <PriorityField
-                    card={card}
-                    projectSlug={projectSlug}
-                    actor={actorName}
-                    disabled={confirmed}
-                  />
 
                   {/* 업데이트 일정 — 어셋 정보 위에 별도로 표시 (완료 시점 기획) */}
                   <TargetUpdateField
