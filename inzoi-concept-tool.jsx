@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.7.9";
+const APP_VERSION = "1.8.0";
 const CHANGELOG = [
+  {
+    version: "1.8.0",
+    date: "2026-04-23",
+    changes: [
+      "컨셉시트 생성이 Gemini 3 Flash Image (나노바나나2) 로 4뷰(정면·측면·후면·상단) 병렬 생성 — 기존 Canvas 2D 합성 대체",
+      "각 뷰 1024² 수준, 카드별 card.data.concept_sheet_views = { front, side, back, top, model, generated_at, source_image_url } 저장",
+      "상세 모달 sheet 패널에 2×2 그리드 미리보기 + 📥 뷰별 다운로드 버튼. 실패 뷰는 '실패' 표시로 재생성 가능",
+      "[버그 수정] 참조 이미지에서 '대표' 지정해도 카드 썸네일이 이전 디자인/시안으로 보이던 문제 — card.thumbnail_url 을 항상 최우선으로, 없을 때만 tabId 별 fallback",
+    ],
+  },
   {
     version: "1.7.9",
     date: "2026-04-23",
@@ -1723,6 +1733,32 @@ ${styleList}`;
   } catch { return null; }
 }
 
+// 컨셉시트 4뷰(front/side/back/top) 를 Gemini 3 Flash Image (나노바나나2) 로 생성.
+// 소스 이미지를 multimodal 참조로 주고 각 뷰별 프롬프트로 병렬 호출.
+// onProgress(done, total) 로 진행률 보고.
+const SHEET_VIEWS = [
+  { id: "front", label: "정면", prompt: "straight-on front view, orthographic perspective" },
+  { id: "side",  label: "측면", prompt: "straight-on left side view, orthographic perspective" },
+  { id: "back",  label: "후면", prompt: "straight-on back view, orthographic perspective" },
+  { id: "top",   label: "상단", prompt: "top-down view, orthographic perspective" },
+];
+
+async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, contextLabel, onProgress }) {
+  const tasks = SHEET_VIEWS.map((v) => async () => {
+    const prompt = `Render a ${v.prompt} of this ${contextLabel || "furniture asset"}. `
+      + `Keep the exact proportions, materials, colors, and design details from the source image. `
+      + `Neutral gray background, even studio lighting, high detail, 3D product render, game asset reference.`;
+    try {
+      const raw = await generateImageWithGemini(apiKey, prompt, model, [sourceImageUrl]);
+      const uploaded = await uploadDataUrl(raw);
+      return { view: v.id, label: v.label, imageUrl: uploaded };
+    } catch (err) {
+      return { view: v.id, label: v.label, imageUrl: null, error: err.message };
+    }
+  });
+  return await runWithConcurrencyLimit(tasks, 2, onProgress);
+}
+
 // 이미지에서 대략적 실제 크기(cm)를 추정. 카테고리 라벨을 context 로 준다.
 async function estimateSizeWithGemini(apiKey, imageUrl, categoryLabel) {
   const part = await fetchImagePart(imageUrl);
@@ -2801,15 +2837,15 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
   if (statusKey === "sheet") {
     const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
-    const sheetUrl = card.data?.concept_sheet_url;
+    const views = card.data?.concept_sheet_views || null; // { front, side, back, top }
+    const hasViews = views && (views.front || views.side || views.back || views.top);
     // 소스 이미지 우선순위: 선정된 시안 → 첫 이미지 있는 시안 → 카드 썸네일.
-    // 이 중 하나라도 있으면 컨셉시트 생성 가능.
     const fallbackDesign = !selectedDesign?.imageUrl
       ? designs.find((d) => d?.imageUrl) || null
       : null;
     const sourceImageUrl = selectedDesign?.imageUrl || fallbackDesign?.imageUrl || card.thumbnail_url;
     const sourceSeed = selectedDesign?.seed ?? fallbackDesign?.seed ?? null;
-    const canMakeSheet = !!sourceImageUrl;
+    const canMakeSheet = !!sourceImageUrl && !!geminiApiKey;
     const sourceLabel = selectedDesign?.imageUrl
       ? `선정 시안 #${selectedIdx + 1}`
       : fallbackDesign
@@ -2817,54 +2853,58 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
         : card.thumbnail_url ? "카드 썸네일" : null;
 
     const makeSheet = async () => {
-      if (!sourceImageUrl) { alert("컨셉시트에 사용할 이미지가 없습니다. 먼저 시안을 생성하거나 카드에 이미지를 추가해주세요."); return; }
+      if (!geminiApiKey) { onOpenApiSettings?.(); return; }
+      if (!sourceImageUrl) { alert("컨셉시트에 사용할 이미지가 없습니다."); return; }
       setBusy(true);
+      setProgress({ done: 0, total: SHEET_VIEWS.length });
       try {
-        // 소스 이미지 로드
-        const sourceImg = await new Promise((resolve) => {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          img.onload = () => resolve(img);
-          img.onerror = () => resolve(null);
-          img.src = sourceImageUrl;
+        const contextLabel = card.data?.category_label || card.title || "furniture asset";
+        const results = await generateConceptSheetViews({
+          apiKey: geminiApiKey,
+          sourceImageUrl,
+          model: selectedModel,
+          contextLabel,
+          onProgress: (done, total) => setProgress({ done, total }),
         });
-        if (!sourceImg) { alert("소스 이미지 로드 실패"); return; }
-
-        // 임시 canvas 에 6개 뷰 slot 모두 같은 이미지 (transforms 로 다르게 보임)
-        const canvas = document.createElement("canvas");
-        const viewImages = {};
-        for (const v of VIEW_ANGLES) viewImages[v.id] = sourceImg;
-
-        generateConceptSheetCanvas(canvas, viewImages, {
-          category: card.data?.category_label || card.title,
-          style:    card.data?.style || "",
-          prompt:   card.data?.prompt || card.description || "",
-          seed:     sourceSeed,
-          colors:   card.data?.colors || [],
-          model:    selectedModel,
-        });
-
-        const raw = canvas.toDataURL("image/png");
-        const uploaded = await uploadDataUrl(raw);
-
+        const viewsObj = {};
+        for (const r of results) {
+          if (r?.imageUrl) viewsObj[r.view] = r.imageUrl;
+        }
+        const failed = SHEET_VIEWS.length - Object.keys(viewsObj).length;
+        if (Object.keys(viewsObj).length === 0) {
+          alert("컨셉시트 4뷰 생성 전부 실패. 다시 시도해주세요.");
+          return;
+        }
+        const front = viewsObj.front || viewsObj.side || viewsObj.back || viewsObj.top || null;
         await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            data: { ...(card.data || {}), concept_sheet_url: uploaded },
-            thumbnail_url: uploaded,
+            data: {
+              ...(card.data || {}),
+              concept_sheet_views: {
+                ...viewsObj,
+                model: selectedModel,
+                generated_at: new Date().toISOString(),
+                source_image_url: sourceImageUrl,
+                source_seed: sourceSeed,
+              },
+              concept_sheet_url: front, // 정면뷰(또는 가용 첫 뷰) 를 기존 필드에도 저장
+            },
+            thumbnail_url: front || card.thumbnail_url,
             actor,
           }),
         });
         await onRefresh();
+        if (failed > 0) alert(`${failed}개 뷰 생성 실패 — 재생성으로 다시 시도할 수 있습니다.`);
       } catch (e) {
         alert("컨셉시트 생성 실패: " + e.message);
-      } finally { setBusy(false); }
+      } finally { setBusy(false); setProgress(null); }
     };
 
     return (
       <div style={sectionStyle}>
-        <div style={titleStyle}>컨셉시트</div>
+        <div style={titleStyle}>컨셉시트 (4뷰 · Gemini)</div>
         {sourceImageUrl && (
           <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "rgba(0,0,0,0.03)" }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
@@ -2879,19 +2919,58 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           </div>
         )}
 
-        {sheetUrl ? (
+        {hasViews ? (
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>✓ 컨셉시트 생성됨</div>
-            <img
-              src={sheetUrl}
-              alt="컨셉시트"
-              onClick={() => onOpenImage?.(sheetUrl)}
-              style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
-            />
+            <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
+              ✓ 4뷰 생성됨 {views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {views.model}</span>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
+              {SHEET_VIEWS.map((v) => {
+                const url = views[v.id];
+                return (
+                  <div key={v.id} style={{
+                    position: "relative", borderRadius: 8, overflow: "hidden",
+                    border: "1px solid var(--surface-border)",
+                    background: url ? "#000" : "rgba(0,0,0,0.05)",
+                  }}>
+                    {url ? (
+                      <img
+                        src={url}
+                        alt={v.label}
+                        onClick={() => onOpenImage?.(url)}
+                        style={{ width: "100%", height: 160, objectFit: "cover", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
+                      />
+                    ) : (
+                      <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+                    )}
+                    <div style={{
+                      position: "absolute", top: 4, left: 4,
+                      padding: "2px 6px", borderRadius: 4,
+                      background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
+                      pointerEvents: "none",
+                    }}>{v.label}</div>
+                    {url && (
+                      <a
+                        href={url}
+                        download={`inzoi_${card.id}_${v.id}.png`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: "absolute", bottom: 4, right: 4,
+                          padding: "2px 6px", borderRadius: 4,
+                          background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10,
+                          textDecoration: "none", fontWeight: 600,
+                        }}
+                        title="PNG 저장"
+                      >📥</a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
-            아직 컨셉시트가 없습니다. 아래 버튼으로 생성하세요.
+            정면 · 측면 · 후면 · 상단 4장을 Gemini 로 생성합니다.
           </div>
         )}
 
@@ -2905,19 +2984,12 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
               border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
               cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
             }}
-            title={canMakeSheet ? `${sourceLabel} 으로 컨셉시트 PNG 제작` : "시안 생성 또는 카드 이미지가 필요합니다"}
-          >{busy ? "생성 중…" : sheetUrl ? "🔄 재생성" : "📑 컨셉시트 생성"}</button>
-          {sheetUrl && (
-            <a
-              href={sheetUrl}
-              download={`inzoi_sheet_${card.id}.png`}
-              style={{
-                padding: "10px 14px", borderRadius: 10,
-                background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                color: "var(--text-muted)", fontSize: 12, fontWeight: 600, textDecoration: "none",
-              }}
-            >📥 저장</a>
-          )}
+            title={!geminiApiKey ? "Gemini API 키 필요" : canMakeSheet ? `${sourceLabel} 으로 4뷰 생성` : "시안 또는 카드 이미지 필요"}
+          >
+            {busy
+              ? `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`
+              : hasViews ? "🔄 재생성" : "🎨 4뷰 생성 (Gemini)"}
+          </button>
         </div>
 
         <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
@@ -3386,11 +3458,14 @@ function CardListRow({ card, tabId, onClick }) {
   const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
   const styleInfo = data.style_preset ? STYLE_PRESETS.find((s) => s.id === data.style_preset) : null;
 
+  // 썸네일 우선순위: 사용자 지정 card.thumbnail_url 최우선, 없을 때만 fallback.
   let thumb = card.thumbnail_url;
-  if (tabId === "sheet" || tabId === "completed") {
-    thumb = data.concept_sheet_url || selected?.imageUrl || card.thumbnail_url;
-  } else if (tabId !== "wishlist") {
-    thumb = selected?.imageUrl || designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
+  if (!thumb) {
+    if (tabId === "sheet" || tabId === "completed") {
+      thumb = data.concept_sheet_url || selected?.imageUrl;
+    } else if (tabId !== "wishlist") {
+      thumb = selected?.imageUrl || designs.find((d) => d?.imageUrl)?.imageUrl;
+    }
   }
 
   const date = tabId === "completed" ? card.confirmed_at : card.created_at;
@@ -3731,14 +3806,15 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
   const selected = selectedIdx != null ? designs[selectedIdx] : null;
 
-  // 탭별 썸네일 선택 로직. 대표(selected_design) 가 있으면 항상 우선.
+  // 썸네일 우선순위: 사용자가 '대표' 버튼으로 명시 설정한 card.thumbnail_url 을
+  // 항상 최우선. 없을 때만 탭별 fallback.
   let thumb = card.thumbnail_url;
-  if (tabId === "sheet" || tabId === "completed") {
-    thumb = data.concept_sheet_url || selected?.imageUrl || card.thumbnail_url;
-  } else if (tabId === "wishlist") {
-    thumb = card.thumbnail_url;
-  } else {
-    thumb = selected?.imageUrl || designs.find((d) => d?.imageUrl)?.imageUrl || card.thumbnail_url;
+  if (!thumb) {
+    if (tabId === "sheet" || tabId === "completed") {
+      thumb = data.concept_sheet_url || selected?.imageUrl;
+    } else if (tabId !== "wishlist") {
+      thumb = selected?.imageUrl || designs.find((d) => d?.imageUrl)?.imageUrl;
+    }
   }
 
   const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
@@ -8635,6 +8711,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           (detailCard.data?.ref_images || []).forEach(push);
           (detailCard.data?.designs || []).forEach((d) => push(d?.imageUrl));
           push(detailCard.data?.image_url);        // legacy comp_* 카드 fallback
+          const v = detailCard.data?.concept_sheet_views;
+          if (v) { push(v.front); push(v.side); push(v.back); push(v.top); }
           push(detailCard.data?.concept_sheet_url);
           if (!set.includes(previewImage)) set.push(previewImage);
           return set;
