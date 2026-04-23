@@ -1,8 +1,21 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.21";
+const APP_VERSION = "1.10.22";
 const CHANGELOG = [
+  {
+    version: "1.10.22",
+    date: "2026-04-24",
+    changes: [
+      "시안 이력 패널 대개편 — DesignsPanel 컴포넌트로 추출 + 3가지 보기 모드",
+      "  · 🔲 그리드 (기본, 자동 맞춤 4~6열)",
+      "  · ⬛⬛ 나란히 (2열, 280px 높이 — 시안 2개 비교)",
+      "  · 🖼 하나씩 (420px, 좌우 ‹ › 버튼 + 하단 페이지 닷 네비)",
+      "각 시안 타일에 ☆ 선정 버튼 추가 — 클릭 시 card.data.selected_design + card.thumbnail_url 자동 갱신",
+      "선정된 시안은 ⭐ 선정 배지 (노란 테두리), image objectFit: cover → contain 으로 비율 온전히 표시",
+      "빈 상태 안내 개선",
+    ],
+  },
   {
     version: "1.10.21",
     date: "2026-04-24",
@@ -4967,6 +4980,265 @@ function CardDescriptionEditor({ card, projectSlug, actor, disabled, onSaved }) 
   );
 }
 
+// 시안 이력 패널 — 그리드 / 나란히(2열) / 하나씩(carousel) 3가지 보기 모드 + 선정 + 외부 이미지 업로드.
+// v1.10.22 — 복수 시안 비교 / 단일 확대 / ⭐ 선정 UI 한 곳에 모음.
+function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefresh }) {
+  const [viewMode, setViewMode] = React.useState("grid"); // "grid" | "compare" | "single"
+  const [singleIdx, setSingleIdx] = React.useState(0);
+
+  const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
+  const extras = [];
+  if (raw.length === 0 && card.data?.image_url) {
+    extras.push({ imageUrl: card.data.image_url, seed: card.data.seed, _legacy: true });
+  }
+  if (card.data?.concept_sheet_url
+      && !raw.find((d) => d?.imageUrl === card.data.concept_sheet_url)
+      && !extras.find((d) => d.imageUrl === card.data.concept_sheet_url)) {
+    extras.push({ imageUrl: card.data.concept_sheet_url, seed: null, _sheet: true });
+  }
+  const displayDesigns = [...raw, ...extras];
+  const selectedIdx = card.data?.selected_design;
+
+  // singleIdx 가 범위 밖이면 0 으로 보정.
+  React.useEffect(() => {
+    if (singleIdx >= displayDesigns.length) setSingleIdx(Math.max(0, displayDesigns.length - 1));
+  }, [displayDesigns.length, singleIdx]);
+
+  const save = async (patchFields) => {
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: { ...(card.data || {}), ...patchFields }, actor }),
+      });
+      await onRefresh?.();
+    } catch (e) { alert("저장 실패: " + e.message); }
+  };
+
+  const addExternalImage = (file) => {
+    if (!file || disabled) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const url = await uploadDataUrl(ev.target.result);
+        const existing = Array.isArray(card.data?.designs) ? card.data.designs : [];
+        const newDesign = { seed: null, imageUrl: url, source: "upload", createdAt: new Date().toISOString() };
+        await save({ designs: [...existing, newDesign] });
+      } catch (err) { alert("이미지 추가 실패: " + err.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const selectDesign = async (idx) => {
+    if (disabled) return;
+    const d = displayDesigns[idx];
+    const patch = { selected_design: idx };
+    // 업로드/AI 시안을 선정하면 카드 썸네일도 같이 갱신.
+    const extraPatch = {};
+    if (d?.imageUrl) extraPatch.thumbnail_url = d.imageUrl;
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), ...patch },
+          ...extraPatch,
+          actor,
+        }),
+      });
+      await onRefresh?.();
+    } catch (e) { alert("선정 실패: " + e.message); }
+  };
+
+  // 보기 모드 토글 버튼.
+  const ModeBtn = ({ mode, icon, title }) => (
+    <button
+      onClick={() => setViewMode(mode)}
+      title={title}
+      style={{
+        padding: "3px 8px", borderRadius: 6, border: "none",
+        background: viewMode === mode ? "#fff" : "transparent",
+        color: viewMode === mode ? "var(--primary)" : "var(--text-muted)",
+        fontSize: 12, fontWeight: 700, cursor: "pointer",
+        boxShadow: viewMode === mode ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+      }}
+    >{icon}</button>
+  );
+
+  const renderBadge = (d, i) => d._sheet ? "📑 시트"
+    : d._legacy ? "🗂 레거시"
+    : d.source === "upload" ? `📤 #${i + 1}`
+    : `#${i + 1}`;
+
+  // 하나의 시안 타일 — 보기 모드에 따라 크기 조절. 선정 버튼도 hover 없이 항상 표시.
+  const Tile = ({ d, i, height }) => {
+    const isSelected = selectedIdx === i;
+    return (
+      <div style={{
+        position: "relative", borderRadius: 8, overflow: "hidden",
+        border: isSelected ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+        background: "#000",
+      }}>
+        {d?.imageUrl ? (
+          <img
+            src={d.imageUrl}
+            alt=""
+            onClick={() => onOpenImage?.(d.imageUrl)}
+            style={{ width: "100%", height, objectFit: "contain", display: "block", cursor: "zoom-in", background: "#000" }}
+          />
+        ) : (
+          <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+        )}
+        <div style={{
+          position: "absolute", top: 4, left: 4,
+          padding: "1px 6px", borderRadius: 4,
+          background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
+          pointerEvents: "none",
+        }}>{renderBadge(d, i)}</div>
+        {isSelected ? (
+          <div style={{
+            position: "absolute", top: 4, right: 4,
+            padding: "1px 6px", borderRadius: 4,
+            background: "#fbbf24", color: "#000", fontSize: 10, fontWeight: 800,
+          }}>⭐ 선정</div>
+        ) : !disabled && d?.imageUrl && (
+          <button
+            onClick={() => selectDesign(i)}
+            title="이 시안을 대표로 선정 (카드 썸네일도 함께 갱신)"
+            style={{
+              position: "absolute", top: 4, right: 4,
+              padding: "2px 8px", borderRadius: 4,
+              background: "rgba(255,255,255,0.92)", border: "1px solid rgba(0,0,0,0.12)",
+              color: "var(--text-main)", fontSize: 10, fontWeight: 700, cursor: "pointer",
+            }}
+          >☆ 선정</button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{
+      padding: 14, borderRadius: 12,
+      background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+          🎨 시안 이력 ({displayDesigns.length}개)
+        </div>
+        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+          AI 생성 + 외부 업로드 · ☆ 로 선정
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+          {displayDesigns.length > 0 && (
+            <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
+              <ModeBtn mode="grid" icon="🔲" title="그리드" />
+              <ModeBtn mode="compare" icon="⬛⬛" title="나란히 (2열)" />
+              <ModeBtn mode="single" icon="🖼" title="하나씩" />
+            </div>
+          )}
+          {!disabled && (
+            <label
+              title="다른 곳에서 만든 이미지를 시안으로 추가"
+              style={{
+                padding: "4px 10px", borderRadius: 6,
+                background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              ＋ 이미지 추가
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => { addExternalImage(e.target.files?.[0]); e.target.value = ""; }}
+                style={{ display: "none" }}
+              />
+            </label>
+          )}
+        </div>
+      </div>
+
+      {displayDesigns.length === 0 ? (
+        <div style={{
+          padding: 20, borderRadius: 8, textAlign: "center",
+          background: "rgba(0,0,0,0.02)", border: "1px dashed var(--surface-border)",
+          fontSize: 12, color: "var(--text-muted)",
+        }}>
+          시안이 아직 없습니다. 위의 시안 생성 버튼 또는 ＋ 이미지 추가로 시작하세요.
+        </div>
+      ) : viewMode === "grid" ? (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+          gap: 8,
+        }}>
+          {displayDesigns.map((d, i) => <Tile key={i} d={d} i={i} height={150} />)}
+        </div>
+      ) : viewMode === "compare" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {displayDesigns.map((d, i) => <Tile key={i} d={d} i={i} height={280} />)}
+        </div>
+      ) : (
+        // single — carousel
+        <div>
+          {(() => {
+            const idx = Math.min(singleIdx, displayDesigns.length - 1);
+            const d = displayDesigns[idx];
+            return (
+              <>
+                <div style={{ position: "relative" }}>
+                  <Tile d={d} i={idx} height={420} />
+                  {displayDesigns.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setSingleIdx((idx - 1 + displayDesigns.length) % displayDesigns.length)}
+                        title="이전 시안"
+                        style={{
+                          position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)",
+                          width: 36, height: 36, borderRadius: 18,
+                          background: "rgba(0,0,0,0.55)", border: "none", color: "#fff",
+                          fontSize: 18, cursor: "pointer",
+                        }}
+                      >‹</button>
+                      <button
+                        onClick={() => setSingleIdx((idx + 1) % displayDesigns.length)}
+                        title="다음 시안"
+                        style={{
+                          position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)",
+                          width: 36, height: 36, borderRadius: 18,
+                          background: "rgba(0,0,0,0.55)", border: "none", color: "#fff",
+                          fontSize: 18, cursor: "pointer",
+                        }}
+                      >›</button>
+                    </>
+                  )}
+                </div>
+                <div style={{
+                  marginTop: 8, display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center",
+                }}>
+                  {displayDesigns.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSingleIdx(i)}
+                      title={`#${i + 1}`}
+                      style={{
+                        width: 18, height: 18, borderRadius: 9,
+                        border: "none",
+                        background: i === idx ? "var(--primary)" : "rgba(0,0,0,0.15)",
+                        color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                      }}
+                    >{i + 1}</button>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 상세 모달 댓글 한 줄 — 본인 댓글은 인라인 편집 + 삭제 가능.
 // 편집 시 textarea, Ctrl/⌘+Enter 저장, Esc 취소, blur 자동 저장.
 function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, onChanged }) {
@@ -9516,140 +9788,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     />
                   )}
 
-                  {/* 2) 시안 이력 — 생성된 시안 + 외부 이미지 수동 추가 (v1.10.21) */}
-                  {(() => {
-                    const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
-                    const extras = [];
-                    if (raw.length === 0) {
-                      if (card.data?.image_url) extras.push({ imageUrl: card.data.image_url, seed: card.data.seed, _legacy: true });
-                    }
-                    if (card.data?.concept_sheet_url && !raw.find((d) => d?.imageUrl === card.data.concept_sheet_url) && !extras.find((d) => d.imageUrl === card.data.concept_sheet_url)) {
-                      extras.push({ imageUrl: card.data.concept_sheet_url, seed: null, _sheet: true });
-                    }
-                    const displayDesigns = [...raw, ...extras];
-                    const selectedIdx = card.data?.selected_design;
-
-                    const addExternalImage = async (file) => {
-                      if (!file || confirmed) return;
-                      const reader = new FileReader();
-                      reader.onload = async (ev) => {
-                        try {
-                          const url = await uploadDataUrl(ev.target.result);
-                          const existing = Array.isArray(card.data?.designs) ? card.data.designs : [];
-                          const newDesign = {
-                            seed: null,
-                            imageUrl: url,
-                            source: "upload",
-                            createdAt: new Date().toISOString(),
-                          };
-                          await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-                            method: "PATCH",
-                            headers: { "content-type": "application/json" },
-                            body: JSON.stringify({
-                              data: { ...(card.data || {}), designs: [...existing, newDesign] },
-                              actor: actorName,
-                            }),
-                          });
-                          const d = await fetchCardDetail(projectSlug, card.id);
-                          if (d) {
-                            setDetailCard(d);
-                            setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                          }
-                        } catch (err) { alert("이미지 추가 실패: " + err.message); }
-                      };
-                      reader.readAsDataURL(file);
-                    };
-
-                    return (
-                      <div style={{
-                        padding: 14, borderRadius: 12,
-                        background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
-                            🎨 시안 이력 ({displayDesigns.length}개)
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                            AI 생성 시안 + 외부 이미지 추가 가능
-                          </div>
-                          {!confirmed && (
-                            <label
-                              title="다른 곳에서 만든 이미지를 시안으로 추가"
-                              style={{
-                                marginLeft: "auto",
-                                padding: "4px 10px", borderRadius: 6,
-                                background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                                color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
-                              }}
-                            >
-                              ＋ 이미지 추가
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => { addExternalImage(e.target.files?.[0]); e.target.value = ""; }}
-                                style={{ display: "none" }}
-                              />
-                            </label>
-                          )}
-                        </div>
-                        {displayDesigns.length === 0 ? (
-                          <div style={{
-                            padding: 20, borderRadius: 8, textAlign: "center",
-                            background: "rgba(0,0,0,0.02)", border: "1px dashed var(--surface-border)",
-                            fontSize: 12, color: "var(--text-muted)",
-                          }}>
-                            시안이 아직 없습니다. 위의 시안 생성 버튼 또는 ＋ 이미지 추가로 시작하세요.
-                          </div>
-                        ) : (
-                        <div style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                          gap: 8,
-                        }}>
-                          {displayDesigns.map((d, i) => {
-                            const isSelected = selectedIdx === i;
-                            const badge = d._sheet ? "📑 시트"
-                              : d._legacy ? "🗂 레거시"
-                              : d.source === "upload" ? `📤 #${i + 1}`
-                              : `#${i + 1}`;
-                            return (
-                              <div key={i} style={{
-                                position: "relative", borderRadius: 8, overflow: "hidden",
-                                border: isSelected ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
-                                background: "#000",
-                              }}>
-                                {d?.imageUrl ? (
-                                  <img
-                                    src={d.imageUrl}
-                                    alt=""
-                                    onClick={() => setPreviewImage(d.imageUrl)}
-                                    style={{ width: "100%", height: 150, objectFit: "cover", display: "block", cursor: "zoom-in" }}
-                                  />
-                                ) : (
-                                  <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
-                                )}
-                                <div style={{
-                                  position: "absolute", top: 4, left: 4,
-                                  padding: "1px 6px", borderRadius: 4,
-                                  background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
-                                  pointerEvents: "none",
-                                }}>{badge}</div>
-                                {isSelected && (
-                                  <div style={{
-                                    position: "absolute", top: 4, right: 4,
-                                    padding: "1px 6px", borderRadius: 4,
-                                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
-                                    pointerEvents: "none",
-                                  }}>⭐ 선정</div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  {/* 2) 시안 이력 — 그리드 / 나란히 / 하나씩 보기 + 선정 + 외부 업로드 (v1.10.22) */}
+                  <DesignsPanel
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                    onOpenImage={setPreviewImage}
+                    onRefresh={async () => {
+                      const d = await fetchCardDetail(projectSlug, card.id);
+                      if (d) {
+                        setDetailCard(d);
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      }
+                    }}
+                  />
 
                   {/* 3) 댓글 */}
                   <div>
