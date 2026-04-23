@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.33";
+const APP_VERSION = "1.10.34";
 const CHANGELOG = [
+  {
+    version: "1.10.34",
+    date: "2026-04-24",
+    changes: [
+      "갤러리 레이아웃을 Justified Grid (Google Photos / Flickr 식) 로 변경 — 각 행의 이미지 너비를 자동 조정해 행 폭이 CONTAINER_W(2800px) 를 꽉 채움, 행 높이 통일 (기본 460)",
+      "서로 다른 원본 비율 이미지들이 한 화면에 더 크고 효율적으로 배치 — 빈 공간 최소화, 세로 스택 제거",
+      "img aspect ratio 는 onLoad 에서 자동 수집(naturalWidth/naturalHeight) → useMemo 로 행 packing 재계산",
+      "각 타일은 justified 셀(width/height) + object-fit: cover 로 채움 — 셀 비율이 이미 이미지 aspect 와 같아 crop 되지 않음",
+      "fit-to-viewport 가 justified 전체 박스를 뷰포트에 맞춤 → 초기 오픈 시 한눈에 다 보임",
+    ],
+  },
   {
     version: "1.10.33",
     date: "2026-04-24",
@@ -4992,6 +5003,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   const viewRef = React.useRef({ x: 0, y: 0, scale: 1 });
   const [scale, setScale] = React.useState(1);
   const [dragging, setDragging] = React.useState(false);
+  // 이미지별 aspect ratio (w/h) — onLoad 에서 채워 justified 레이아웃에 사용 (v1.10.34).
+  const [aspects, setAspects] = React.useState({});
   const wrapRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const panStart = React.useRef(null);
@@ -5044,7 +5057,13 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     return () => { clearTimeout(t1); clearTimeout(t2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const onImageLoad = React.useCallback(() => {
+  const onImageLoad = React.useCallback((e, url) => {
+    // aspect ratio 수집 — justified 레이아웃 계산에 사용.
+    const img = e?.currentTarget;
+    if (img && img.naturalWidth && img.naturalHeight && url) {
+      const a = img.naturalWidth / img.naturalHeight;
+      setAspects((prev) => (prev[url] === a ? prev : { ...prev, [url]: a }));
+    }
     loadedCountRef.current += 1;
     if (loadedCountRef.current === totalImagesRef.current) {
       fitToViewport();
@@ -5221,6 +5240,43 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
 
   const totalImages = groups.reduce((n, g) => n + g.items.length, 0);
 
+  // Justified 그리드 레이아웃 (v1.10.34) — Google Photos / Flickr 식.
+  // 각 행의 이미지들이 CONTAINER_WIDTH 를 꽉 채우도록 너비 자동 조정, 행 높이 통일.
+  // 마지막 행은 비율 유지한 채 target 에서 stretch 안 함.
+  const LAYOUT = React.useMemo(() => {
+    const TARGET_H = 460;      // 기본 행 높이 (큼)
+    const CONTAINER_W = 2800;  // 한 행 폭. 화면보다 크게 잡고 fit-to-viewport 가 축소해서 화면에 맞춤
+    const GAP = 2;             // 이미지 간 간격 (거의 붙게)
+    const flat = groups.flatMap((g) => g.items);
+    const rows = [];
+    let cur = [];
+    let curW = 0;
+    for (const item of flat) {
+      const a = aspects[item.url] || 1;
+      const w = TARGET_H * a;
+      if (curW + w + GAP * cur.length > CONTAINER_W && cur.length > 0) {
+        rows.push({ items: cur, totalW: curW, full: true });
+        cur = [];
+        curW = 0;
+      }
+      cur.push({ item, naturalW: w });
+      curW += w;
+    }
+    if (cur.length) rows.push({ items: cur, totalW: curW, full: false });
+    // 각 행의 실제 높이 / 너비 계산.
+    const laid = rows.map((row) => {
+      const available = CONTAINER_W - GAP * (row.items.length - 1);
+      const rowScale = row.full ? available / row.totalW : Math.min(1, available / row.totalW);
+      const rowH = TARGET_H * rowScale;
+      return {
+        height: rowH,
+        items: row.items.map((x) => ({ item: x.item, width: x.naturalW * rowScale })),
+      };
+    });
+    return { rows: laid, gap: GAP, containerWidth: CONTAINER_W };
+  }, [groups, aspects]);
+
+
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 1000,
@@ -5300,57 +5356,63 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           transformOrigin: "0 0",
           willChange: "transform",
           padding: 0,
-          // v1.10.33 — 그룹 세로 스택 제거. 모든 이미지를 한 wrap 그리드에 평탄화.
-          // maxWidth 로 한 줄 폭을 제한 → 다음 줄로 wrap 돼 한 화면에 많이 보임.
-          display: "flex", flexDirection: "row", flexWrap: "wrap",
-          gap: 0, alignItems: "flex-start",
-          maxWidth: 3200,
+          width: LAYOUT.containerWidth,
+          // v1.10.34 — Justified 레이아웃. 각 행 폭 = CONTAINER_W 로 자동 정렬.
+          display: "flex", flexDirection: "column",
+          gap: LAYOUT.gap,
         }}>
           {groups.length === 0 && (
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, padding: 40 }}>
               이 카드엔 아직 이미지가 없습니다.
             </div>
           )}
-          {groups.flatMap((g) =>
-            g.items.map((it, i) => (
-              <GalleryTile
-                key={`${g.key}-${i}`}
-                item={it}
-                scale={scale}
-                onSetCover={setCover}
-                onImageLoad={onImageLoad}
-              />
-            ))
-          )}
+          {LAYOUT.rows.map((row, ri) => (
+            <div key={ri} style={{
+              display: "flex", gap: LAYOUT.gap,
+              height: row.height,
+            }}>
+              {row.items.map(({ item, width }, ii) => (
+                <GalleryTile
+                  key={`${ri}-${ii}`}
+                  item={item}
+                  width={width}
+                  height={row.height}
+                  scale={scale}
+                  onSetCover={setCover}
+                  onImageLoad={onImageLoad}
+                />
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function GalleryTile({ item, scale, onSetCover, onImageLoad }) {
-  // 이미지 원본 해상도 그대로 렌더 (v1.10.33). CSS 크기 제약 없음 →
-  // 브라우저가 natural dimension 으로 래스터화 → GPU 텍스처 = 소스 해상도 →
-  // 줌인 시 bilinear 업스케일이 소스에서 시작되어 블러 최소화.
-  // 초기 너무 큰 레이아웃은 fit-to-viewport 로 화면에 맞춰 축소 표시.
+function GalleryTile({ item, width, height, scale, onSetCover, onImageLoad }) {
+  // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height), 이미지는 cover 로 채움.
+  // 셀 비율이 이미 이미지 aspect 와 같으므로 object-fit: cover 여도 crop 없이 딱 맞음.
+  // 별 아이콘은 scale 의 역수로 counter-scale.
   const coverBtnTitle = item.isCover ? "현재 대표 이미지" : "카드 대표(썸네일)로 지정";
   const invScale = 1 / Math.max(scale || 1, 0.01);
   return (
     <div style={{
+      width, height,
       position: "relative",
       display: "inline-block", flexShrink: 0,
-      // 테두리 / 배경 / 그림자 없음 — 이미지만 붙여서 표시.
+      overflow: "hidden",
+      background: "#111",
     }}>
       <img
         src={item.url}
         alt=""
         draggable={false}
-        onLoad={onImageLoad}
+        onLoad={(e) => onImageLoad?.(e, item.url)}
         style={{
           display: "block", pointerEvents: "none",
-          // 폭발적으로 큰 이미지는 1024 로 제한해 초기 레이아웃 폭주 방지.
-          maxWidth: 1280, maxHeight: 1280,
-          width: "auto", height: "auto",
+          width: "100%", height: "100%",
+          objectFit: "cover",
           imageRendering: "auto",
         }}
       />
