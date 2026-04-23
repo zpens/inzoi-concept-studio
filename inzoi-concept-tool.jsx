@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.11";
+const APP_VERSION = "1.10.12";
 const CHANGELOG = [
+  {
+    version: "1.10.12",
+    date: "2026-04-24",
+    changes: [
+      "헤더의 ＋ 새 시안 버튼 제거 — 시안 생성 탭 본문 상단에 동일 버튼이 이미 있어 중복",
+    ],
+  },
   {
     version: "1.10.11",
     date: "2026-04-24",
@@ -6805,24 +6812,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <span style={{ fontSize: 12 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
             API 설정
           </button>
-          {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && (
-            <button
-              onClick={() => { setActiveTab("create"); spawnNewJob(); }}
-              className="hover-lift"
-              style={{
-                padding: "5px 12px", borderRadius: 8,
-                background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-                border: "none",
-                color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
-                transition: "all 0.3s",
-                boxShadow: "0 3px 10px var(--primary-glow)",
-                display: "flex", alignItems: "center", gap: 4,
-              }}
-              title="새 시안 작업 추가 (현재 작업은 유지)"
-            >
-              <span style={{ fontSize: 13, lineHeight: 1 }}>＋</span> 새 시안
-            </button>
-          )}
+          {/* 헤더의 ＋ 새 시안 버튼은 v1.10.12 제거 — 시안 생성 탭 본문에 동일 버튼 존재 */}
           {/* 프로필 선택기 — 헤더 맨 오른쪽 끝 (v1.10.8) */}
           <ProfilePicker
             profiles={profiles}
