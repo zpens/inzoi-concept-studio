@@ -737,7 +737,9 @@ app.patch("/api/projects/:slug/cards/:id", async (c) => {
   if (changedFields.length) {
     logCardActivity(id, body.actor ?? null, "field_updated", { fields: changedFields });
   }
-  // 시안(designs) 개수 증가 감지 — 이미지 생성 이벤트를 별도 활동으로 기록 (v1.10.18).
+  // data 내 이미지 생성 이벤트 감지 (v1.10.18 → v1.10.20 확장).
+  // - designs 배열 성장 → 시안 이미지 생성
+  // - concept_sheet_views / concept_sheet_url 최초 생성 또는 generated_at 갱신 → 컨셉시트 4뷰 생성
   if (body.data !== undefined) {
     try {
       const prevData = prev.data ? (typeof prev.data === "string" ? JSON.parse(prev.data) : prev.data) : {};
@@ -746,6 +748,16 @@ app.patch("/api/projects/:slug/cards/:id", async (c) => {
       const nextCount = Array.isArray(nextData?.designs) ? nextData.designs.length : 0;
       if (nextCount > prevCount) {
         logCardActivity(id, body.actor ?? null, "designs_added", { count: nextCount - prevCount });
+      }
+      // 컨셉시트 4뷰 — concept_sheet_views.generated_at 타임스탬프가 새거나 바뀌면 생성으로 간주.
+      const prevSheetTs = prevData?.concept_sheet_views?.generated_at || null;
+      const nextSheetTs = nextData?.concept_sheet_views?.generated_at || null;
+      if (nextSheetTs && nextSheetTs !== prevSheetTs) {
+        const viewKeys = ["front", "side", "back", "top"].filter((k) => nextData.concept_sheet_views?.[k]);
+        logCardActivity(id, body.actor ?? null, "sheet_generated", {
+          views: viewKeys.length,
+          model: nextData.concept_sheet_views?.model || null,
+        });
       }
     } catch { /* json 파싱 실패는 조용히 무시 */ }
   }

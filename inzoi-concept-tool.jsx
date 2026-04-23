@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.19";
+const APP_VERSION = "1.10.20";
 const CHANGELOG = [
+  {
+    version: "1.10.20",
+    date: "2026-04-24",
+    changes: [
+      "활동 이력에 컨셉시트 4뷰 생성도 기록 — sheet_generated 액션 추가 ('시트 생성' 라벨, views 개수 + 모델명 payload)",
+      "기존 designs_added 라벨도 '생성' → '시안 생성' 으로 명확화 (시트 생성과 구분)",
+      "서버: PATCH 시 data.concept_sheet_views.generated_at 타임스탬프 변경 감지해 활동 기록",
+      "활동 필터 드롭다운에 '시트 생성' 옵션 추가",
+      "시트 재생성 시 기존 시트 삭제하지 않고 card.data.concept_sheet_history[] 에 보존 — 상세 모달에 '📚 이전 시트 기록' details 토글로 누적 4뷰 썸네일 표시 (생성일시 + 모델명)",
+    ],
+  },
   {
     version: "1.10.19",
     date: "2026-04-24",
@@ -3623,6 +3634,12 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           return;
         }
         const front = viewsObj.front || viewsObj.side || viewsObj.back || viewsObj.top || null;
+        // 재생성 시 기존 시트를 삭제하지 않고 concept_sheet_history 에 보존 (v1.10.20).
+        const existingViews = card.data?.concept_sheet_views || null;
+        const prevHistory = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
+        const nextHistory = existingViews
+          ? [existingViews, ...prevHistory] // 최신이 앞, 이전 기록 뒤로
+          : prevHistory;
         await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -3636,6 +3653,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                 source_image_url: sourceImageUrl,
                 source_seed: sourceSeed,
               },
+              concept_sheet_history: nextHistory,
               concept_sheet_url: front, // 정면뷰(또는 가용 첫 뷰) 를 기존 필드에도 저장
             },
             thumbnail_url: front || card.thumbnail_url,
@@ -3722,6 +3740,43 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
             정면 · 측면 · 후면 · 상단 4장을 Gemini 로 생성합니다.
           </div>
+        )}
+
+        {/* 이전 시트 기록 — 재생성 시 보존 (v1.10.20) */}
+        {Array.isArray(card.data?.concept_sheet_history) && card.data.concept_sheet_history.length > 0 && (
+          <details style={{ marginBottom: 10 }}>
+            <summary style={{
+              cursor: "pointer", fontSize: 11, fontWeight: 700,
+              color: "var(--text-muted)", padding: "6px 0",
+            }}>📚 이전 시트 기록 ({card.data.concept_sheet_history.length})</summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+              {card.data.concept_sheet_history.map((h, i) => (
+                <div key={i} style={{ padding: 8, borderRadius: 8, background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)" }}>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
+                    {h.generated_at ? h.generated_at.slice(0, 16).replace("T", " ") : "시점 불명"}
+                    {h.model && ` · ${h.model}`}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+                    {SHEET_VIEWS.map((v) => {
+                      const url = h[v.id];
+                      return url ? (
+                        <img
+                          key={v.id}
+                          src={url}
+                          alt={v.label}
+                          title={v.label}
+                          onClick={() => onOpenImage?.(url)}
+                          style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
+                        />
+                      ) : (
+                        <div key={v.id} title={`${v.label} (없음)`} style={{ width: "100%", aspectRatio: "1/1", background: "rgba(0,0,0,0.05)", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "var(--text-muted)" }}>—</div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
         )}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -9556,8 +9611,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   {/* 활동 이력 — 접기/펼치기 지원 (기본 펼침), 한글 액션 라벨 (v1.10.17) */}
                   {(() => {
                     const ACTION_LABEL = {
-                      created: "신규",           // 카드 신규 등록
-                      designs_added: "생성",     // 시안 이미지 생성 (Gemini)
+                      created: "신규",              // 카드 신규 등록
+                      designs_added: "시안 생성",    // 시안 이미지 생성 (Gemini)
+                      sheet_generated: "시트 생성",  // 컨셉시트 4뷰 생성
                       moved: "상태 이동",
                       field_updated: "필드 수정",
                       comment_added: "댓글 작성",
@@ -9595,6 +9651,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         >
                           <option value="all">모든 액션</option>
                           <option value="designs_added">시안 생성</option>
+                          <option value="sheet_generated">시트 생성</option>
                           <option value="moved">상태 이동</option>
                           <option value="field_updated">필드 수정</option>
                           <option value="comment_added">댓글</option>
