@@ -538,6 +538,8 @@ app.get("/api/object-meta", async (c) => {
         lv1: f ? (filterToLv1.get(f) || null) : null,
         lv2: f ? (filterToLv2.get(f) || null) : null,
         name: meta2.name,
+        // icon 필드가 id 와 다른 경우가 있어 아이콘 URL 구성에 반드시 필요 (v1.10.17)
+        icon: meta2.icon || null,
       };
     }
 

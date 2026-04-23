@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.16";
+const APP_VERSION = "1.10.17";
 const CHANGELOG = [
+  {
+    version: "1.10.17",
+    date: "2026-04-24",
+    changes: [
+      "[버그 수정] 유사 에셋 아이콘이 일부 안 보이던 문제 — 에셋의 icon 파일명이 id 와 다른 경우 /api/object-icon/:id 가 404. 서버 posmap 응답에 objects.json 의 icon 필드 포함, 클라이언트는 m.icon || m.id 로 아이콘 URL 구성",
+      "유사 에셋 썸네일 로드 실패 시 해당 카테고리 이모지로 fallback 표시 (예전엔 숨김)",
+      "findSimilarCatalogAssets 결과에 icon / name 필드 포함",
+      "활동 이력 UI 개편 — 각 항목에 프로필 아이콘 원형 22px (hover 시 이름), action 명 한글화 (created→생성, moved→상태 이동 등), 배경 pill 로 가독성 향상",
+      "활동 이력 헤더 클릭 시 접기/펼치기 (기본 펼침)",
+    ],
+  },
   {
     version: "1.10.16",
     date: "2026-04-24",
@@ -2173,7 +2184,12 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
   const entries = [];
   for (const [id, score] of Object.entries(POSMAP_SCORES)) {
     const s = calcPosmapSimilarity(userFeatures, score, userCategoryId, userLv1);
-    if (s > 0) entries.push({ id, score: s, filter: score.filter, lv1: score.lv1, lv2: score.lv2 });
+    if (s > 0) entries.push({
+      id, score: s,
+      filter: score.filter, lv1: score.lv1, lv2: score.lv2,
+      icon: score.icon || null,
+      name: score.name || null,
+    });
   }
   entries.sort((a, b) => b.score - a.score);
   const maxScore = entries.length ? entries[0].score : 1;
@@ -2184,6 +2200,8 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
     filter: e.filter,
     lv1: e.lv1,
     lv2: e.lv2,
+    icon: e.icon,
+    name: e.name,
   }));
 }
 
@@ -3156,10 +3174,13 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               const items = useMatches
                 ? fresh.map((m) => {
                     const fromSpec = spec.sample_thumbs?.find((s) => s.id === m.id);
+                    // 아이콘 파일명이 id 와 다를 수 있어 m.icon (objects.json 의 icon 필드) 우선 사용.
+                    // 그 다음 sample_thumbs 의 미리 만들어진 URL, 마지막으로 id 를 파일명으로 시도.
+                    const iconKey = m.icon || m.id;
                     return {
                       id: m.id,
-                      name: fromSpec?.name || m.id,
-                      icon_url: fromSpec?.icon_url || `/api/object-icon/${encodeURIComponent(m.id)}`,
+                      name: m.name || fromSpec?.name || m.id,
+                      icon_url: fromSpec?.icon_url || `/api/object-icon/${encodeURIComponent(iconKey)}`,
                       filter: m.filter,
                       score: m.score,
                       normalized: m.normalized,
@@ -3233,12 +3254,28 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                             width: "100%", aspectRatio: "1/1",
                             background: "rgba(0,0,0,0.03)",
                             position: "relative",
+                            display: "flex", alignItems: "center", justifyContent: "center",
                           }}>
                             <img
                               src={t.icon_url}
                               alt={t.name}
                               loading="lazy"
-                              onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              onError={(e) => {
+                                // 이미지 로드 실패 시 숨기고 카테고리 이모지 fallback 표시 (v1.10.17).
+                                const img = e.currentTarget;
+                                if (!img._fallback) {
+                                  img._fallback = true;
+                                  img.style.display = "none";
+                                  const parent = img.parentNode;
+                                  if (parent && !parent.querySelector(".icon-fallback")) {
+                                    const span = document.createElement("span");
+                                    span.className = "icon-fallback";
+                                    span.textContent = filterIcon || "📦";
+                                    span.style.cssText = "font-size:28px;opacity:0.4;";
+                                    parent.appendChild(span);
+                                  }
+                                }
+                              }}
                               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                             />
                           </div>
@@ -5723,6 +5760,7 @@ export default function InZOIConceptTool() {
   const [archiveOpen, setArchiveOpen] = useState(false);   // 아카이브 뷰 토글
   const [archivedCards, setArchivedCards] = useState([]);  // 서버에서 가져온 아카이브 카드
   const [activityFilter, setActivityFilter] = useState("all"); // 카드 활동 이력 필터
+  const [activitiesExpanded, setActivitiesExpanded] = useState(true); // 상세 모달 활동 이력 펼침 (v1.10.17)
   const [newItemId, setNewItemId] = useState(null);
   // 워크플로우 탭 상세 전개 여부. 기본 false 라 그리드만 보이고, 카드 클릭하거나
   // ＋ 새 시안 눌렀을 때만 true 로 전환되어 입력/단계 UI 가 드러난다.
@@ -9488,13 +9526,36 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     <CardCommentInput onSubmit={submitComment} disabled={confirmed} currentProfile={currentProfile} />
                   </div>
 
-                  {/* 활동 이력 */}
+                  {/* 활동 이력 — 접기/펼치기 지원 (기본 펼침), 한글 액션 라벨 (v1.10.17) */}
+                  {(() => {
+                    const ACTION_LABEL = {
+                      created: "생성",
+                      moved: "상태 이동",
+                      field_updated: "필드 수정",
+                      comment_added: "댓글 작성",
+                      comment_edited: "댓글 수정",
+                      comment_deleted: "댓글 삭제",
+                      confirmed: "완료",
+                      reopened: "재오픈",
+                    };
+                    return (
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>
+                      <button
+                        onClick={() => setActivitiesExpanded((v) => !v)}
+                        title={activitiesExpanded ? "접기" : "펼치기"}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 4,
+                          padding: "2px 6px", borderRadius: 6,
+                          background: "transparent", border: "none",
+                          color: "var(--text-muted)", fontSize: 12, fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span style={{ fontSize: 10, display: "inline-block", transform: activitiesExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▶</span>
                         활동 이력 ({card.activities?.length || 0})
-                      </div>
-                      {card.activities?.length > 0 && (
+                      </button>
+                      {activitiesExpanded && card.activities?.length > 0 && (
                         <select
                           value={activityFilter}
                           onChange={(e) => setActivityFilter(e.target.value)}
@@ -9513,33 +9574,50 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         </select>
                       )}
                     </div>
-                    <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                    {activitiesExpanded && (
+                    <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
                       {(card.activities || [])
                         .filter((a) => activityFilter === "all" || a.action === activityFilter ||
                           (activityFilter === "confirmed" && (a.action === "confirmed" || a.action === "reopened")))
                         .map((a) => {
                           const authorProfile = a.actor ? profileByName.get(a.actor) : null;
                           const authorIcon = authorProfile?.icon || (a.actor ? "👤" : "⚙️");
+                          const actionLabel = ACTION_LABEL[a.action] || a.action;
                           return (
-                        <div key={a.id} style={{
-                          fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6,
-                          padding: "3px 0",
-                        }}>
-                          <span style={{ fontSize: 12, marginRight: 3 }}>{authorIcon}</span>
-                          <span style={{ color: "var(--text-lighter)", fontWeight: 600 }}>
-                            {a.actor || "시스템"}
-                          </span>
-                          {" · "}
-                          {a.action}
-                          {a.payload && typeof a.payload === "object" && (
-                            <span style={{ color: "var(--text-muted)" }}>
-                              {" "}({Object.entries(a.payload).slice(0, 2).map(([k, v]) => `${k}:${typeof v === "object" ? JSON.stringify(v).slice(0, 20) : String(v).slice(0, 20)}`).join(", ")})
-                            </span>
-                          )}
-                          <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
-                            {a.created_at?.slice(5, 16).replace("T", " ")}
-                          </span>
-                        </div>
+                            <div key={a.id} style={{
+                              display: "flex", alignItems: "flex-start", gap: 8,
+                              fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5,
+                              padding: "4px 8px", borderRadius: 8,
+                              background: "rgba(0,0,0,0.02)",
+                            }}>
+                              <span
+                                title={a.actor || "시스템"}
+                                style={{
+                                  fontSize: 16, flexShrink: 0, width: 22, height: 22,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  borderRadius: 11,
+                                  background: a.actor ? "rgba(7,110,232,0.08)" : "rgba(0,0,0,0.04)",
+                                  cursor: "help",
+                                }}
+                              >{authorIcon}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div>
+                                  <span style={{ color: "var(--text-lighter)", fontWeight: 600 }}>
+                                    {a.actor || "시스템"}
+                                  </span>
+                                  <span style={{ margin: "0 6px", color: "var(--text-muted)" }}>·</span>
+                                  <span style={{ color: "var(--text-main)", fontWeight: 600 }}>{actionLabel}</span>
+                                  {a.payload && typeof a.payload === "object" && (
+                                    <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+                                      {" "}({Object.entries(a.payload).slice(0, 2).map(([k, v]) => `${k}:${typeof v === "object" ? JSON.stringify(v).slice(0, 20) : String(v).slice(0, 20)}`).join(", ")})
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
+                                  {a.created_at?.slice(5, 16).replace("T", " ")}
+                                </div>
+                              </div>
+                            </div>
                           );
                         })}
                       {(!card.activities || card.activities.length === 0) && (
@@ -9548,7 +9626,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
