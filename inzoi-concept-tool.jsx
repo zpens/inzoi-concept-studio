@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.23";
+const APP_VERSION = "1.10.24";
 const CHANGELOG = [
+  {
+    version: "1.10.24",
+    date: "2026-04-24",
+    changes: [
+      "카드 상세 딥링크 — 각 카드에 고유 URL /p/<slug>/cards/<cardId> 부여",
+      "상세 모달 열 때 자동으로 pushState, 닫으면 /p/<slug> 로 복귀, 뒤로/앞으로 브라우저 버튼(popstate) 지원",
+      "최초 로드 시 URL 에 cardId 있으면 자동으로 해당 카드 상세 오픈 — 공유 링크 바로 접근 가능",
+      "상세 모달 제목 옆에 작은 🔗 링크 버튼 — 클릭 시 클립보드 복사, 1.5 초간 '복사됨' 표시 (clipboard API 차단 시 prompt fallback)",
+    ],
+  },
   {
     version: "1.10.23",
     date: "2026-04-24",
@@ -2520,6 +2530,24 @@ function getSlugFromUrl() {
   return m ? m[1] : null;
 }
 
+// URL 의 /cards/:id 부분에서 cardId 추출 (v1.10.24 — 딥링크 공유용).
+function getCardIdFromUrl() {
+  if (typeof location === "undefined") return null;
+  const m = location.pathname.match(/^\/p\/[A-Za-z0-9]+\/cards\/([^/?#]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+// 상세 모달에 매치되는 URL 로 replace/push. pushReplace=true 면 replaceState.
+function syncCardUrl(slug, cardId, pushReplace = false) {
+  if (typeof history === "undefined" || !slug) return;
+  const target = cardId ? `/p/${slug}/cards/${encodeURIComponent(cardId)}` : `/p/${slug}`;
+  if (location.pathname === target) return;
+  try {
+    if (pushReplace) history.replaceState({}, "", target);
+    else history.pushState({}, "", target);
+  } catch { /* 브라우저 히스토리 사용 불가 환경 무시 */ }
+}
+
 // 카드 모달용 헬퍼들.
 async function fetchCardDetail(slug, cardId) {
   const r = await fetch(`/api/projects/${slug}/cards/${cardId}`);
@@ -4848,6 +4876,41 @@ function SortSelect({ value, onChange }) {
   );
 }
 
+// 카드 공유 링크 복사 — 제목 옆 작은 🔗 아이콘, 클릭 시 현재 카드 URL 을 클립보드에 복사 (v1.10.24).
+function CardShareLink({ slug, cardId }) {
+  const [copied, setCopied] = React.useState(false);
+  if (!slug || !cardId) return null;
+  const copy = async () => {
+    const url = `${location.origin}/p/${slug}/cards/${encodeURIComponent(cardId)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 브라우저가 clipboard API 차단 시 prompt 로 fallback
+      window.prompt("이 링크를 복사하세요:", url);
+    }
+  };
+  return (
+    <button
+      onClick={copy}
+      title="이 카드 링크 복사"
+      style={{
+        padding: "2px 6px", borderRadius: 6,
+        background: copied ? "rgba(34,197,94,0.12)" : "transparent",
+        border: `1px solid ${copied ? "rgba(34,197,94,0.35)" : "var(--surface-border)"}`,
+        color: copied ? "#15803d" : "var(--text-muted)",
+        fontSize: 10, fontWeight: 700, cursor: "pointer",
+        display: "inline-flex", alignItems: "center", gap: 3, lineHeight: 1,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ fontSize: 11 }}>🔗</span>
+      {copied ? "복사됨" : "링크"}
+    </button>
+  );
+}
+
 function CardTitleEditor({ card, projectSlug, actor, disabled, onSaved }) {
   const [editing, setEditing] = React.useState(false);
   const [value, setValue] = React.useState(card.title || "");
@@ -6403,6 +6466,44 @@ export default function InZOIConceptTool() {
     for (const p of profiles) m.set(p.name, p);
     return m;
   }, [profiles]);
+
+  // 카드 상세 딥링크 — URL /p/<slug>/cards/<id> 로 상세 모달 공유 (v1.10.24).
+  // 1) 최초 로드 시 URL 에 cardId 있으면 자동 오픈
+  // 2) detailCard 열고 닫을 때 URL 동기화
+  // 3) 브라우저 뒤로/앞으로 (popstate) 지원
+  useEffect(() => {
+    if (!projectSlug) return;
+    const initialCardId = getCardIdFromUrl();
+    if (!initialCardId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await fetchCardDetail(projectSlug, initialCardId);
+        if (!cancelled && d) setDetailCard(d);
+      } catch { /* URL 의 카드가 없거나 오류 — 무시하고 프로젝트 페이지 유지 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [projectSlug]);
+
+  useEffect(() => {
+    if (!projectSlug) return;
+    syncCardUrl(projectSlug, detailCard?.id || null, false);
+  }, [detailCard?.id, projectSlug]);
+
+  useEffect(() => {
+    if (!projectSlug) return;
+    const onPop = async () => {
+      const cid = getCardIdFromUrl();
+      if (!cid) { setDetailCard(null); return; }
+      if (detailCard?.id === cid) return;
+      try {
+        const d = await fetchCardDetail(projectSlug, cid);
+        if (d) setDetailCard(d);
+      } catch {}
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [projectSlug, detailCard?.id]);
 
   // 업데이트 태그 일괄 이름 변경 — chip 의 ✏️ 에서 호출. 해당 태그가 붙은
   // 모든 카드에 PATCH 를 병렬로 날리고, 응답으로 로컬 cards/detailCard 도 동기화.
@@ -9525,6 +9626,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       }}
                     />
                     {confirmed && <span style={{ fontSize: 11, color: "#22c55e", whiteSpace: "nowrap" }}>🔒 잠김</span>}
+                    {/* 카드 딥링크 복사 (v1.10.24) — 제목 옆 아주 작게 */}
+                    <CardShareLink slug={projectSlug} cardId={card.id} />
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", paddingLeft: 8 }}>
                     {meta.label} · 수정 {card.updated_at?.slice(0, 16).replace("T", " ") || "-"}
