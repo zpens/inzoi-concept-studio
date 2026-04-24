@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.38";
+const APP_VERSION = "1.10.39";
 const CHANGELOG = [
+  {
+    version: "1.10.39",
+    date: "2026-04-24",
+    changes: [
+      "[HOTFIX] 카드 상세에서 '카탈로그 매칭 기준' 렌더 시 catalog_matches 없고 posmap_features 만 있는 새 카드가 crash 하던 문제 — cm.features → cm?.features 옵셔널 체이닝. '보안문' 같은 AI 자동분류 직후 아직 카탈로그 top-12 저장되지 않은 카드에서 detail modal blank 재현",
+    ],
+  },
   {
     version: "1.10.38",
     date: "2026-04-24",
@@ -3408,7 +3415,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                       {useMatches ? "🎯 유사 에셋 (posmap 매칭)" : "📦 기존 제작 에셋"}
                       <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> ({items.length}{useMatches ? "" : ` / ${spec.asset_count}`})</span>
                     </span>
-                    {useMatches && cm.features && (
+                    {useMatches && cm?.features && (
                       <span style={{ marginLeft: 8, fontSize: 10, color: "var(--text-muted)" }}>
                         기준:
                         {cm.features.keywords?.length > 0 && (
