@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.49";
+const APP_VERSION = "1.10.50";
 const CHANGELOG = [
+  {
+    version: "1.10.50",
+    date: "2026-04-25",
+    changes: [
+      "[버그 수정] 자동 분류 실행해도 카테고리·스타일이 이미 값이 있으면 덮어쓰지 않던 문제 — 버튼 클릭 = 재분석 의도로 해석해 category/style_preset/posmap_features/catalog_matches 는 항상 새 결과로 덮어씀. 크기 수동 입력과 기존 프롬프트는 존중",
+      "자동 분류 버튼 위치 이동 — 카테고리 필드 라벨 옆 → '📝 어셋 정보' 헤더 라인 우측으로. 카테고리 필드 라벨은 텍스트만 남김",
+      "자동 분류 기준은 card.data.ref_images[0] || card.thumbnail_url. 대표이미지 교체 후 다시 '🤖 자동 분류' 누르면 새 이미지 기준으로 분석·덮어쓰기",
+    ],
+  },
   {
     version: "1.10.49",
     date: "2026-04-25",
@@ -3211,8 +3220,9 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
   const [saving, setSaving] = React.useState(false);
   const [suggesting, setSuggesting] = React.useState(false);
 
-  // 🤖 자동 분류 (v1.10.42) — Gemini 로 카테고리 / 스타일 / 크기 / 프롬프트 한 번에
-  // 추출해서 **바로 저장** (제안 확인 단계 없음). 이미 채워진 필드는 덮어쓰지 않음.
+  // 🤖 자동 분류 (v1.10.50) — Gemini 로 카테고리 / 스타일 / 크기 / 프롬프트 한 번에
+  // 추출해서 **바로 저장**. 사용자가 명시적으로 버튼을 눌렀으므로 기존 값도 덮어씀
+  // (대표이미지 교체 후 재분석 시 새 결과가 즉시 반영되게). 프롬프트는 비어있을 때만 추가.
   const runCategorySuggest = async () => {
     if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
     const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
@@ -3230,17 +3240,16 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       if (!r && !p) { alert("자동 분류 실패 — 수동으로 선택해주세요"); return; }
 
       const patch = {};
-      // 카테고리: 이미 사용자가 선택한 게 있으면 덮어쓰지 않음.
-      if (r?.category_id && !category) {
+      // 카테고리 / 스타일은 버튼 클릭 = 재분석 의도 → 덮어씀 (v1.10.50).
+      if (r?.category_id) {
         patch.category = r.category_id;
         setCategory(r.category_id);
       }
-      // 스타일: 동일하게 기존 값 보존.
-      if (r?.style_id && !stylePreset) {
+      if (r?.style_id) {
         patch.style_preset = r.style_id;
         setStylePreset(r.style_id);
       }
-      // 크기: 수동 입력이면 덮어쓰지 않음.
+      // 크기는 수동 입력이면 존중 (정확한 값이라 AI 추정으로 덮어쓰지 않음).
       const existingSize = card.data?.size_info;
       const sizeManuallySet = existingSize?.source === "manual" && (existingSize.width_cm || existingSize.depth_cm || existingSize.height_cm);
       if (r?.size_info && !sizeManuallySet) {
@@ -3254,7 +3263,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
           updated_at: new Date().toISOString(),
         };
       }
-      // posmap features + 카탈로그 매칭.
+      // posmap features + 카탈로그 매칭 — 덮어씀.
       if (r?.posmap_features) {
         patch.posmap_features = r.posmap_features;
         if (Object.keys(POSMAP_SCORES).length > 0) {
@@ -3276,7 +3285,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
           }
         }
       }
-      // 프롬프트 초안: 비어있을 때만 추가.
+      // 프롬프트는 비어있을 때만 초안 추가 (사용자가 쓴 프롬프트는 존중).
       if (p && !existingPrompt) {
         patch.prompt = p;
       }
@@ -3284,7 +3293,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       if (Object.keys(patch).length > 0) {
         await save(patch);
       } else {
-        alert("이미 모든 항목이 채워져 있습니다.");
+        alert("이미지에서 분류 결과를 얻지 못했습니다.");
       }
     } catch (e) {
       alert("자동 분류 실패: " + e.message);
@@ -3357,39 +3366,38 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
           {saving ? "저장 중…" : "자동 저장"}
         </div>
+        {!disabled && (() => {
+          // 자동 분류 버튼을 어셋 정보 헤더로 이동 (v1.10.50).
+          const firstRef = Array.isArray(card.data?.ref_images) ? card.data.ref_images[0] : null;
+          const noImage = !firstRef && !card.thumbnail_url;
+          return (
+            <button
+              onClick={runCategorySuggest}
+              disabled={suggesting || noImage}
+              title={noImage
+                ? "대표 이미지 / 참조 이미지 필요"
+                : "대표 이미지 기준으로 카테고리·스타일·크기·프롬프트 자동 분류 (Gemini Vision). 기존 값은 덮어씀"}
+              style={{
+                marginLeft: "auto",
+                padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: suggesting ? "rgba(0,0,0,0.06)" : "rgba(7,110,232,0.08)",
+                border: "1px solid rgba(7,110,232,0.3)",
+                color: suggesting ? "var(--text-muted)" : "var(--primary)",
+                cursor: (suggesting || noImage) ? "not-allowed" : "pointer",
+              }}
+            >{suggesting ? "⏳ 분석 중…" : "🤖 자동 분류"}</button>
+          );
+        })()}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
-          <div style={{ ...fieldLabel, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span>카테고리</span>
-            {!disabled && (() => {
-              // 참조 이미지는 v1.10.9 에 PromptRefEditor 로 이동되어 local state 가 없음.
-              // card.data.ref_images / thumbnail_url 로 이미지 유무만 판단.
-              const firstRef = Array.isArray(card.data?.ref_images) ? card.data.ref_images[0] : null;
-              const noImage = !firstRef && !card.thumbnail_url;
-              return (
-                <button
-                  onClick={runCategorySuggest}
-                  disabled={suggesting || noImage}
-                  title="이미지를 분석해 카테고리 추천 (Gemini Vision)"
-                  style={{
-                    padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                    background: suggesting ? "rgba(0,0,0,0.06)" : "rgba(7,110,232,0.08)",
-                    border: "1px solid rgba(7,110,232,0.3)",
-                    color: suggesting ? "var(--text-muted)" : "var(--primary)",
-                    cursor: (suggesting || noImage) ? "not-allowed" : "pointer",
-                  }}
-                >{suggesting ? "⏳ 분석 중…" : "🤖 자동 분류"}</button>
-              );
-            })()}
-          </div>
+          <div style={fieldLabel}>카테고리</div>
           <CategoryPicker
             value={category}
             disabled={disabled}
             onChange={(v) => { setCategory(v); save({ category: v }); }}
           />
-          {/* 자동 분류 결과는 v1.10.42 부터 즉시 적용 — 제안/적용 패널 제거 */}
         </div>
         <div>
           <div style={fieldLabel}>스타일 프리셋</div>
