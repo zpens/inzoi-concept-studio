@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.34";
+const APP_VERSION = "1.10.35";
 const CHANGELOG = [
+  {
+    version: "1.10.35",
+    date: "2026-04-24",
+    changes: [
+      "한 번에 생성 개수 옵션 1 / 2 / 4 만 제공 (8 제거) — UI 선택지 + generateCardVariants 의 클라이언트 안전장치(Math.min) 도 4 로 통일",
+    ],
+  },
   {
     version: "1.10.34",
     date: "2026-04-24",
@@ -2745,7 +2752,7 @@ const STATUS_META = {
 // - card.data.ref_images 가 있으면 Gemini multimodal 로 함께 전송
 // - 결과를 card.data.designs 에 append, PATCH 로 저장
 async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress }) {
-  const seeds = Array.from({ length: Math.max(1, Math.min(8, count)) }, () => generateSeed());
+  const seeds = Array.from({ length: Math.max(1, Math.min(4, count)) }, () => generateSeed());
 
   // prompt enhance — 영문 일관성 우선, 카테고리 spec hints 는 제외 (사용자 요청 v1.7.9).
   const catInfo = card.data?.category
@@ -3632,7 +3639,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
         />
         {/* 개수 선택 + 생성 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          {[1, 2, 4, 8].map((n) => (
+          {[1, 2, 4].map((n) => (
             <button
               key={n}
               onClick={() => setCount(n)}
@@ -8482,7 +8489,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   </span>
                 </label>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {[1, 2, 4, 8].map((n) => (
+                  {[1, 2, 4].map((n) => (
                     <button
                       key={n}
                       onClick={() => setVariantCount(n)}
