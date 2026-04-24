@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.51";
+const APP_VERSION = "1.10.52";
 const CHANGELOG = [
+  {
+    version: "1.10.52",
+    date: "2026-04-25",
+    changes: [
+      "업데이트 태그 삭제 지원 — chip 바 ✏️ 인라인 편집에서 이름을 빈 값으로 저장하면 '태그 전역 삭제' 확인창 → 해당 태그 붙은 모든 카드를 미지정으로 일괄 변경. 별도 UI 버튼 없이 기존 편집 흐름 확장",
+      "renameUpdateTag 가 null 입력 시 selectedUpdates 에 새 값 추가 안하도록 수정 — 삭제 후 필터 정리",
+    ],
+  },
   {
     version: "1.10.51",
     date: "2026-04-25",
@@ -4867,7 +4875,16 @@ function UpdateChipItem({ chip, active, faded, onToggle, onRename }) {
   const commit = () => {
     const next = input.trim();
     setEditing(false);
-    if (!next || next === chip.label) { setInput(chip.label); return; }
+    // 빈 값으로 저장 = 태그 전역 삭제 (v1.10.52). 해당 태그 붙은 모든 카드를 미지정으로.
+    if (!next) {
+      if (!confirm(`'${chip.label}' 태그를 삭제합니다.\n이 태그가 붙은 카드 ${chip.count}개는 모두 '미지정' 이 됩니다. 계속할까요?`)) {
+        setInput(chip.label);
+        return;
+      }
+      onRename(chip.value, null);
+      return;
+    }
+    if (next === chip.label) { setInput(chip.label); return; }
     if (!confirm(`'${chip.label}' 태그가 붙은 카드 ${chip.count}개를 '${next}' 로 일괄 변경합니다. 계속할까요?`)) {
       setInput(chip.label);
       return;
@@ -7810,6 +7827,8 @@ export default function InZOIConceptTool() {
       setSelectedUpdates((prev) => {
         if (!prev.includes(oldVal)) return prev;
         const deduped = prev.filter((v) => v !== oldVal);
+        // newVal 이 null/빈값이면 삭제 — selectedUpdates 에 새 값을 추가하지 않음.
+        if (!newVal) return deduped;
         return deduped.includes(newVal) ? deduped : [...deduped, newVal];
       });
     } catch (e) {
