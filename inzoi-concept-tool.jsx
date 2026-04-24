@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.46";
+const APP_VERSION = "1.10.47";
 const CHANGELOG = [
+  {
+    version: "1.10.47",
+    date: "2026-04-25",
+    changes: [
+      "[버그 수정] 리스트 뷰 팝오버 피커가 아래 행 뒤에 가려지던 문제 — row 가 position: relative 라 자체 stacking context 에 갇혀 z-index: 50 팝오버가 다음 row 위로 못 올라감. editing 상태일 때 해당 row 전체 zIndex 를 100 으로 올려 다른 row 위로 뜨게 수정",
+    ],
+  },
   {
     version: "1.10.46",
     date: "2026-04-25",
@@ -5087,6 +5094,8 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         background: "var(--surface-color)",
         cursor: "pointer", transition: "all 0.15s",
         position: "relative",
+        // 팝오버 열릴 때 이 row 를 다른 row 보다 위로 올림 (v1.10.47).
+        zIndex: editing ? 100 : "auto",
       }}
     >
       <div style={{
