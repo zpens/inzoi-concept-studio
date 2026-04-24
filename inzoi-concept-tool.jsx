@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.43";
+const APP_VERSION = "1.10.44";
 const CHANGELOG = [
+  {
+    version: "1.10.44",
+    date: "2026-04-25",
+    changes: [
+      "리스트 뷰 인라인 편집 — 우선순위 / 업데이트 태그 셀 클릭 시 해당 셀 아래 팝업 열려 바로 수정 가능. 저장은 즉시 PATCH, 외부 클릭/Esc 로 닫힘",
+      "리스트 뷰에 [진행] 컬럼 추가 (상태 ↔ 생성일 사이) — 🎨 시안 / 🗳️ 투표 및 선정 / 📑 시트 / ✅ 완료 중 선택해서 바로 상태 변경. 완료 선택 시 confirmed_at 자동 세팅, 되돌릴 땐 해제",
+      "LIST_GRID 10→11 컬럼 (110px 진행 컬럼 신규)",
+      "컬럼 헤더에 '진행' 라벨 추가",
+      "card._statusKey 힌트를 부모에서 주입해 computeStage(drafting 내부에서 시안/투표 designs.length 기준 구분) 동작",
+    ],
+  },
   {
     version: "1.10.43",
     date: "2026-04-24",
@@ -4803,17 +4814,94 @@ function ViewModeToggle({ value, onChange }) {
   );
 }
 
-// 리스트 뷰 한 줄 — 썸네일 + 제목 + 카테고리/스타일 + 탭별 메타 + 날짜.
-// 리스트 뷰 공통 grid 템플릿 — CardListRow 와 CardListHeader 가 같은 비율 공유.
-const LIST_GRID = "90px 1fr 70px 90px 150px 80px 130px 95px 100px 32px";
+// 리스트 뷰 공통 grid 템플릿 — 11컬럼 (v1.10.44: 진행 컬럼 추가).
+// 썸네일 / 제목 / 우선순위 / 업데이트 / 카테고리 / 스타일 / 크기 / 상태 / 진행 / 날짜 / 작성자
+const LIST_GRID = "90px 1fr 70px 90px 150px 80px 130px 95px 110px 100px 32px";
 
-function CardListRow({ card, tabId, onClick, profileByName }) {
+// 진행 단계 옵션 (v1.10.44) — 리스트 뷰 인라인 편집용. 시안/투표는 같은 drafting 상태.
+const STAGE_OPTIONS = [
+  { key: "drafting", label: "🎨 시안",        statusKey: "drafting" },
+  { key: "voting",   label: "🗳️ 투표 및 선정", statusKey: "drafting" },
+  { key: "sheet",    label: "📑 시트",         statusKey: "sheet" },
+  { key: "done",     label: "✅ 완료",         statusKey: "done" },
+];
+function computeStage(card) {
+  const confirmedAt = card.confirmed_at;
+  if (confirmedAt) return "done";
+  // list_id 로 status_key 추정 불가능 → 여기선 card.list_id 대신 _statusKey 힌트 사용 (부모가 주입).
+  const sk = card._statusKey;
+  if (sk === "done") return "done";
+  if (sk === "sheet") return "sheet";
+  if (sk === "wishlist") return "wishlist";
+  // drafting 안에서 시안/투표 구분 — designs 유무로.
+  const designs = Array.isArray(card.data?.designs) ? card.data.designs : [];
+  return designs.length > 0 ? "voting" : "drafting";
+}
+
+function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, lists, availableUpdates, onSaved }) {
   const data = card.data || {};
   const designs = Array.isArray(data.designs) ? data.designs : [];
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
   const selected = selectedIdx != null ? designs[selectedIdx] : null;
   const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
   const styleInfo = data.style_preset ? STYLE_PRESETS.find((s) => s.id === data.style_preset) : null;
+
+  // 인라인 편집 상태: "priority" | "update" | "stage" | null
+  const [editing, setEditing] = React.useState(null);
+  const [updateDraft, setUpdateDraft] = React.useState("");
+
+  React.useEffect(() => {
+    if (!editing) return;
+    const onDoc = (e) => {
+      if (!e.target.closest?.("[data-inline-edit]")) setEditing(null);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [editing]);
+
+  // 저장 헬퍼 — data 병합 PATCH.
+  const saveData = async (fields) => {
+    if (!projectSlug) return;
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: { ...(card.data || {}), ...fields }, actor }),
+      });
+      await onSaved?.();
+      setEditing(null);
+    } catch (e) { alert("저장 실패: " + e.message); }
+  };
+
+  // 상태(status_key) 변경 헬퍼 — 완료 이동 시 confirmed_at 설정, 되돌릴 땐 해제.
+  const saveStatus = async (statusKey) => {
+    if (!projectSlug) return;
+    try {
+      const body = { status_key: statusKey, actor };
+      if (statusKey === "done" && !card.confirmed_at) {
+        body.confirmed_at = new Date().toISOString();
+        body.confirmed_by = actor || null;
+      } else if (statusKey !== "done" && card.confirmed_at) {
+        body.confirmed_at = null;
+        body.confirmed_by = null;
+        body.force = true;
+      }
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await onSaved?.();
+      setEditing(null);
+    } catch (e) { alert("상태 변경 실패: " + e.message); }
+  };
+
+  const openCell = (e, which) => {
+    e.stopPropagation();
+    if (which === "update") setUpdateDraft(data.target_update || "");
+    setEditing(editing === which ? null : which);
+  };
+  const stopClick = (e) => e.stopPropagation();
 
   // 썸네일 우선순위:
   // 1) 시안 이미지가 단 한 개뿐이면 무조건 대표 (v1.10.0 — 하나일 땐 선택 여지 없음).
@@ -4884,7 +4972,13 @@ function CardListRow({ card, tabId, onClick, profileByName }) {
           </div>
         )}
       </div>
-      <div style={{ fontSize: 11 }}>
+      {/* 우선순위 — 클릭해서 인라인 변경 (v1.10.44) */}
+      <div
+        data-inline-edit
+        onClick={(e) => openCell(e, "priority")}
+        style={{ fontSize: 11, position: "relative", cursor: "pointer" }}
+        title="클릭해서 우선순위 변경"
+      >
         {(() => {
           const p = getCardPriority(card);
           const s = priorityBadgeStyle(p);
@@ -4896,8 +4990,45 @@ function CardListRow({ card, tabId, onClick, profileByName }) {
             }}>{p}</span>
           );
         })()}
+        {editing === "priority" && (
+          <div
+            data-inline-edit
+            onClick={stopClick}
+            style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30,
+              padding: 6, borderRadius: 8,
+              background: "#fff", border: "1px solid var(--surface-border)",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
+              display: "flex", gap: 4, flexWrap: "wrap",
+            }}
+          >
+            {PRIORITY_OPTIONS.map((p) => {
+              const active = getCardPriority(card) === p;
+              const s = priorityBadgeStyle(p);
+              return (
+                <button
+                  key={p}
+                  onClick={() => saveData({ priority: p })}
+                  style={{
+                    padding: "4px 10px", borderRadius: 8,
+                    background: active ? s.fg : s.bg,
+                    color: active ? "#fff" : s.fg,
+                    border: `1px solid ${active ? s.fg : s.border}`,
+                    fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  }}
+                >{p}</button>
+              );
+            })}
+          </div>
+        )}
       </div>
-      <div style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      {/* 업데이트 — 클릭해서 인라인 텍스트 편집 */}
+      <div
+        data-inline-edit
+        onClick={(e) => openCell(e, "update")}
+        style={{ fontSize: 11, position: "relative", overflow: "visible", whiteSpace: "nowrap", cursor: "pointer" }}
+        title="클릭해서 업데이트 태그 변경"
+      >
         {(() => {
           const tu = data.target_update?.trim?.() || "";
           if (!tu) return <span style={{ color: "var(--text-muted)" }}>미지정</span>;
@@ -4905,9 +5036,63 @@ function CardListRow({ card, tabId, onClick, profileByName }) {
             <span style={{
               padding: "2px 8px", borderRadius: 10,
               background: "rgba(180,83,9,0.1)", color: "#b45309", fontWeight: 600,
+              overflow: "hidden", textOverflow: "ellipsis", display: "inline-block", maxWidth: 80,
             }}>🗓️ {tu}</span>
           );
         })()}
+        {editing === "update" && (
+          <div
+            data-inline-edit
+            onClick={stopClick}
+            style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30,
+              padding: 8, borderRadius: 8, width: 210,
+              background: "#fff", border: "1px solid var(--surface-border)",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
+            }}
+          >
+            <input
+              autoFocus
+              type="text"
+              value={updateDraft}
+              onChange={(e) => setUpdateDraft(e.target.value)}
+              list={`inzoi-update-options-list-${card.id}`}
+              placeholder="예: 2026-Q2, 교도소"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); saveData({ target_update: updateDraft.trim() || null }); }
+                else if (e.key === "Escape") { setEditing(null); }
+              }}
+              style={{
+                width: "100%", padding: "6px 8px", borderRadius: 6,
+                border: "1px solid var(--surface-border)", outline: "none",
+                fontSize: 12, boxSizing: "border-box", marginBottom: 6,
+              }}
+            />
+            {availableUpdates && availableUpdates.length > 0 && (
+              <datalist id={`inzoi-update-options-list-${card.id}`}>
+                {availableUpdates.map((u) => <option key={u} value={u} />)}
+              </datalist>
+            )}
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                onClick={() => saveData({ target_update: updateDraft.trim() || null })}
+                style={{
+                  flex: 1, padding: "5px 0", borderRadius: 6, border: "none",
+                  background: "var(--primary)", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                }}
+              >저장</button>
+              <button
+                onClick={() => saveData({ target_update: null })}
+                title="미지정으로"
+                style={{
+                  padding: "5px 8px", borderRadius: 6,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                }}
+              >지움</button>
+            </div>
+          </div>
+        )}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {catInfo ? `${catInfo.label} · ${catInfo.room}` : "—"}
@@ -4938,6 +5123,57 @@ function CardListRow({ card, tabId, onClick, profileByName }) {
         )}
         {tabId === "create" && (designs.length > 0 ? `시안 ${designs.length}` : "—")}
         {tabId === "wishlist" && "—"}
+      </div>
+      {/* 진행 단계 — 클릭해서 인라인 변경 (v1.10.44) */}
+      <div
+        data-inline-edit
+        onClick={(e) => openCell(e, "stage")}
+        style={{ fontSize: 11, position: "relative", cursor: "pointer" }}
+        title="클릭해서 진행 단계 변경"
+      >
+        {(() => {
+          const stage = computeStage(card);
+          const opt = STAGE_OPTIONS.find((o) => o.key === stage) || { label: "⭐ 아이디어" };
+          return (
+            <span style={{
+              padding: "2px 8px", borderRadius: 10,
+              background: "rgba(124,58,237,0.08)", color: "#7c3aed",
+              fontWeight: 700,
+              border: "1px solid rgba(124,58,237,0.25)",
+              display: "inline-block", whiteSpace: "nowrap",
+            }}>{opt.label}</span>
+          );
+        })()}
+        {editing === "stage" && (
+          <div
+            data-inline-edit
+            onClick={stopClick}
+            style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30,
+              padding: 6, borderRadius: 8, width: 150,
+              background: "#fff", border: "1px solid var(--surface-border)",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
+              display: "flex", flexDirection: "column", gap: 3,
+            }}
+          >
+            {STAGE_OPTIONS.map((opt) => {
+              const active = computeStage(card) === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => saveStatus(opt.statusKey)}
+                  style={{
+                    padding: "6px 10px", borderRadius: 6, textAlign: "left",
+                    background: active ? "rgba(124,58,237,0.1)" : "transparent",
+                    border: "none",
+                    color: active ? "#7c3aed" : "var(--text-main)",
+                    fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer",
+                  }}
+                >{opt.label}</button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
         {date ? date.slice(0, 10) : "-"}
@@ -5020,6 +5256,7 @@ function CardListHeader({ tabId, sortBy, onSortChange }) {
       <SortCell label="스타일"          ascKey="style_asc"    descKey="style_desc" />
       <SortCell label="크기 (W×D×H)"    ascKey="size_asc"     descKey="size_desc" />
       <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
+      <div style={cellBase}>진행</div>
       <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
       <div style={{ ...cellBase, textAlign: "center" }} title="작성자">👤</div>
     </div>
@@ -8268,21 +8505,36 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               viewMode === "list" ? (
                 <div style={{ marginBottom: 40 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
-                      <CardListRow
-                        key={`card-${c.id}`}
-                        card={c}
-                        tabId={activeTab}
-                        profileByName={profileByName}
-                        onClick={async () => {
-                          if (!projectSlug) return;
-                          try {
-                            const detail = await fetchCardDetail(projectSlug, c.id);
-                            if (detail) setDetailCard(detail);
-                          } catch (e) { console.warn("카드 열기 실패", e); }
-                        }}
-                      />
-                    ))}
+                    {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => {
+                      const list = lists.find((l) => l.id === c.list_id);
+                      const enriched = { ...c, _statusKey: list?.status_key };
+                      return (
+                        <CardListRow
+                          key={`card-${c.id}`}
+                          card={enriched}
+                          tabId={activeTab}
+                          profileByName={profileByName}
+                          projectSlug={projectSlug}
+                          actor={actorName}
+                          lists={lists}
+                          availableUpdates={availableUpdates}
+                          onSaved={async () => {
+                            const d = await fetchCardDetail(projectSlug, c.id);
+                            if (d) {
+                              setCards((prev) => prev.map((x) => x.id === d.id ? d : x));
+                              setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
+                            }
+                          }}
+                          onClick={async () => {
+                            if (!projectSlug) return;
+                            try {
+                              const detail = await fetchCardDetail(projectSlug, c.id);
+                              if (detail) setDetailCard(detail);
+                            } catch (e) { console.warn("카드 열기 실패", e); }
+                          }}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -9677,12 +9929,25 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       ).map((item) => {
                         const card = cards.find((c) => c.id === item._cardId);
                         if (!card) return null;
+                        const list = lists.find((l) => l.id === card.list_id);
+                        const enriched = { ...card, _statusKey: list?.status_key };
                         return (
                           <CardListRow
                             key={item._cardId}
-                            card={card}
+                            card={enriched}
                             tabId="completed"
                             profileByName={profileByName}
+                            projectSlug={projectSlug}
+                            actor={actorName}
+                            lists={lists}
+                            availableUpdates={availableUpdates}
+                            onSaved={async () => {
+                              const d = await fetchCardDetail(projectSlug, card.id);
+                              if (d) {
+                                setCards((prev) => prev.map((x) => x.id === d.id ? d : x));
+                                setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
+                              }
+                            }}
                             onClick={async () => {
                               if (!projectSlug) return;
                               try {
@@ -9808,12 +10073,25 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           ).map((item) => {
                             const card = cards.find((c) => c.id === item._cardId);
                             if (!card) return null;
+                            const list = lists.find((l) => l.id === card.list_id);
+                            const enriched = { ...card, _statusKey: list?.status_key };
                             return (
                               <CardListRow
                                 key={item._cardId}
-                                card={card}
+                                card={enriched}
                                 tabId="wishlist"
                                 profileByName={profileByName}
+                                projectSlug={projectSlug}
+                                actor={actorName}
+                                lists={lists}
+                                availableUpdates={availableUpdates}
+                                onSaved={async () => {
+                                  const d = await fetchCardDetail(projectSlug, card.id);
+                                  if (d) {
+                                    setCards((prev) => prev.map((x) => x.id === d.id ? d : x));
+                                    setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
+                                  }
+                                }}
                                 onClick={async () => {
                                   if (!projectSlug) return;
                                   try {
