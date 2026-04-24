@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.39";
+const APP_VERSION = "1.10.40";
 const CHANGELOG = [
+  {
+    version: "1.10.40",
+    date: "2026-04-24",
+    changes: [
+      "🤖 위시 → 시안 자동 준비 (단독 재투입) — 위시 카드 상세에 'AI 자동 준비 + 이동' 버튼. Gemini 로 카테고리/스타일/크기 자동 분류 + 이미지 기반 프롬프트 초안 2~4문장 생성 → 서버 저장 → 드래프트 상태로 자동 이동",
+      "generatePromptFromImage 함수 신규 — 이미지 + 제목으로 한글 프롬프트 초안 생성 (Gemini 2.5 Flash Vision)",
+      "참조 이미지 없으면 Gemini 호출 스킵하고 제목만으로 드래프트 이동 가능",
+    ],
+  },
   {
     version: "1.10.39",
     date: "2026-04-24",
@@ -2199,6 +2208,43 @@ const POSMAP_SHAPES = ["곡선", "사각", "원형", "유기적", "직선"];
 const POSMAP_COLORS = ["갈색", "검정", "금색", "노랑", "베이지", "보라", "분홍", "빨강", "은색", "주황", "초록", "파랑", "회색", "흰색"];
 const POSMAP_MATERIALS = ["가죽", "금속", "대리석", "라탄", "목재", "석재", "세라믹", "유리", "콘크리트", "패브릭", "플라스틱"];
 
+// 이미지 + 제목 으로 3D 에셋 생성용 한글 프롬프트 초안 작성 (v1.10.40).
+// 위시 → 시안 자동 준비에 사용. classifyCategoryWithGemini 와 동일 모델(2.5-flash).
+async function generatePromptFromImage(apiKey, imageUrl, titleHint) {
+  const part = await fetchImagePart(imageUrl);
+  if (!part) throw new Error("이미지 로드 실패");
+  const titleLine = titleHint ? `카드 제목: "${titleHint}"\n` : "";
+  const prompt = `${titleLine}이 이미지는 inZOI 게임 가구/인테리어 에셋 컨셉 생성용 참고 이미지입니다.
+이미지를 보고 3D 에셋 생성 프롬프트 초안을 한글로 2~4문장 작성하세요.
+포함할 정보: 재질(예: 월넛, 파우더코팅 스틸, 가죽), 색상, 표면 마감, 형태·실루엣, 추정 크기(cm 단위, 가능할 때), 특징적 디테일.
+설명 문구 없이 바로 에셋 자체의 묘사로 시작. 마크다운 없이 자연스러운 문장.
+반드시 JSON 만 응답:
+{ "prompt": "..." }`;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: part.mime, data: part.base64 } },
+            { text: prompt },
+          ],
+        }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+      }),
+    }
+  );
+  if (!response.ok) throw new Error(`Gemini ${response.status}`);
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed.prompt === "string" ? parsed.prompt.trim() : null;
+  } catch { return null; }
+}
+
 async function classifyCategoryWithGemini(apiKey, imageUrl) {
   const part = await fetchImagePart(imageUrl);
   if (!part) throw new Error("이미지 로드 실패");
@@ -3638,7 +3684,14 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
 
   if (statusKey === "wishlist") {
-    return <WishlistToDraftingAction card={card} onMoveTo={onMoveTo} />;
+    return <WishlistToDraftingAction
+      card={card}
+      onMoveTo={onMoveTo}
+      projectSlug={projectSlug}
+      actor={actor}
+      geminiApiKey={geminiApiKey}
+      onRefresh={onRefresh}
+    />;
   }
 
   if (statusKey === "drafting") {
@@ -4049,42 +4102,115 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
 // 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 에서 이미 편집됨.
 // 여기서는 필수 필드(카테고리, 프롬프트) 검증 후 바로 상태 이동.
-function WishlistToDraftingAction({ card, onMoveTo }) {
+function WishlistToDraftingAction({ card, onMoveTo, projectSlug, actor, geminiApiKey, onRefresh }) {
   const hasCategory = !!(card.data?.category);
   const hasPrompt = !!(card.data?.prompt || card.description);
   const ready = hasCategory && hasPrompt;
+  const firstRef = Array.isArray(card.data?.ref_images) ? card.data.ref_images[0] : null;
+  const anyImage = firstRef || card.thumbnail_url;
+  const [busy, setBusy] = React.useState(false);
+  const [busyStep, setBusyStep] = React.useState("");
+
   const sectionStyle = {
     marginBottom: 20, padding: 14, borderRadius: 12,
     background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
     border: "1px solid rgba(7,110,232,0.18)",
   };
+
+  // 🤖 자동 준비 (v1.10.40) — 이미지 + 제목 으로 카테고리/스타일/크기/프롬프트 자동 채우고 드래프트 이동.
+  const autoPrepare = async () => {
+    if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
+    if (!anyImage && !card.title) { alert("참조 이미지나 카드 제목이 있어야 자동 준비할 수 있습니다."); return; }
+    if (!projectSlug) return;
+    setBusy(true);
+    try {
+      const patch = { ...(card.data || {}) };
+      if (!hasCategory && anyImage) {
+        setBusyStep("카테고리 분류 중…");
+        try {
+          const r = await classifyCategoryWithGemini(geminiApiKey, anyImage);
+          if (r?.category_id) patch.category = r.category_id;
+          if (r?.style_id && !patch.style_preset) patch.style_preset = r.style_id;
+          if (r?.size_info && !patch.size_info) {
+            patch.size_info = { ...r.size_info, source: "ai", updated_at: new Date().toISOString() };
+          }
+          if (r?.posmap_features) patch.posmap_features = r.posmap_features;
+        } catch (e) { console.warn("자동 분류 실패:", e); }
+      }
+      if (!hasPrompt && anyImage) {
+        setBusyStep("프롬프트 초안 작성 중…");
+        try {
+          const draft = await generatePromptFromImage(geminiApiKey, anyImage, card.title);
+          if (draft) patch.prompt = draft;
+        } catch (e) { console.warn("프롬프트 자동 생성 실패:", e); }
+      }
+      setBusyStep("저장 중…");
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: patch, actor }),
+      });
+      await onRefresh?.();
+      const nowReady = !!patch.category && !!(patch.prompt || card.description);
+      if (nowReady) {
+        setBusyStep("시안 단계로 이동…");
+        await onMoveTo("drafting");
+      } else {
+        alert("자동 준비 일부 실패 — 남은 항목을 수동으로 채워주세요.");
+      }
+    } catch (e) {
+      alert("자동 준비 실패: " + e.message);
+    } finally {
+      setBusy(false);
+      setBusyStep("");
+    }
+  };
+
   return (
     <div style={sectionStyle}>
       <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
         아이디어 → 시안 생성
       </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
-        위 어셋 정보를 채운 뒤 시안 생성 단계로 넘기세요.
+        {ready
+          ? "준비 완료. 바로 시안 생성 단계로 넘어갈 수 있습니다."
+          : "🤖 자동 준비로 카테고리/스타일/크기/프롬프트를 한 번에 채우거나, 좌측 어셋 정보에서 수동 입력 후 이동하세요."}
         {!ready && (
           <div style={{ marginTop: 6, color: "#d97706", fontWeight: 600 }}>
             ⚠ {!hasCategory && "카테고리"}{!hasCategory && !hasPrompt && " · "}{!hasPrompt && "프롬프트"} 필요
           </div>
         )}
       </div>
-      <button
-        onClick={async () => {
-          if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
-          await onMoveTo("drafting");
-        }}
-        className={ready ? "btn-primary" : ""}
-        disabled={!ready}
-        style={{
-          padding: "10px 18px", borderRadius: 10, border: "none",
-          background: ready ? undefined : "rgba(0,0,0,0.08)",
-          color: ready ? "#fff" : "var(--text-muted)",
-          fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
-        }}
-      >✨ 시안 생성 단계로 이동</button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {!ready && (
+          <button
+            onClick={autoPrepare}
+            disabled={busy || (!anyImage && !card.title)}
+            title={!anyImage ? "참조 이미지가 있으면 더 정확합니다" : "자동 분류 + 프롬프트 초안 + 드래프트 이동"}
+            style={{
+              padding: "10px 16px", borderRadius: 10, border: "none",
+              background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, #7c3aed, #ec4899)",
+              color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: busy ? "wait" : "pointer",
+              opacity: (!anyImage && !card.title) ? 0.5 : 1,
+            }}
+          >{busy ? `⏳ ${busyStep || "준비 중…"}` : "🤖 AI 자동 준비 + 이동"}</button>
+        )}
+        <button
+          onClick={async () => {
+            if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
+            await onMoveTo("drafting");
+          }}
+          className={ready ? "btn-primary" : ""}
+          disabled={!ready || busy}
+          style={{
+            padding: "10px 18px", borderRadius: 10, border: "none",
+            background: ready ? undefined : "rgba(0,0,0,0.08)",
+            color: ready ? "#fff" : "var(--text-muted)",
+            fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
+          }}
+        >✨ {ready ? "시안 생성 단계로 이동" : "수동 이동 (필요 항목 채운 후)"}</button>
+      </div>
     </div>
   );
 }
