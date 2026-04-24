@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.48";
+const APP_VERSION = "1.10.49";
 const CHANGELOG = [
+  {
+    version: "1.10.49",
+    date: "2026-04-25",
+    changes: [
+      "리스트 뷰 업데이트 태그 팝오버 간소화 — 우선순위처럼 기존 태그 목록 중 선택만. 새 태그 입력 / 저장 버튼 제거. 등록된 태그 없으면 상세 모달 안내 표시",
+      "리스트 뷰 제목 클릭 동작 변경 — ✏️ hover 버튼 제거하고 제목 텍스트 자체 클릭으로 바로 인라인 input 전환. 썸네일 / 설명 / 다른 셀 클릭은 기존대로 상세 모달 오픈",
+      "제목 hover 시 연한 배경 + cursor: text 로 편집 가능 표시",
+    ],
+  },
   {
     version: "1.10.48",
     date: "2026-04-25",
@@ -4994,7 +5003,6 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
 
   // 인라인 편집 상태: "title" | "priority" | "update" | "stage" | null
   const [editing, setEditing] = React.useState(null);
-  const [updateDraft, setUpdateDraft] = React.useState("");
   const [titleDraft, setTitleDraft] = React.useState("");
   const rowRef = React.useRef(null);
 
@@ -5062,7 +5070,6 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
 
   const openCell = (e, which) => {
     e.stopPropagation();
-    if (which === "update") setUpdateDraft(data.target_update || "");
     if (which === "title") setTitleDraft(card.title || "");
     setEditing(editing === which ? null : which);
   };
@@ -5125,8 +5132,8 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
           <span style={{ fontSize: Math.round(36 * scale), opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
       </div>
-      {/* 제목 — 인라인 편집 (v1.10.45). ✏️ 버튼으로 편집 진입, title 본체 클릭은 기존처럼 상세 모달. */}
-      <div style={{ minWidth: 0, position: "relative" }} className="ci-title-wrap">
+      {/* 제목 — 제목 텍스트 직접 클릭 시 인라인 편집 (v1.10.49). 설명/썸네일 등 다른 영역 클릭은 기존대로 상세 모달 오픈. */}
+      <div style={{ minWidth: 0, position: "relative" }}>
         {editing === "title" ? (
           <input
             autoFocus
@@ -5152,11 +5159,18 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
           />
         ) : (
           <>
-            <div style={{
-              fontSize: 15, fontWeight: 700, color: "var(--text-main)",
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-              paddingRight: 24,
-            }}>
+            <div
+              onClick={(e) => openCell(e, "title")}
+              title="클릭해서 제목 수정"
+              style={{
+                fontSize: 15, fontWeight: 700, color: "var(--text-main)",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                cursor: "text", display: "inline-block", maxWidth: "100%",
+                padding: "2px 4px", marginLeft: -4, borderRadius: 4,
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
               {card.title || "(제목 없음)"}
             </div>
             {card.description && (
@@ -5167,19 +5181,6 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
                 {card.description}
               </div>
             )}
-            <button
-              onClick={(e) => openCell(e, "title")}
-              title="제목 수정"
-              className="ci-title-edit-btn"
-              style={{
-                position: "absolute", top: 0, right: 0,
-                width: 20, height: 20, borderRadius: 10,
-                background: "rgba(0,0,0,0.06)", border: "none",
-                color: "var(--text-muted)", fontSize: 10, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                opacity: 0, transition: "opacity 0.15s",
-              }}
-            >✏️</button>
           </>
         )}
       </div>
@@ -5255,14 +5256,14 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
             onClick={stopClick}
             style={{
               position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
-              padding: 8, borderRadius: 10, width: 240, maxHeight: 320, overflowY: "auto",
+              padding: 6, borderRadius: 10, width: 220, maxHeight: 300, overflowY: "auto",
               background: "#fff", border: "1px solid var(--surface-border)",
               boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
+              display: "flex", flexDirection: "column", gap: 3,
             }}
           >
-            {/* 기존 태그 리스트 — 클릭 즉시 적용 */}
             {availableUpdates && availableUpdates.length > 0 ? (
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+              <>
                 {availableUpdates.map((u) => {
                   const active = (data.target_update || "") === u;
                   return (
@@ -5270,61 +5271,32 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
                       key={u}
                       onClick={() => saveData({ target_update: u })}
                       style={{
-                        padding: "4px 10px", borderRadius: 12,
-                        background: active ? "#b45309" : "rgba(180,83,9,0.1)",
-                        color: active ? "#fff" : "#b45309",
-                        border: `1px solid ${active ? "#b45309" : "rgba(180,83,9,0.3)"}`,
-                        fontSize: 11, fontWeight: 600, cursor: "pointer",
+                        padding: "6px 10px", borderRadius: 6, textAlign: "left",
+                        background: active ? "rgba(180,83,9,0.12)" : "transparent",
+                        border: "none",
+                        color: active ? "#b45309" : "var(--text-main)",
+                        fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer",
                       }}
-                    >🗓️ {u}</button>
+                    >🗓️ {u}{active && " ✓"}</button>
                   );
                 })}
-              </div>
+                <div style={{ height: 1, background: "var(--surface-border)", margin: "3px 2px" }} />
+              </>
             ) : (
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-                기존 태그 없음 — 아래에 새로 입력하세요.
+              <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "6px 10px" }}>
+                등록된 태그가 없습니다.<br />상세 모달에서 새 태그를 먼저 추가하세요.
               </div>
             )}
-            {/* 새 태그 입력 */}
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4 }}>새 태그 / 직접 입력</div>
-            <input
-              autoFocus
-              type="text"
-              value={updateDraft}
-              onChange={(e) => setUpdateDraft(e.target.value)}
-              placeholder="예: 2026-Q2"
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === "Enter") { e.preventDefault(); saveData({ target_update: updateDraft.trim() || null }); }
-                else if (e.key === "Escape") { setEditing(null); }
-              }}
+            <button
+              onClick={() => saveData({ target_update: null })}
               style={{
-                width: "100%", padding: "5px 8px", borderRadius: 6,
-                border: "1px solid var(--surface-border)", outline: "none",
-                fontSize: 12, boxSizing: "border-box", marginBottom: 6,
+                padding: "6px 10px", borderRadius: 6, textAlign: "left",
+                background: !(data.target_update || "") ? "rgba(0,0,0,0.04)" : "transparent",
+                border: "none",
+                color: "var(--text-muted)",
+                fontSize: 12, fontWeight: !(data.target_update || "") ? 700 : 500, cursor: "pointer",
               }}
-            />
-            <div style={{ display: "flex", gap: 4 }}>
-              <button
-                onClick={() => saveData({ target_update: updateDraft.trim() || null })}
-                disabled={!updateDraft.trim()}
-                style={{
-                  flex: 1, padding: "5px 0", borderRadius: 6, border: "none",
-                  background: updateDraft.trim() ? "var(--primary)" : "rgba(0,0,0,0.08)",
-                  color: updateDraft.trim() ? "#fff" : "var(--text-muted)",
-                  fontSize: 11, fontWeight: 700, cursor: updateDraft.trim() ? "pointer" : "not-allowed",
-                }}
-              >저장</button>
-              <button
-                onClick={() => saveData({ target_update: null })}
-                title="미지정으로"
-                style={{
-                  padding: "5px 8px", borderRadius: 6,
-                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
-                }}
-              >미지정</button>
-            </div>
+            >미지정{!(data.target_update || "") && " ✓"}</button>
           </div>
         )}
       </div>
