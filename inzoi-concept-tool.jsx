@@ -1,20 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.37";
+const APP_VERSION = "1.10.36";
 const CHANGELOG = [
-  {
-    version: "1.10.37",
-    date: "2026-04-24",
-    changes: [
-      "⌨️ 단축키 치트시트 — ? 키로 전체 단축키 오버레이 열기/닫기 (Esc 도 닫힘). 전역 / 상세 모달 / 갤러리 / 인라인 편집 / Lightbox 그룹별 정리",
-      "🤖 위시 → 시안 단계 전환 자동화 — WishlistToDraftingAction 에 'AI 자동 준비 + 이동' 버튼. Gemini 로 카테고리/스타일/크기 분류 + 이미지 기반 프롬프트 초안 생성 → 서버 저장 → 드래프트 상태로 자동 이동",
-      "generatePromptFromImage 함수 신규 — Gemini 2.5 Flash Vision 으로 재질 / 색상 / 형태 / 추정 크기 포함 한글 프롬프트 2~4문장 생성",
-      "👍 시안 투표 기능 — 각 시안 타일 좌하단에 👍 버튼 + 카운트. 프로필 기반 (card.data.votes = { [designIdx]: { [profileName]: true } }), 토글 방식, 본인 투표는 primary 색, 1등은 🏆 + 초록 테두리",
-      "'🏆 투표 1등 선정 (N표)' 버튼 — 헤더에 나타나 클릭 시 selected_design + 썸네일 자동 갱신",
-      "hover 시 투표자 이름 tooltip (voters.join(', '))",
-    ],
-  },
   {
     version: "1.10.36",
     date: "2026-04-24",
@@ -2196,44 +2184,6 @@ const POSMAP_SHAPES = ["곡선", "사각", "원형", "유기적", "직선"];
 const POSMAP_COLORS = ["갈색", "검정", "금색", "노랑", "베이지", "보라", "분홍", "빨강", "은색", "주황", "초록", "파랑", "회색", "흰색"];
 const POSMAP_MATERIALS = ["가죽", "금속", "대리석", "라탄", "목재", "석재", "세라믹", "유리", "콘크리트", "패브릭", "플라스틱"];
 
-// 이미지 + 제목 으로 자산 생성용 한글 프롬프트 초안 작성 (v1.10.37).
-// classifyCategoryWithGemini 와 동일한 Gemini 2.5 Flash Vision 호출.
-async function generatePromptFromImage(apiKey, imageUrl, titleHint) {
-  const part = await fetchImagePart(imageUrl);
-  if (!part) throw new Error("이미지 로드 실패");
-  const titleLine = titleHint ? `카드 제목: "${titleHint}"\n` : "";
-  const prompt = `${titleLine}이 이미지는 inZOI 게임 가구/인테리어 에셋 컨셉 생성용 참고 이미지입니다.
-이미지를 보고 3D 에셋 생성 프롬프트 초안을 한글로 2~4문장 작성하세요.
-포함할 정보: 재질(예: 월넛, 파우더코팅 스틸, 가죽), 색상, 표면 마감, 형태·실루엣, 추정 크기(cm 단위, 가능할 때), 특징적 디테일.
-설명문구("이 이미지는"·"에셋입니다") 없이 바로 에셋 자체의 묘사로 시작.
-불필요한 형용사는 빼고 구체적으로. 마크다운·bullet 없이 자연스러운 한글 문장으로.
-반드시 JSON 만 응답:
-{ "prompt": "..." }`;
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { inline_data: { mime_type: part.mime, data: part.base64 } },
-            { text: prompt },
-          ],
-        }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
-      }),
-    }
-  );
-  if (!response.ok) throw new Error(`Gemini ${response.status}`);
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  try {
-    const parsed = JSON.parse(text);
-    return typeof parsed.prompt === "string" ? parsed.prompt.trim() : null;
-  } catch { return null; }
-}
-
 async function classifyCategoryWithGemini(apiKey, imageUrl) {
   const part = await fetchImagePart(imageUrl);
   if (!part) throw new Error("이미지 로드 실패");
@@ -3673,14 +3623,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
 
   if (statusKey === "wishlist") {
-    return <WishlistToDraftingAction
-      card={card}
-      onMoveTo={onMoveTo}
-      projectSlug={projectSlug}
-      actor={actor}
-      geminiApiKey={geminiApiKey}
-      onRefresh={onRefresh}
-    />;
+    return <WishlistToDraftingAction card={card} onMoveTo={onMoveTo} />;
   }
 
   if (statusKey === "drafting") {
@@ -4091,116 +4034,42 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
 // 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 에서 이미 편집됨.
 // 여기서는 필수 필드(카테고리, 프롬프트) 검증 후 바로 상태 이동.
-function WishlistToDraftingAction({ card, onMoveTo, projectSlug, actor, geminiApiKey, onRefresh }) {
+function WishlistToDraftingAction({ card, onMoveTo }) {
   const hasCategory = !!(card.data?.category);
   const hasPrompt = !!(card.data?.prompt || card.description);
   const ready = hasCategory && hasPrompt;
-  const firstRef = Array.isArray(card.data?.ref_images) && card.data.ref_images[0];
-  const anyImage = firstRef || card.thumbnail_url;
-  const [busy, setBusy] = React.useState(false);
-  const [busyStep, setBusyStep] = React.useState(""); // "분류 중…" 같은 상태 표시
-
   const sectionStyle = {
     marginBottom: 20, padding: 14, borderRadius: 12,
     background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
     border: "1px solid rgba(7,110,232,0.18)",
   };
-
-  // 🤖 자동 준비 — 이미지 + 제목 으로 카테고리/스타일/크기/프롬프트 자동 채우고 드래프트 이동 (v1.10.37).
-  const autoPrepare = async () => {
-    if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
-    if (!anyImage && !card.title) { alert("참조 이미지나 카드 제목이 있어야 자동 준비할 수 있습니다."); return; }
-    setBusy(true);
-    try {
-      const patch = { ...(card.data || {}) };
-      // 1. 카테고리/스타일/크기/posmap features 분류 (이미지 있을 때만).
-      if (!hasCategory && anyImage) {
-        setBusyStep("카테고리 분류 중…");
-        try {
-          const r = await classifyCategoryWithGemini(geminiApiKey, anyImage);
-          if (r?.category_id) patch.category = r.category_id;
-          if (r?.style_id && !patch.style_preset) patch.style_preset = r.style_id;
-          if (r?.size_info && !patch.size_info) {
-            patch.size_info = { ...r.size_info, source: "ai", updated_at: new Date().toISOString() };
-          }
-          if (r?.posmap_features) patch.posmap_features = r.posmap_features;
-        } catch (e) { console.warn("자동 분류 실패:", e); }
-      }
-      // 2. 프롬프트 초안 (이미지 있을 때는 이미지 기반, 없으면 제목 힌트만).
-      if (!hasPrompt && anyImage) {
-        setBusyStep("프롬프트 초안 작성 중…");
-        try {
-          const draft = await generatePromptFromImage(geminiApiKey, anyImage, card.title);
-          if (draft) patch.prompt = draft;
-        } catch (e) { console.warn("프롬프트 자동 생성 실패:", e); }
-      }
-      // 3. 서버 저장.
-      setBusyStep("저장 중…");
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: patch, actor }),
-      });
-      await onRefresh?.();
-      // 4. 필요 조건 (카테고리 + 프롬프트) 충족 시 드래프트로 이동.
-      const nowReady = !!patch.category && !!(patch.prompt || card.description);
-      if (nowReady) {
-        setBusyStep("시안 단계로 이동…");
-        await onMoveTo("drafting");
-      } else {
-        alert("자동 준비 일부 실패 — 남은 항목을 수동으로 채워주세요.");
-      }
-    } catch (e) {
-      alert("자동 준비 실패: " + e.message);
-    } finally {
-      setBusy(false);
-      setBusyStep("");
-    }
-  };
-
   return (
     <div style={sectionStyle}>
       <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
         아이디어 → 시안 생성
       </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
-        {ready ? "준비 완료. 바로 시안 생성 단계로 넘어갈 수 있습니다." : "🤖 자동 준비 로 카테고리/스타일/크기/프롬프트를 한 번에 채우거나, 좌측 어셋 정보에서 수동 입력 후 이동하세요."}
+        위 어셋 정보를 채운 뒤 시안 생성 단계로 넘기세요.
         {!ready && (
           <div style={{ marginTop: 6, color: "#d97706", fontWeight: 600 }}>
             ⚠ {!hasCategory && "카테고리"}{!hasCategory && !hasPrompt && " · "}{!hasPrompt && "프롬프트"} 필요
           </div>
         )}
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {!ready && (
-          <button
-            onClick={autoPrepare}
-            disabled={busy || (!anyImage && !card.title)}
-            title={!anyImage ? "참조 이미지가 있으면 더 정확합니다" : "자동 분류 + 프롬프트 초안 + 드래프트 이동"}
-            style={{
-              padding: "10px 16px", borderRadius: 10, border: "none",
-              background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, #7c3aed, #ec4899)",
-              color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: busy ? "wait" : "pointer",
-              opacity: (!anyImage && !card.title) ? 0.5 : 1,
-            }}
-          >{busy ? `⏳ ${busyStep || "준비 중…"}` : "🤖 AI 자동 준비 + 이동"}</button>
-        )}
-        <button
-          onClick={async () => {
-            if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
-            await onMoveTo("drafting");
-          }}
-          className={ready ? "btn-primary" : ""}
-          disabled={!ready || busy}
-          style={{
-            padding: "10px 18px", borderRadius: 10, border: "none",
-            background: ready ? undefined : "rgba(0,0,0,0.08)",
-            color: ready ? "#fff" : "var(--text-muted)",
-            fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
-          }}
-        >✨ {ready ? "시안 생성 단계로 이동" : "수동 이동 (카테고리+프롬프트 후)"}</button>
-      </div>
+      <button
+        onClick={async () => {
+          if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
+          await onMoveTo("drafting");
+        }}
+        className={ready ? "btn-primary" : ""}
+        disabled={!ready}
+        style={{
+          padding: "10px 18px", borderRadius: 10, border: "none",
+          background: ready ? undefined : "rgba(0,0,0,0.08)",
+          color: ready ? "#fff" : "var(--text-muted)",
+          fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
+        }}
+      >✨ 시안 생성 단계로 이동</button>
     </div>
   );
 }
@@ -5792,7 +5661,7 @@ function CardDescriptionEditor({ card, projectSlug, actor, disabled, onSaved }) 
 
 // 시안 이력 패널 — 그리드 / 나란히(2열) / 하나씩(carousel) 3가지 보기 모드 + 선정 + 외부 이미지 업로드.
 // v1.10.22 — 복수 시안 비교 / 단일 확대 / ⭐ 선정 UI 한 곳에 모음.
-function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefresh, currentProfile, profileByName }) {
+function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefresh }) {
   const [viewMode, setViewMode] = React.useState("grid"); // "grid" | "compare" | "single"
   const [singleIdx, setSingleIdx] = React.useState(0);
 
@@ -5860,39 +5729,6 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
     } catch (e) { alert("선정 실패: " + e.message); }
   };
 
-  // 시안 투표 (v1.10.37) — 프로필 기반, 각 시안별 { [profileName]: true } 저장.
-  // actor = currentProfile.name 으로 일관. 토글 방식 (누른 사람이 또 누르면 취소).
-  const toggleVote = async (idx) => {
-    if (disabled) return;
-    if (!actor) { alert("프로필을 먼저 선택해 주세요 (헤더 우측)."); return; }
-    const prev = (card.data?.votes && typeof card.data.votes === "object") ? card.data.votes : {};
-    const forIdx = prev[idx] && typeof prev[idx] === "object" ? prev[idx] : {};
-    const hasMine = !!forIdx[actor];
-    const nextForIdx = { ...forIdx };
-    if (hasMine) delete nextForIdx[actor]; else nextForIdx[actor] = true;
-    const nextVotes = { ...prev, [idx]: nextForIdx };
-    if (Object.keys(nextForIdx).length === 0) delete nextVotes[idx];
-    await save({ votes: nextVotes });
-  };
-
-  const votes = (card.data?.votes && typeof card.data.votes === "object") ? card.data.votes : {};
-  const voteCount = (idx) => Object.keys(votes[idx] || {}).length;
-  const iVoted = (idx) => !!(actor && votes[idx]?.[actor]);
-  const voteLeader = React.useMemo(() => {
-    let maxCount = 0, leader = null;
-    displayDesigns.forEach((_, i) => {
-      const c = voteCount(i);
-      if (c > maxCount) { maxCount = c; leader = i; }
-    });
-    return maxCount > 0 ? { idx: leader, count: maxCount } : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [votes, displayDesigns.length]);
-
-  const selectTopVote = async () => {
-    if (!voteLeader) return;
-    await selectDesign(voteLeader.idx);
-  };
-
   // 보기 모드 토글 버튼.
   const ModeBtn = ({ mode, icon, title }) => (
     <button
@@ -5913,19 +5749,13 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
     : d.source === "upload" ? `📤 #${i + 1}`
     : `#${i + 1}`;
 
-  // 하나의 시안 타일 — 보기 모드에 따라 크기 조절. 선정 + 투표 UI 포함 (v1.10.37).
+  // 하나의 시안 타일 — 보기 모드에 따라 크기 조절. 선정 버튼도 hover 없이 항상 표시.
   const Tile = ({ d, i, height }) => {
     const isSelected = selectedIdx === i;
-    const n = voteCount(i);
-    const mine = iVoted(i);
-    const isLeader = voteLeader && voteLeader.idx === i && n > 0;
-    const voters = Object.keys(votes[i] || {});
     return (
       <div style={{
         position: "relative", borderRadius: 8, overflow: "hidden",
-        border: isSelected ? "2px solid #fbbf24"
-          : isLeader ? "2px solid #22c55e"
-          : "1px solid var(--surface-border)",
+        border: isSelected ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
         background: "#000",
       }}>
         {d?.imageUrl ? (
@@ -5962,27 +5792,6 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
             }}
           >☆ 선정</button>
         )}
-        {/* 👍 투표 버튼 + 카운트 (v1.10.37) — 좌측 하단 */}
-        {d?.imageUrl && !disabled && (
-          <button
-            onClick={() => toggleVote(i)}
-            title={voters.length > 0 ? `투표: ${voters.join(", ")}` : (actor ? "투표하기" : "프로필 선택 후 투표 가능")}
-            style={{
-              position: "absolute", bottom: 6, left: 6,
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 9px", borderRadius: 14,
-              background: mine ? "var(--primary)" : "rgba(0,0,0,0.72)",
-              border: "none",
-              color: "#fff", fontSize: 11, fontWeight: 700,
-              cursor: actor ? "pointer" : "not-allowed",
-              opacity: actor ? 1 : 0.6,
-            }}
-          >
-            <span>👍</span>
-            <span>{n}</span>
-            {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
-          </button>
-        )}
       </div>
     );
   };
@@ -5997,19 +5806,8 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
           🎨 시안 이력 ({displayDesigns.length}개)
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-          AI 생성 + 외부 업로드 · ☆ 선정 / 👍 투표
+          AI 생성 + 외부 업로드 · ☆ 로 선정
         </div>
-        {voteLeader && !disabled && selectedIdx !== voteLeader.idx && (
-          <button
-            onClick={selectTopVote}
-            title={`투표 1등 (#${voteLeader.idx + 1}, ${voteLeader.count}표) 을 대표 시안으로 선정`}
-            style={{
-              padding: "4px 10px", borderRadius: 14,
-              background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.4)",
-              color: "#15803d", fontSize: 11, fontWeight: 700, cursor: "pointer",
-            }}
-          >🏆 투표 1등 선정 ({voteLeader.count}표)</button>
-        )}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
           {displayDesigns.length > 0 && (
             <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
@@ -7006,7 +6804,6 @@ export default function InZOIConceptTool() {
   const [activityFilter, setActivityFilter] = useState("all"); // 카드 활동 이력 필터
   const [activitiesExpanded, setActivitiesExpanded] = useState(true); // 상세 모달 활동 이력 펼침 (v1.10.17)
   const [galleryOpen, setGalleryOpen] = useState(false); // 상세 갤러리 캔버스 (F, v1.10.26)
-  const [shortcutsOpen, setShortcutsOpen] = useState(false); // ? 키 단축키 치트시트 (v1.10.37)
   const [newItemId, setNewItemId] = useState(null);
   // 워크플로우 탭 상세 전개 여부. 기본 false 라 그리드만 보이고, 카드 클릭하거나
   // ＋ 새 시안 눌렀을 때만 true 로 전환되어 입력/단계 UI 가 드러난다.
@@ -7365,10 +7162,7 @@ export default function InZOIConceptTool() {
         if (detailCard) { e.preventDefault(); setGalleryOpen((v) => !v); }
       } else if (e.key === "n" || e.key === "N") {
         if (!wishAddOpen) { e.preventDefault(); setWishAddOpen(true); }
-      } else if (e.key === "?") {
-        e.preventDefault(); setShortcutsOpen((v) => !v);
       } else if (e.key === "Escape") {
-        if (shortcutsOpen) { e.preventDefault(); setShortcutsOpen(false); return; }
         // 우선순위: 갤러리 / 미리보기 / 카탈로그 모달이 열려있으면 자체 Esc 핸들러에 양보.
         if (galleryOpen || previewImage || catalogItemId) return;
         if (detailCard) { e.preventDefault(); setDetailCard(null); }
@@ -7376,7 +7170,7 @@ export default function InZOIConceptTool() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detailCard, wishAddOpen, galleryOpen, previewImage, catalogItemId, shortcutsOpen]);
+  }, [detailCard, wishAddOpen, galleryOpen, previewImage, catalogItemId]);
 
   // 상세 카드가 닫히면 갤러리도 함께 닫음.
   useEffect(() => {
@@ -10766,8 +10560,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     projectSlug={projectSlug}
                     actor={actorName}
                     disabled={confirmed}
-                    currentProfile={currentProfile}
-                    profileByName={profileByName}
                     onOpenImage={setPreviewImage}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
@@ -11959,91 +11751,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           id={catalogItemId}
           onClose={() => setCatalogItemId(null)}
         />
-      )}
-
-      {/* 단축키 치트시트 (v1.10.37) — ? 키로 토글 */}
-      {shortcutsOpen && (
-        <div
-          onClick={() => setShortcutsOpen(false)}
-          style={{
-            position: "fixed", inset: 0, zIndex: 1100,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 560, maxWidth: "92vw", maxHeight: "80vh",
-              background: "#fff", borderRadius: 16, padding: "22px 26px",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)", overflow: "auto",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
-              <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text-main)" }}>⌨️ 단축키</div>
-              <button
-                onClick={() => setShortcutsOpen(false)}
-                style={{
-                  marginLeft: "auto", width: 28, height: 28, borderRadius: 8,
-                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                  color: "var(--text-muted)", fontSize: 13, cursor: "pointer",
-                }}
-              >✕</button>
-            </div>
-            {[
-              { title: "전역", items: [
-                ["?", "이 치트시트 열기/닫기"],
-                ["N", "새 아이디어 추가"],
-                ["Esc", "모달/갤러리/치트시트 닫기"],
-              ]},
-              { title: "카드 상세 모달", items: [
-                ["F", "갤러리 캔버스 열기/닫기"],
-                ["←  →", "같은 탭의 이전/다음 카드로 이동"],
-                ["Esc", "상세 모달 닫기"],
-              ]},
-              { title: "갤러리 캔버스", items: [
-                ["휠", "커서 기준 줌 인/아웃"],
-                ["가운데 / 우클릭 드래그", "화면 팬"],
-                ["0", "전체 보기 (화면에 맞춤)"],
-                ["+ / −", "중앙 기준 줌"],
-                ["방향키", "팬"],
-                ["Esc / F", "갤러리 닫기"],
-              ]},
-              { title: "인라인 편집 (제목/설명/댓글)", items: [
-                ["Enter (제목·댓글)", "저장"],
-                ["Ctrl / ⌘ + Enter (textarea)", "저장"],
-                ["Esc", "취소"],
-              ]},
-              { title: "이미지 Lightbox", items: [
-                ["← →", "같은 카드의 다음 이미지"],
-                ["Esc", "닫기"],
-              ]},
-            ].map((group) => (
-              <div key={group.title} style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                  {group.title}
-                </div>
-                {group.items.map(([key, desc]) => (
-                  <div key={key} style={{ display: "flex", alignItems: "center", padding: "5px 0", fontSize: 13 }}>
-                    <kbd style={{
-                      padding: "2px 9px", borderRadius: 6, minWidth: 32,
-                      background: "rgba(0,0,0,0.05)", border: "1px solid var(--surface-border)",
-                      color: "var(--text-main)", fontSize: 11, fontWeight: 700, fontFamily: "monospace",
-                      textAlign: "center",
-                    }}>{key}</kbd>
-                    <span style={{ marginLeft: 12, color: "var(--text-lighter)" }}>{desc}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-            <div style={{
-              marginTop: 10, padding: "8px 12px", borderRadius: 8,
-              background: "rgba(7,110,232,0.06)", fontSize: 11, color: "var(--text-muted)",
-            }}>
-              💡 입력창(텍스트박스) 에 포커스 있을 땐 단축키가 동작하지 않습니다.
-            </div>
-          </div>
-        </div>
       )}
 
       {/* 갤러리 캔버스 (v1.10.26) — 단축키 F / 헤더 🖼 버튼으로 오픈 */}
