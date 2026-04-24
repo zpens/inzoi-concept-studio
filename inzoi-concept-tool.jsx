@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.47";
+const APP_VERSION = "1.10.48";
 const CHANGELOG = [
+  {
+    version: "1.10.48",
+    date: "2026-04-25",
+    changes: [
+      "리스트 뷰에도 카드 크기(0.5× / 1× / 2×) 토글 적용 — 이전엔 카드 뷰에서만 보였는데 항상 표시",
+      "스케일 대상: 썸네일(90×90 기본 → 45/90/180) + 행 수직 padding(15px 기본 → 7.5/15/30). 텍스트 셀은 고정 너비 유지해 가독성 보존",
+      "CardListHeader / CardListRow 모두 getListGrid(scale) 로 동적 grid 생성, 썸네일 컬럼만 scale 적용",
+    ],
+  },
   {
     version: "1.10.47",
     date: "2026-04-25",
@@ -4946,7 +4955,12 @@ function ViewModeToggle({ value, onChange }) {
 
 // 리스트 뷰 공통 grid 템플릿 — 11컬럼 (v1.10.44: 진행 컬럼 추가).
 // 썸네일 / 제목 / 우선순위 / 업데이트 / 카테고리 / 스타일 / 크기 / 상태 / 진행 / 날짜 / 작성자
-const LIST_GRID = "90px 1fr 70px 90px 150px 80px 130px 95px 110px 100px 32px";
+// 썸네일 컬럼만 scale 배율 적용 (v1.10.48). 나머지 텍스트 컬럼은 고정.
+const getListGrid = (scale = 1) => {
+  const thumb = Math.round(90 * scale);
+  return `${thumb}px 1fr 70px 90px 150px 80px 130px 95px 110px 100px 32px`;
+};
+const LIST_GRID = getListGrid(1); // 기본
 
 // 진행 단계 옵션 (v1.10.44) — 리스트 뷰 인라인 편집용. 시안/투표는 같은 drafting 상태.
 const STAGE_OPTIONS = [
@@ -4968,7 +4982,9 @@ function computeStage(card) {
   return designs.length > 0 ? "voting" : "drafting";
 }
 
-function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, lists, availableUpdates, onSaved }) {
+function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, lists, availableUpdates, onSaved, scale = 1 }) {
+  const thumbSize = Math.round(90 * scale);
+  const rowPadV = Math.round(15 * scale);
   const data = card.data || {};
   const designs = Array.isArray(data.designs) ? data.designs : [];
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
@@ -5087,9 +5103,9 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
       className="hover-lift"
       style={{
         display: "grid",
-        gridTemplateColumns: LIST_GRID,
+        gridTemplateColumns: getListGrid(scale),
         gap: 14, alignItems: "center",
-        padding: "15px 18px", borderRadius: 12,
+        padding: `${rowPadV}px 18px`, borderRadius: 12,
         border: "1px solid var(--surface-border)",
         background: "var(--surface-color)",
         cursor: "pointer", transition: "all 0.15s",
@@ -5099,14 +5115,14 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
       }}
     >
       <div style={{
-        width: 90, height: 90, borderRadius: 10, overflow: "hidden",
+        width: thumbSize, height: thumbSize, borderRadius: Math.round(10 * scale), overflow: "hidden",
         background: thumb ? "#000" : "rgba(0,0,0,0.05)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {thumb ? (
           <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <span style={{ fontSize: 36, opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
+          <span style={{ fontSize: Math.round(36 * scale), opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
       </div>
       {/* 제목 — 인라인 편집 (v1.10.45). ✏️ 버튼으로 편집 진입, title 본체 클릭은 기존처럼 상세 모달. */}
@@ -5424,7 +5440,7 @@ function cycleSortBy(currentSortBy, ascKey, descKey, defaultSort = "date_desc") 
 }
 
 // 리스트 뷰 헤더 행. 클릭 가능한 셀은 sortBy 전환.
-function CardListHeader({ tabId, sortBy, onSortChange }) {
+function CardListHeader({ tabId, sortBy, onSortChange, scale = 1 }) {
   const cellBase = {
     fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
     letterSpacing: "0.05em", textTransform: "uppercase",
@@ -5462,7 +5478,7 @@ function CardListHeader({ tabId, sortBy, onSortChange }) {
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: LIST_GRID,
+      gridTemplateColumns: getListGrid(scale),
       gap: 14, alignItems: "center",
       padding: "6px 18px",
     }}>
@@ -8691,7 +8707,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                  {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
+                  <CardScaleSelect value={cardScale} onChange={setCardScale} />
                   <SortSelect value={sortBy} onChange={setSortBy} />
                   {activeTab === "create" && (
                     <button
@@ -8721,7 +8737,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 );
               })()}
               {viewMode === "list" && totalCount > 0 && (
-                <CardListHeader tabId={activeTab} sortBy={sortBy} onSortChange={setSortBy} />
+                <CardListHeader tabId={activeTab} sortBy={sortBy} onSortChange={setSortBy} scale={cardScale} />
               )}
             </div>
 
@@ -8737,6 +8753,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           key={`card-${c.id}`}
                           card={c}
                           tabId={activeTab}
+                          scale={cardScale}
                           profileByName={profileByName}
                           projectSlug={projectSlug}
                           actor={actorName}
@@ -10089,7 +10106,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
+                <CardScaleSelect value={cardScale} onChange={setCardScale} />
                 <SortSelect value={sortBy} onChange={setSortBy} />
                 <button
                   onClick={() => setActiveTab("create")}
@@ -10121,7 +10138,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               );
             })()}
             {viewMode === "list" && completedList.length > 0 && (
-              <CardListHeader tabId="completed" sortBy={sortBy} onSortChange={setSortBy} />
+              <CardListHeader tabId="completed" sortBy={sortBy} onSortChange={setSortBy} scale={cardScale} />
             )}
           </div>
 
@@ -10158,6 +10175,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             key={item._cardId}
                             card={card}
                             tabId="completed"
+                            scale={cardScale}
                             profileByName={profileByName}
                             projectSlug={projectSlug}
                             actor={actorName}
@@ -10229,7 +10247,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                {viewMode === "card" && <CardScaleSelect value={cardScale} onChange={setCardScale} />}
+                <CardScaleSelect value={cardScale} onChange={setCardScale} />
                 <SortSelect value={sortBy} onChange={setSortBy} />
                 <button
                   onClick={() => setWishAddOpen(true)}
@@ -10260,7 +10278,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               );
             })()}
             {viewMode === "list" && wishlist.length > 0 && (
-              <CardListHeader tabId="wishlist" sortBy={sortBy} onSortChange={setSortBy} />
+              <CardListHeader tabId="wishlist" sortBy={sortBy} onSortChange={setSortBy} scale={cardScale} />
             )}
           </div>
 
@@ -10300,6 +10318,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                                 key={item._cardId}
                                 card={card}
                                 tabId="wishlist"
+                                scale={cardScale}
                                 profileByName={profileByName}
                                 projectSlug={projectSlug}
                                 actor={actorName}
