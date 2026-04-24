@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.41";
+const APP_VERSION = "1.10.42";
 const CHANGELOG = [
+  {
+    version: "1.10.42",
+    date: "2026-04-24",
+    changes: [
+      "자동 분류 개편 — 제안/적용 확인 단계 없이 결과를 바로 저장. 카테고리 / 스타일 / 크기 / posmap features / 카탈로그 매칭 top-12 에 더해 프롬프트 초안도 한 번에 채움 (이미 값이 있는 필드는 건드리지 않음)",
+      "AI 자동 준비 + 이동 버튼 (v1.10.40) 제거 — 자동 분류가 프롬프트까지 커버하므로 중복. WishlistToDraftingAction 은 원래의 단일 이동 버튼으로 복귀",
+      "classifyCategoryWithGemini + generatePromptFromImage 을 Promise.allSettled 로 병렬 호출해 한 번에 처리",
+    ],
+  },
   {
     version: "1.10.41",
     date: "2026-04-24",
@@ -3138,70 +3147,87 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
   const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
   const [saving, setSaving] = React.useState(false);
   const [suggesting, setSuggesting] = React.useState(false);
-  const [suggestion, setSuggestion] = React.useState(null); // { category_id, confidence }
 
-  // 🤖 자동 분류 — Gemini Vision 으로 카테고리 추천. 자동 적용하지 않고 제안만.
+  // 🤖 자동 분류 (v1.10.42) — Gemini 로 카테고리 / 스타일 / 크기 / 프롬프트 한 번에
+  // 추출해서 **바로 저장** (제안 확인 단계 없음). 이미 채워진 필드는 덮어쓰지 않음.
   const runCategorySuggest = async () => {
     if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
     const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
     const src = refs[0] || card.thumbnail_url;
     if (!src) { alert("참조 이미지를 먼저 추가해주세요"); return; }
     setSuggesting(true);
-    setSuggestion(null);
     try {
-      const r = await classifyCategoryWithGemini(geminiApiKey, src);
-      if (!r) { alert("자동 분류 실패 — 수동으로 선택해주세요"); return; }
-      setSuggestion(r);
+      const existingPrompt = card.data?.prompt || card.description || "";
+      const [clsResult, promptResult] = await Promise.allSettled([
+        classifyCategoryWithGemini(geminiApiKey, src),
+        existingPrompt ? Promise.resolve(null) : generatePromptFromImage(geminiApiKey, src, card.title),
+      ]);
+      const r = clsResult.status === "fulfilled" ? clsResult.value : null;
+      const p = promptResult.status === "fulfilled" ? promptResult.value : null;
+      if (!r && !p) { alert("자동 분류 실패 — 수동으로 선택해주세요"); return; }
+
+      const patch = {};
+      // 카테고리: 이미 사용자가 선택한 게 있으면 덮어쓰지 않음.
+      if (r?.category_id && !category) {
+        patch.category = r.category_id;
+        setCategory(r.category_id);
+      }
+      // 스타일: 동일하게 기존 값 보존.
+      if (r?.style_id && !stylePreset) {
+        patch.style_preset = r.style_id;
+        setStylePreset(r.style_id);
+      }
+      // 크기: 수동 입력이면 덮어쓰지 않음.
+      const existingSize = card.data?.size_info;
+      const sizeManuallySet = existingSize?.source === "manual" && (existingSize.width_cm || existingSize.depth_cm || existingSize.height_cm);
+      if (r?.size_info && !sizeManuallySet) {
+        patch.size_info = {
+          width_cm: r.size_info.width_cm,
+          depth_cm: r.size_info.depth_cm,
+          height_cm: r.size_info.height_cm,
+          source: "ai",
+          confidence: r.size_info.confidence,
+          reason: r.size_info.reason,
+          updated_at: new Date().toISOString(),
+        };
+      }
+      // posmap features + 카탈로그 매칭.
+      if (r?.posmap_features) {
+        patch.posmap_features = r.posmap_features;
+        if (Object.keys(POSMAP_SCORES).length > 0) {
+          const catId = r.category_id || card.data?.category;
+          const matches = findSimilarCatalogAssets(r.posmap_features, catId, 12);
+          if (matches.length > 0) {
+            patch.catalog_matches = {
+              features: r.posmap_features,
+              items: matches.map((m) => ({
+                id: m.id,
+                score: m.score,
+                normalized: m.normalized,
+                filter: m.filter,
+                lv1: m.lv1,
+                lv2: m.lv2,
+              })),
+              generated_at: new Date().toISOString(),
+            };
+          }
+        }
+      }
+      // 프롬프트 초안: 비어있을 때만 추가.
+      if (p && !existingPrompt) {
+        patch.prompt = p;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await save(patch);
+      } else {
+        alert("이미 모든 항목이 채워져 있습니다.");
+      }
     } catch (e) {
       alert("자동 분류 실패: " + e.message);
     } finally {
       setSuggesting(false);
     }
-  };
-
-  const applySuggestion = async () => {
-    if (!suggestion?.category_id) return;
-    const patch = { category: suggestion.category_id };
-    setCategory(suggestion.category_id);
-    // 스타일이 함께 추천되었으면 같이 적용. 이미 사용자가 선택한 스타일이 있으면 덮어쓰지 않음.
-    if (suggestion.style_id && !stylePreset) {
-      setStylePreset(suggestion.style_id);
-      patch.style_preset = suggestion.style_id;
-    }
-    // 크기 정보도 AI 추정 결과가 있으면 같이 적용. 기존 size_info 가 manual 일 땐 덮어쓰지 않음.
-    const existing = card.data?.size_info;
-    const userTouched = existing?.source === "manual" && (existing.width_cm || existing.depth_cm || existing.height_cm);
-    if (suggestion.size_info && !userTouched) {
-      patch.size_info = {
-        width_cm: suggestion.size_info.width_cm,
-        depth_cm: suggestion.size_info.depth_cm,
-        height_cm: suggestion.size_info.height_cm,
-        source: "ai",
-        confidence: suggestion.size_info.confidence,
-        reason: suggestion.size_info.reason,
-        updated_at: new Date().toISOString(),
-      };
-    }
-    // posmap 유사도로 카탈로그 매칭 — 전 카탈로그 스캔해 top-12 저장.
-    if (suggestion.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
-      const matches = findSimilarCatalogAssets(suggestion.posmap_features, suggestion.category_id, 12);
-      if (matches.length > 0) {
-        patch.catalog_matches = {
-          features: suggestion.posmap_features,
-          items: matches.map((m) => ({
-            id: m.id,
-            score: m.score,
-            normalized: m.normalized,
-            filter: m.filter,
-            lv1: m.lv1,
-            lv2: m.lv2,
-          })),
-          generated_at: new Date().toISOString(),
-        };
-      }
-    }
-    setSuggestion(null);
-    await save(patch);
   };
 
   // 서버에서 카드가 갱신되면 로컬 폼 상태도 동기화.
@@ -3300,65 +3326,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
             disabled={disabled}
             onChange={(v) => { setCategory(v); save({ category: v }); }}
           />
-          {suggestion && (() => {
-            const sCat = FURNITURE_CATEGORIES.find((c) => c.id === suggestion.category_id);
-            if (!sCat) return null;
-            const pct = Math.round((suggestion.confidence || 0) * 100);
-            const low = pct < 50;
-            const sStyle = suggestion.style_id
-              ? STYLE_PRESETS.find((s) => s.id === suggestion.style_id)
-              : null;
-            const stylePct = suggestion.style_confidence != null
-              ? Math.round(suggestion.style_confidence * 100)
-              : null;
-            const styleOverride = sStyle && stylePreset && stylePreset !== sStyle.id;
-            const sSize = suggestion.size_info;
-            const sizePct = sSize?.confidence != null ? Math.round(sSize.confidence * 100) : null;
-            const sizeOverride = sSize && card.data?.size_info?.source === "manual" && (card.data.size_info.width_cm || card.data.size_info.depth_cm || card.data.size_info.height_cm);
-            return (
-              <div style={{
-                marginTop: 6, padding: "6px 10px", borderRadius: 8,
-                background: low ? "rgba(245,158,11,0.08)" : "rgba(34,197,94,0.08)",
-                border: `1px solid ${low ? "rgba(245,158,11,0.3)" : "rgba(34,197,94,0.3)"}`,
-                display: "flex", alignItems: "center", gap: 8, fontSize: 11, flexWrap: "wrap",
-              }}>
-                <span style={{ flex: 1, lineHeight: 1.6 }}>
-                  🤖 추천: {sCat.icon} <b>{sCat.label}</b> ({sCat.room}) · {pct}%
-                  {low && <span style={{ marginLeft: 4, color: "#b45309" }}>(확신도 낮음)</span>}
-                  {sStyle && (
-                    <>
-                      <span style={{ margin: "0 6px", color: "var(--text-muted)" }}>·</span>
-                      <b>{sStyle.label}</b> 스타일
-                      {stylePct != null && ` · ${stylePct}%`}
-                      {styleOverride && <span style={{ marginLeft: 4, color: "var(--text-muted)" }}>(기존 선택 유지)</span>}
-                    </>
-                  )}
-                  {sSize && (sSize.width_cm || sSize.depth_cm || sSize.height_cm) && (
-                    <>
-                      <span style={{ margin: "0 6px", color: "var(--text-muted)" }}>·</span>
-                      📏 <b>{sSize.width_cm || "?"}×{sSize.depth_cm || "?"}×{sSize.height_cm || "?"}cm</b>
-                      {sizePct != null && ` · ${sizePct}%`}
-                      {sizeOverride && <span style={{ marginLeft: 4, color: "var(--text-muted)" }}>(수동 입력 유지)</span>}
-                    </>
-                  )}
-                </span>
-                <button
-                  onClick={applySuggestion}
-                  style={{
-                    padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                    background: "var(--primary)", border: "none", color: "#fff", cursor: "pointer",
-                  }}
-                >적용</button>
-                <button
-                  onClick={() => setSuggestion(null)}
-                  style={{
-                    padding: "3px 6px", borderRadius: 6, fontSize: 10,
-                    background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer",
-                  }}
-                >✕</button>
-              </div>
-            );
-          })()}
+          {/* 자동 분류 결과는 v1.10.42 부터 즉시 적용 — 제안/적용 패널 제거 */}
         </div>
         <div>
           <div style={fieldLabel}>스타일 프리셋</div>
@@ -3694,14 +3662,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
 
   if (statusKey === "wishlist") {
-    return <WishlistToDraftingAction
-      card={card}
-      onMoveTo={onMoveTo}
-      projectSlug={projectSlug}
-      actor={actor}
-      geminiApiKey={geminiApiKey}
-      onRefresh={onRefresh}
-    />;
+    return <WishlistToDraftingAction card={card} onMoveTo={onMoveTo} />;
   }
 
   if (statusKey === "drafting") {
@@ -4112,115 +4073,43 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
 // 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 에서 이미 편집됨.
 // 여기서는 필수 필드(카테고리, 프롬프트) 검증 후 바로 상태 이동.
-function WishlistToDraftingAction({ card, onMoveTo, projectSlug, actor, geminiApiKey, onRefresh }) {
+// 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 의 🤖 자동 분류에서 채움.
+function WishlistToDraftingAction({ card, onMoveTo }) {
   const hasCategory = !!(card.data?.category);
   const hasPrompt = !!(card.data?.prompt || card.description);
   const ready = hasCategory && hasPrompt;
-  const firstRef = Array.isArray(card.data?.ref_images) ? card.data.ref_images[0] : null;
-  const anyImage = firstRef || card.thumbnail_url;
-  const [busy, setBusy] = React.useState(false);
-  const [busyStep, setBusyStep] = React.useState("");
-
   const sectionStyle = {
     marginBottom: 20, padding: 14, borderRadius: 12,
     background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
     border: "1px solid rgba(7,110,232,0.18)",
   };
-
-  // 🤖 자동 준비 (v1.10.40) — 이미지 + 제목 으로 카테고리/스타일/크기/프롬프트 자동 채우고 드래프트 이동.
-  const autoPrepare = async () => {
-    if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
-    if (!anyImage && !card.title) { alert("참조 이미지나 카드 제목이 있어야 자동 준비할 수 있습니다."); return; }
-    if (!projectSlug) return;
-    setBusy(true);
-    try {
-      const patch = { ...(card.data || {}) };
-      if (!hasCategory && anyImage) {
-        setBusyStep("카테고리 분류 중…");
-        try {
-          const r = await classifyCategoryWithGemini(geminiApiKey, anyImage);
-          if (r?.category_id) patch.category = r.category_id;
-          if (r?.style_id && !patch.style_preset) patch.style_preset = r.style_id;
-          if (r?.size_info && !patch.size_info) {
-            patch.size_info = { ...r.size_info, source: "ai", updated_at: new Date().toISOString() };
-          }
-          if (r?.posmap_features) patch.posmap_features = r.posmap_features;
-        } catch (e) { console.warn("자동 분류 실패:", e); }
-      }
-      if (!hasPrompt && anyImage) {
-        setBusyStep("프롬프트 초안 작성 중…");
-        try {
-          const draft = await generatePromptFromImage(geminiApiKey, anyImage, card.title);
-          if (draft) patch.prompt = draft;
-        } catch (e) { console.warn("프롬프트 자동 생성 실패:", e); }
-      }
-      setBusyStep("저장 중…");
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: patch, actor }),
-      });
-      await onRefresh?.();
-      const nowReady = !!patch.category && !!(patch.prompt || card.description);
-      if (nowReady) {
-        setBusyStep("시안 단계로 이동…");
-        await onMoveTo("drafting");
-      } else {
-        alert("자동 준비 일부 실패 — 남은 항목을 수동으로 채워주세요.");
-      }
-    } catch (e) {
-      alert("자동 준비 실패: " + e.message);
-    } finally {
-      setBusy(false);
-      setBusyStep("");
-    }
-  };
-
   return (
     <div style={sectionStyle}>
       <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
         아이디어 → 시안 생성
       </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
-        {ready
-          ? "준비 완료. 바로 시안 생성 단계로 넘어갈 수 있습니다."
-          : "🤖 자동 준비로 카테고리/스타일/크기/프롬프트를 한 번에 채우거나, 좌측 어셋 정보에서 수동 입력 후 이동하세요."}
+        좌측 어셋 정보의 🤖 자동 분류로 카테고리·스타일·크기·프롬프트를 한 번에 채우거나 수동 입력한 뒤 이동하세요.
         {!ready && (
           <div style={{ marginTop: 6, color: "#d97706", fontWeight: 600 }}>
             ⚠ {!hasCategory && "카테고리"}{!hasCategory && !hasPrompt && " · "}{!hasPrompt && "프롬프트"} 필요
           </div>
         )}
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {!ready && (
-          <button
-            onClick={autoPrepare}
-            disabled={busy || (!anyImage && !card.title)}
-            title={!anyImage ? "참조 이미지가 있으면 더 정확합니다" : "자동 분류 + 프롬프트 초안 + 드래프트 이동"}
-            style={{
-              padding: "10px 16px", borderRadius: 10, border: "none",
-              background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, #7c3aed, #ec4899)",
-              color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: busy ? "wait" : "pointer",
-              opacity: (!anyImage && !card.title) ? 0.5 : 1,
-            }}
-          >{busy ? `⏳ ${busyStep || "준비 중…"}` : "🤖 AI 자동 준비 + 이동"}</button>
-        )}
-        <button
-          onClick={async () => {
-            if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
-            await onMoveTo("drafting");
-          }}
-          className={ready ? "btn-primary" : ""}
-          disabled={!ready || busy}
-          style={{
-            padding: "10px 18px", borderRadius: 10, border: "none",
-            background: ready ? undefined : "rgba(0,0,0,0.08)",
-            color: ready ? "#fff" : "var(--text-muted)",
-            fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
-          }}
-        >✨ {ready ? "시안 생성 단계로 이동" : "수동 이동 (필요 항목 채운 후)"}</button>
-      </div>
+      <button
+        onClick={async () => {
+          if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
+          await onMoveTo("drafting");
+        }}
+        className={ready ? "btn-primary" : ""}
+        disabled={!ready}
+        style={{
+          padding: "10px 18px", borderRadius: 10, border: "none",
+          background: ready ? undefined : "rgba(0,0,0,0.08)",
+          color: ready ? "#fff" : "var(--text-muted)",
+          fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
+        }}
+      >✨ 시안 생성 단계로 이동</button>
     </div>
   );
 }
