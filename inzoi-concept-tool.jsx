@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.36";
+const APP_VERSION = "1.10.38";
 const CHANGELOG = [
+  {
+    version: "1.10.38",
+    date: "2026-04-24",
+    changes: [
+      "⌨️ 단축키 치트시트 (단독 재투입) — ? 키로 오버레이 열기/닫기, Esc 도 닫힘. 전역 / 상세 / 갤러리 / 편집 / Lightbox 그룹별 정리",
+      "(v1.10.37 에 3개 기능 한번에 넣었다 blank-screen 재발해 revert, 기능별 분리 재투입)",
+    ],
+  },
   {
     version: "1.10.36",
     date: "2026-04-24",
@@ -6804,6 +6812,7 @@ export default function InZOIConceptTool() {
   const [activityFilter, setActivityFilter] = useState("all"); // 카드 활동 이력 필터
   const [activitiesExpanded, setActivitiesExpanded] = useState(true); // 상세 모달 활동 이력 펼침 (v1.10.17)
   const [galleryOpen, setGalleryOpen] = useState(false); // 상세 갤러리 캔버스 (F, v1.10.26)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false); // ? 키 단축키 치트시트 (v1.10.37)
   const [newItemId, setNewItemId] = useState(null);
   // 워크플로우 탭 상세 전개 여부. 기본 false 라 그리드만 보이고, 카드 클릭하거나
   // ＋ 새 시안 눌렀을 때만 true 로 전환되어 입력/단계 UI 가 드러난다.
@@ -7162,7 +7171,10 @@ export default function InZOIConceptTool() {
         if (detailCard) { e.preventDefault(); setGalleryOpen((v) => !v); }
       } else if (e.key === "n" || e.key === "N") {
         if (!wishAddOpen) { e.preventDefault(); setWishAddOpen(true); }
+      } else if (e.key === "?") {
+        e.preventDefault(); setShortcutsOpen((v) => !v);
       } else if (e.key === "Escape") {
+        if (shortcutsOpen) { e.preventDefault(); setShortcutsOpen(false); return; }
         // 우선순위: 갤러리 / 미리보기 / 카탈로그 모달이 열려있으면 자체 Esc 핸들러에 양보.
         if (galleryOpen || previewImage || catalogItemId) return;
         if (detailCard) { e.preventDefault(); setDetailCard(null); }
@@ -7170,7 +7182,7 @@ export default function InZOIConceptTool() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detailCard, wishAddOpen, galleryOpen, previewImage, catalogItemId]);
+  }, [detailCard, wishAddOpen, galleryOpen, previewImage, catalogItemId, shortcutsOpen]);
 
   // 상세 카드가 닫히면 갤러리도 함께 닫음.
   useEffect(() => {
@@ -11751,6 +11763,92 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           id={catalogItemId}
           onClose={() => setCatalogItemId(null)}
         />
+      )}
+
+      {/* 단축키 치트시트 (v1.10.37 재투입) — ? 키로 토글 */}
+      {shortcutsOpen && (
+        <div
+          onClick={() => setShortcutsOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 1100,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 560, maxWidth: "92vw", maxHeight: "80vh",
+              background: "#fff", borderRadius: 16, padding: "22px 26px",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)", overflow: "auto",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text-main)" }}>⌨️ 단축키</div>
+              <button
+                onClick={() => setShortcutsOpen(false)}
+                style={{
+                  marginLeft: "auto", width: 28, height: 28, borderRadius: 8,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 13, cursor: "pointer",
+                }}
+              >✕</button>
+            </div>
+            {[
+              { title: "전역", items: [
+                ["?", "이 치트시트 열기/닫기"],
+                ["N", "새 아이디어 추가"],
+                ["Esc", "모달 / 갤러리 / 치트시트 닫기"],
+              ]},
+              { title: "카드 상세 모달", items: [
+                ["F", "갤러리 캔버스 열기/닫기"],
+                ["좌 / 우 방향키", "같은 탭의 이전 / 다음 카드"],
+                ["Esc", "상세 모달 닫기"],
+              ]},
+              { title: "갤러리 캔버스", items: [
+                ["휠", "커서 기준 줌"],
+                ["가운데 / 우클릭 드래그", "팬"],
+                ["0", "전체 보기"],
+                ["+ / -", "줌"],
+                ["방향키", "팬"],
+                ["Esc / F", "닫기"],
+              ]},
+              { title: "인라인 편집", items: [
+                ["Enter (제목 / 댓글)", "저장"],
+                ["Ctrl / Cmd + Enter (textarea)", "저장"],
+                ["Esc", "취소"],
+              ]},
+              { title: "이미지 Lightbox", items: [
+                ["좌 / 우 방향키", "다음 이미지"],
+                ["Esc", "닫기"],
+              ]},
+            ].map((group) => (
+              <div key={group.title} style={{ marginBottom: 16 }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+                  marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase",
+                }}>{group.title}</div>
+                {group.items.map((row) => (
+                  <div key={row[0]} style={{ display: "flex", alignItems: "center", padding: "5px 0", fontSize: 13 }}>
+                    <kbd style={{
+                      padding: "2px 9px", borderRadius: 6, minWidth: 32,
+                      background: "rgba(0,0,0,0.05)", border: "1px solid var(--surface-border)",
+                      color: "var(--text-main)", fontSize: 11, fontWeight: 700, fontFamily: "monospace",
+                      textAlign: "center",
+                    }}>{row[0]}</kbd>
+                    <span style={{ marginLeft: 12, color: "var(--text-lighter)" }}>{row[1]}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div style={{
+              marginTop: 10, padding: "8px 12px", borderRadius: 8,
+              background: "rgba(7,110,232,0.06)", fontSize: 11, color: "var(--text-muted)",
+            }}>
+              입력창(텍스트박스) 포커스 중엔 단축키 동작 안 함.
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 갤러리 캔버스 (v1.10.26) — 단축키 F / 헤더 🖼 버튼으로 오픈 */}
