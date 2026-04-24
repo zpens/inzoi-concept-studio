@@ -262,3 +262,8 @@ textarea {
     background: rgba(0, 0, 0, 0.04) !important;
     border-color: rgba(0, 0, 0, 0.12) !important;
 }
+/* 리스트 뷰 제목 행 hover 시 ✏️ 노출 (v1.10.45) */
+.ci-title-wrap:hover .ci-title-edit-btn {
+  opacity: 1;
+}
+

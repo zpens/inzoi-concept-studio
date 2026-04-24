@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.44";
+const APP_VERSION = "1.10.45";
 const CHANGELOG = [
+  {
+    version: "1.10.45",
+    date: "2026-04-25",
+    changes: [
+      "리스트 뷰 제목 셀 인라인 편집 — 행 hover 시 우측 ✏️ 아이콘, 클릭하면 input 전환 / Enter 저장 / Esc 취소 / blur 자동 저장",
+      "업데이트 태그 셀 = 팝오버 피커로 전환 — 기존 태그들을 pill 로 나열해서 클릭 즉시 적용, 하단에 '새 태그 / 직접 입력' 박스 분리. 기존 태그 많아도 스크롤 (max 320)",
+      "[버그 수정] 리스트 뷰 팝오버가 다른 행 팝오버를 열어도 안 닫히던 문제 — 외부 클릭 감지를 'data-inline-edit attribute 기준' → 'row ref 기준'으로 변경해 행 경계로 닫힘",
+      "팝오버 z-index 30 → 50, background #fff 로 불투명 보장 → 뒤 내용 겹쳐보이는 현상 수정",
+      "진행 컬럼 정렬 가능 — 헤더 클릭 시 stage 기준 정렬 (wishlist<drafting<voting<sheet<done)",
+      "enrichedCards useMemo 도입 — cards 에 _statusKey 를 일괄 주입해 stage 정렬/렌더에서 재사용",
+    ],
+  },
   {
     version: "1.10.44",
     date: "2026-04-25",
@@ -4213,6 +4225,22 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title", 
       return designs;
     };
     cpy.sort((a, b) => dir * cmpNum(rank(card(a)), rank(card(b))));
+  } else if (sortBy === "stage_asc" || sortBy === "stage_desc") {
+    const dir = sortBy === "stage_asc" ? 1 : -1;
+    // 진행 단계: wishlist=0, drafting=1, voting(drafting+designs)=2, sheet=3, done=4
+    // card._statusKey (부모에서 주입) 가 있으면 그걸 우선 사용.
+    const stageRank = (c) => {
+      if (!c) return -1;
+      if (c.confirmed_at) return 4;
+      const sk = c._statusKey;
+      if (sk === "done") return 4;
+      if (sk === "sheet") return 3;
+      if (sk === "wishlist") return 0;
+      // drafting: designs 유무로 시안 vs 투표
+      const designs = Array.isArray(c.data?.designs) ? c.data.designs : [];
+      return designs.length > 0 ? 2 : 1;
+    };
+    cpy.sort((a, b) => dir * cmpNum(stageRank(card(a)), stageRank(card(b))));
   } else {
     cpy.sort((a, b) => cmpStr(b[dateKey], a[dateKey]));
   }
@@ -4846,14 +4874,18 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
   const catInfo = data.category ? FURNITURE_CATEGORIES.find((c) => c.id === data.category) : null;
   const styleInfo = data.style_preset ? STYLE_PRESETS.find((s) => s.id === data.style_preset) : null;
 
-  // 인라인 편집 상태: "priority" | "update" | "stage" | null
+  // 인라인 편집 상태: "title" | "priority" | "update" | "stage" | null
   const [editing, setEditing] = React.useState(null);
   const [updateDraft, setUpdateDraft] = React.useState("");
+  const [titleDraft, setTitleDraft] = React.useState("");
+  const rowRef = React.useRef(null);
 
+  // 외부 클릭 시 닫기 — 이전엔 data-il-edit attribute 기준이라
+  // 다른 행의 팝오버를 클릭해도 자기 팝오버가 안 닫혔음. row 스코프로 변경 (v1.10.45).
   React.useEffect(() => {
     if (!editing) return;
     const onDoc = (e) => {
-      if (!e.target.closest?.("[data-inline-edit]")) setEditing(null);
+      if (!rowRef.current?.contains(e.target)) setEditing(null);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -4896,9 +4928,24 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
     } catch (e) { alert("상태 변경 실패: " + e.message); }
   };
 
+  // 최상위 body 필드 (title 같은) PATCH — data 병합 없이 바로.
+  const savePatch = async (body) => {
+    if (!projectSlug) return;
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, actor }),
+      });
+      await onSaved?.();
+      setEditing(null);
+    } catch (e) { alert("저장 실패: " + e.message); }
+  };
+
   const openCell = (e, which) => {
     e.stopPropagation();
     if (which === "update") setUpdateDraft(data.target_update || "");
+    if (which === "title") setTitleDraft(card.title || "");
     setEditing(editing === which ? null : which);
   };
   const stopClick = (e) => e.stopPropagation();
@@ -4933,6 +4980,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
 
   return (
     <div
+      ref={rowRef}
       onClick={onClick}
       className="hover-lift"
       style={{
@@ -4943,6 +4991,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         border: "1px solid var(--surface-border)",
         background: "var(--surface-color)",
         cursor: "pointer", transition: "all 0.15s",
+        position: "relative",
       }}
     >
       <div style={{
@@ -4956,25 +5005,67 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
           <span style={{ fontSize: 36, opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
       </div>
-      <div style={{ minWidth: 0 }}>
-        <div style={{
-          fontSize: 15, fontWeight: 700, color: "var(--text-main)",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>
-          {card.title || "(제목 없음)"}
-        </div>
-        {card.description && (
-          <div style={{
-            fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4,
-            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          }}>
-            {card.description}
-          </div>
+      {/* 제목 — 인라인 편집 (v1.10.45). ✏️ 버튼으로 편집 진입, title 본체 클릭은 기존처럼 상세 모달. */}
+      <div style={{ minWidth: 0, position: "relative" }} className="ci-title-wrap">
+        {editing === "title" ? (
+          <input
+            autoFocus
+            value={titleDraft}
+            onClick={stopClick}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") { e.preventDefault(); savePatch({ title: titleDraft.trim() || card.title }); }
+              else if (e.key === "Escape") { e.preventDefault(); setEditing(null); }
+            }}
+            onBlur={() => {
+              const next = titleDraft.trim();
+              if (next && next !== card.title) savePatch({ title: next });
+              else setEditing(null);
+            }}
+            style={{
+              width: "100%", padding: "6px 10px", borderRadius: 8,
+              border: "1px solid var(--primary)", outline: "none",
+              fontSize: 15, fontWeight: 700, color: "var(--text-main)",
+              background: "#fff", boxSizing: "border-box",
+            }}
+          />
+        ) : (
+          <>
+            <div style={{
+              fontSize: 15, fontWeight: 700, color: "var(--text-main)",
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              paddingRight: 24,
+            }}>
+              {card.title || "(제목 없음)"}
+            </div>
+            {card.description && (
+              <div style={{
+                fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4,
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }}>
+                {card.description}
+              </div>
+            )}
+            <button
+              onClick={(e) => openCell(e, "title")}
+              title="제목 수정"
+              className="ci-title-edit-btn"
+              style={{
+                position: "absolute", top: 0, right: 0,
+                width: 20, height: 20, borderRadius: 10,
+                background: "rgba(0,0,0,0.06)", border: "none",
+                color: "var(--text-muted)", fontSize: 10, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                opacity: 0, transition: "opacity 0.15s",
+              }}
+            >✏️</button>
+          </>
         )}
       </div>
       {/* 우선순위 — 클릭해서 인라인 변경 (v1.10.44) */}
       <div
-        data-inline-edit
+        data-il-edit
         onClick={(e) => openCell(e, "priority")}
         style={{ fontSize: 11, position: "relative", cursor: "pointer" }}
         title="클릭해서 우선순위 변경"
@@ -4992,10 +5083,10 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         })()}
         {editing === "priority" && (
           <div
-            data-inline-edit
+            data-il-edit
             onClick={stopClick}
             style={{
-              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30,
+              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
               padding: 6, borderRadius: 8,
               background: "#fff", border: "1px solid var(--surface-border)",
               boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
@@ -5022,9 +5113,8 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
           </div>
         )}
       </div>
-      {/* 업데이트 — 클릭해서 인라인 텍스트 편집 */}
+      {/* 업데이트 — 팝오버 피커 (v1.10.45). 기존 태그 리스트 + 커스텀 입력. */}
       <div
-        data-inline-edit
         onClick={(e) => openCell(e, "update")}
         style={{ fontSize: 11, position: "relative", overflow: "visible", whiteSpace: "nowrap", cursor: "pointer" }}
         title="클릭해서 업데이트 태그 변경"
@@ -5042,43 +5132,67 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         })()}
         {editing === "update" && (
           <div
-            data-inline-edit
             onClick={stopClick}
             style={{
-              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30,
-              padding: 8, borderRadius: 8, width: 210,
+              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
+              padding: 8, borderRadius: 10, width: 240, maxHeight: 320, overflowY: "auto",
               background: "#fff", border: "1px solid var(--surface-border)",
-              boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
+              boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
             }}
           >
+            {/* 기존 태그 리스트 — 클릭 즉시 적용 */}
+            {availableUpdates && availableUpdates.length > 0 ? (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+                {availableUpdates.map((u) => {
+                  const active = (data.target_update || "") === u;
+                  return (
+                    <button
+                      key={u}
+                      onClick={() => saveData({ target_update: u })}
+                      style={{
+                        padding: "4px 10px", borderRadius: 12,
+                        background: active ? "#b45309" : "rgba(180,83,9,0.1)",
+                        color: active ? "#fff" : "#b45309",
+                        border: `1px solid ${active ? "#b45309" : "rgba(180,83,9,0.3)"}`,
+                        fontSize: 11, fontWeight: 600, cursor: "pointer",
+                      }}
+                    >🗓️ {u}</button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
+                기존 태그 없음 — 아래에 새로 입력하세요.
+              </div>
+            )}
+            {/* 새 태그 입력 */}
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4 }}>새 태그 / 직접 입력</div>
             <input
               autoFocus
               type="text"
               value={updateDraft}
               onChange={(e) => setUpdateDraft(e.target.value)}
-              list={`inzoi-update-options-list-${card.id}`}
-              placeholder="예: 2026-Q2, 교도소"
+              placeholder="예: 2026-Q2"
               onKeyDown={(e) => {
+                e.stopPropagation();
                 if (e.key === "Enter") { e.preventDefault(); saveData({ target_update: updateDraft.trim() || null }); }
                 else if (e.key === "Escape") { setEditing(null); }
               }}
               style={{
-                width: "100%", padding: "6px 8px", borderRadius: 6,
+                width: "100%", padding: "5px 8px", borderRadius: 6,
                 border: "1px solid var(--surface-border)", outline: "none",
                 fontSize: 12, boxSizing: "border-box", marginBottom: 6,
               }}
             />
-            {availableUpdates && availableUpdates.length > 0 && (
-              <datalist id={`inzoi-update-options-list-${card.id}`}>
-                {availableUpdates.map((u) => <option key={u} value={u} />)}
-              </datalist>
-            )}
             <div style={{ display: "flex", gap: 4 }}>
               <button
                 onClick={() => saveData({ target_update: updateDraft.trim() || null })}
+                disabled={!updateDraft.trim()}
                 style={{
                   flex: 1, padding: "5px 0", borderRadius: 6, border: "none",
-                  background: "var(--primary)", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  background: updateDraft.trim() ? "var(--primary)" : "rgba(0,0,0,0.08)",
+                  color: updateDraft.trim() ? "#fff" : "var(--text-muted)",
+                  fontSize: 11, fontWeight: 700, cursor: updateDraft.trim() ? "pointer" : "not-allowed",
                 }}
               >저장</button>
               <button
@@ -5089,7 +5203,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
                   background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
                   color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
                 }}
-              >지움</button>
+              >미지정</button>
             </div>
           </div>
         )}
@@ -5126,7 +5240,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
       </div>
       {/* 진행 단계 — 클릭해서 인라인 변경 (v1.10.44) */}
       <div
-        data-inline-edit
+        data-il-edit
         onClick={(e) => openCell(e, "stage")}
         style={{ fontSize: 11, position: "relative", cursor: "pointer" }}
         title="클릭해서 진행 단계 변경"
@@ -5146,10 +5260,10 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         })()}
         {editing === "stage" && (
           <div
-            data-inline-edit
+            data-il-edit
             onClick={stopClick}
             style={{
-              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30,
+              position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
               padding: 6, borderRadius: 8, width: 150,
               background: "#fff", border: "1px solid var(--surface-border)",
               boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
@@ -5256,7 +5370,7 @@ function CardListHeader({ tabId, sortBy, onSortChange }) {
       <SortCell label="스타일"          ascKey="style_asc"    descKey="style_desc" />
       <SortCell label="크기 (W×D×H)"    ascKey="size_asc"     descKey="size_desc" />
       <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
-      <div style={cellBase}>진행</div>
+      <SortCell label="진행" ascKey="stage_asc" descKey="stage_desc" />
       <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
       <div style={{ ...cellBase, textAlign: "center" }} title="작성자">👤</div>
     </div>
@@ -7187,6 +7301,12 @@ export default function InZOIConceptTool() {
 
   // 모든 카드에서 등장한 target_update 값 목록 (AssetInfoEditor datalist 및 chip 바에 사용).
   // cards 선언 이후여야 함 (TDZ 방지).
+  // lists 의 status_key 를 각 카드에 _statusKey 로 주입 — 리스트 뷰 stage 정렬/렌더에 사용 (v1.10.45).
+  const enrichedCards = useMemo(() => {
+    const statusByList = new Map(lists.map((l) => [l.id, l.status_key]));
+    return cards.map((c) => ({ ...c, _statusKey: statusByList.get(c.list_id) }));
+  }, [cards, lists]);
+
   const availableUpdates = useMemo(() => {
     const set = new Set();
     for (const c of cards) {
@@ -8505,13 +8625,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               viewMode === "list" ? (
                 <div style={{ marginBottom: 40 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => {
-                      const list = lists.find((l) => l.id === c.list_id);
-                      const enriched = { ...c, _statusKey: list?.status_key };
-                      return (
+                    {(() => {
+                      const statusByList = new Map(lists.map((l) => [l.id, l.status_key]));
+                      const inRangeEnriched = inRangeCards.map((c) => ({ ...c, _statusKey: statusByList.get(c.list_id) }));
+                      return sortCardArray(inRangeEnriched.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
                         <CardListRow
                           key={`card-${c.id}`}
-                          card={enriched}
+                          card={c}
                           tabId={activeTab}
                           profileByName={profileByName}
                           projectSlug={projectSlug}
@@ -8533,8 +8653,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                             } catch (e) { console.warn("카드 열기 실패", e); }
                           }}
                         />
-                      );
-                    })}
+                      ));
+                    })()}
                   </div>
                 </div>
               ) : (
@@ -9925,16 +10045,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {sortCardArray(
                         visibleList, sortBy, "completedAt", "categoryLabel",
-                        (item) => cards.find((c) => c.id === item._cardId)
+                        (item) => enrichedCards.find((c) => c.id === item._cardId)
                       ).map((item) => {
-                        const card = cards.find((c) => c.id === item._cardId);
+                        const card = enrichedCards.find((c) => c.id === item._cardId);
                         if (!card) return null;
-                        const list = lists.find((l) => l.id === card.list_id);
-                        const enriched = { ...card, _statusKey: list?.status_key };
                         return (
                           <CardListRow
                             key={item._cardId}
-                            card={enriched}
+                            card={card}
                             tabId="completed"
                             profileByName={profileByName}
                             projectSlug={projectSlug}
@@ -10069,16 +10187,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                           {sortCardArray(
                             visibleList, sortBy, "createdAt", "title",
-                            (item) => cards.find((c) => c.id === item._cardId)
+                            (item) => enrichedCards.find((c) => c.id === item._cardId)
                           ).map((item) => {
-                            const card = cards.find((c) => c.id === item._cardId);
+                            const card = enrichedCards.find((c) => c.id === item._cardId);
                             if (!card) return null;
-                            const list = lists.find((l) => l.id === card.list_id);
-                            const enriched = { ...card, _statusKey: list?.status_key };
                             return (
                               <CardListRow
                                 key={item._cardId}
-                                card={enriched}
+                                card={card}
                                 tabId="wishlist"
                                 profileByName={profileByName}
                                 projectSlug={projectSlug}
