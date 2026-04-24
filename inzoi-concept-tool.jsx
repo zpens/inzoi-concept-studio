@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.45";
+const APP_VERSION = "1.10.46";
 const CHANGELOG = [
+  {
+    version: "1.10.46",
+    date: "2026-04-25",
+    changes: [
+      "[버그 수정] 상세 모달의 업데이트 일정이 이미 채워져 있으면 수정 불편하던 문제 — 기존 <input list=…> datalist UX 에서 리스트 뷰와 같은 팝오버 피커로 교체. 기입된 값이든 빈 값이든 항상 클릭으로 기존 태그 pill 선택 또는 새 태그 입력 가능",
+      "잠긴(완료) 카드는 여전히 수정 불가, 비워서 '미지정'으로 되돌리는 전용 버튼 제공",
+    ],
+  },
   {
     version: "1.10.45",
     date: "2026-04-25",
@@ -4403,8 +4411,22 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved }) {
 // onSaved(nextCard) 로 서버 응답을 부모에 전달해 detailCard 동기화 — 다른 필드와의 stale
 // card.data race 방지 (다른 필드 저장이 target_update 를 덮어써 금방 지워지던 현상).
 function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdates = [], onSaved }) {
-  const [value, setValue] = React.useState(card.data?.target_update || "");
-  React.useEffect(() => { setValue(card.data?.target_update || ""); }, [card.id, card.updated_at]);
+  // v1.10.46 — 팝오버 피커 방식: 배지 클릭 시 기존 태그 pill 리스트 + 새 태그 입력 팝업이 열림.
+  // 목록이 많아도 스크롤. 기입된 값도 동일하게 변경 가능.
+  const [open, setOpen] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+  const wrapRef = React.useRef(null);
+  const current = card.data?.target_update?.trim?.() || "";
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (!wrapRef.current?.contains(e.target)) { setOpen(false); }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
   const save = async (next) => {
     try {
       const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
@@ -4418,40 +4440,113 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
       if (!r.ok) throw new Error(`update ${r.status}`);
       const updated = await r.json();
       onSaved?.(updated);
-    } catch (e) { console.warn("업데이트 일정 저장 실패:", e); }
+      setOpen(false);
+      setDraft("");
+    } catch (e) { alert("업데이트 일정 저장 실패: " + e.message); }
   };
+
   return (
-    <div style={{
+    <div ref={wrapRef} style={{
       marginBottom: 14, padding: "10px 14px", borderRadius: 10,
       background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)",
+      position: "relative",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: "#b45309", minWidth: 130 }}>
           🗓️ 업데이트 일정
         </span>
-        <input
-          type="text"
-          value={value}
+        <button
+          onClick={() => !disabled && setOpen((v) => !v)}
           disabled={disabled}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={() => {
-            const next = value.trim();
-            if (next !== (card.data?.target_update || "")) save(next);
-          }}
-          list="inzoi-update-options"
-          placeholder="미지정 (예: 2026-Q2 업데이트, 1.2 봄 패치)"
+          title={disabled ? "잠긴 카드는 수정 불가" : "클릭해서 변경"}
           style={{
-            flex: 1, padding: "8px 10px", borderRadius: 8,
+            flex: 1, padding: "8px 12px", borderRadius: 8,
             border: "1px solid rgba(234,179,8,0.3)",
             background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
-            fontSize: 13, color: "var(--text-main)", outline: "none", boxSizing: "border-box",
+            fontSize: 13, color: current ? "#b45309" : "var(--text-muted)",
+            fontWeight: current ? 700 : 400,
+            textAlign: "left", cursor: disabled ? "not-allowed" : "pointer",
           }}
-        />
+        >
+          {current ? `🗓️ ${current}` : "미지정 — 클릭해서 설정"}
+        </button>
       </div>
-      {availableUpdates.length > 0 && (
-        <datalist id="inzoi-update-options">
-          {availableUpdates.map((u) => <option key={u} value={u} />)}
-        </datalist>
+      {open && !disabled && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 142, right: 14,
+          zIndex: 50, padding: 10, borderRadius: 10, maxHeight: 320, overflowY: "auto",
+          background: "#fff", border: "1px solid var(--surface-border)",
+          boxShadow: "0 8px 28px rgba(0,0,0,0.16)",
+        }}>
+          {availableUpdates && availableUpdates.length > 0 ? (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>기존 태그</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
+                {availableUpdates.map((u) => {
+                  const active = current === u;
+                  return (
+                    <button
+                      key={u}
+                      onClick={() => save(u)}
+                      style={{
+                        padding: "5px 12px", borderRadius: 14,
+                        background: active ? "#b45309" : "rgba(180,83,9,0.1)",
+                        color: active ? "#fff" : "#b45309",
+                        border: `1px solid ${active ? "#b45309" : "rgba(180,83,9,0.3)"}`,
+                        fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      }}
+                    >🗓️ {u}</button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+              기존 태그 없음 — 아래에 새로 입력하세요.
+            </div>
+          )}
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4 }}>새 태그 / 직접 입력</div>
+          <input
+            autoFocus
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="예: 2026-Q2 업데이트, 1.2 봄 패치"
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") { e.preventDefault(); save(draft.trim() || null); }
+              else if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
+            }}
+            style={{
+              width: "100%", padding: "6px 10px", borderRadius: 6,
+              border: "1px solid var(--surface-border)", outline: "none",
+              fontSize: 12, boxSizing: "border-box", marginBottom: 6,
+            }}
+          />
+          <div style={{ display: "flex", gap: 4 }}>
+            <button
+              onClick={() => save(draft.trim() || null)}
+              disabled={!draft.trim()}
+              style={{
+                flex: 1, padding: "6px 0", borderRadius: 6, border: "none",
+                background: draft.trim() ? "var(--primary)" : "rgba(0,0,0,0.08)",
+                color: draft.trim() ? "#fff" : "var(--text-muted)",
+                fontSize: 12, fontWeight: 700, cursor: draft.trim() ? "pointer" : "not-allowed",
+              }}
+            >저장</button>
+            {current && (
+              <button
+                onClick={() => save(null)}
+                title="미지정으로 되돌림"
+                style={{
+                  padding: "6px 12px", borderRadius: 6,
+                  background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+                  color: "var(--text-muted)", fontSize: 12, cursor: "pointer",
+                }}
+              >미지정</button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
