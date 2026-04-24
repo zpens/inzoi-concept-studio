@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.42";
+const APP_VERSION = "1.10.43";
 const CHANGELOG = [
+  {
+    version: "1.10.43",
+    date: "2026-04-24",
+    changes: [
+      "[버그 수정] 새 아이디어 추가 창에서 Ctrl+V 이미지 붙여넣기가 안되던 문제 — paste 리스너가 '위시 탭일 때만' 등록되고 있어 N 단축키 / 다른 탭에서 모달 오픈 시 작동 안함. 조건을 'wishAddOpen && !detailCard' 로 변경해 모달 열림 상태 기준으로 동작",
+    ],
+  },
   {
     version: "1.10.42",
     date: "2026-04-24",
@@ -7072,14 +7079,13 @@ export default function InZOIConceptTool() {
   const [wishAddOpen, setWishAddOpen] = useState(false);
 
   // 클립보드 이미지 붙여넣기 — 위시리스트 탭에서만 활성. 여러번 붙여넣으면 누적.
-  // detailCard 가 열려있으면 AssetInfoEditor 가 우선 처리하므로 skip.
-  // 입력창에 포커스 되어 있어도 "이미지" 가 있으면 처리한다 (텍스트 붙여넣기는 방해 없음).
+  // 새 아이디어 모달이 열려있으면 탭 무관하게 Ctrl+V 로 이미지 붙여넣기 가능 (v1.10.43).
+  // 상세 모달(detailCard) 이 위에 있으면 AssetInfoEditor 가 우선 처리하므로 skip.
   useEffect(() => {
-    if (activeTab !== "wishlist" || detailCard) return;
+    if (!wishAddOpen || detailCard) return;
     const onPaste = (e) => {
       const items = e.clipboardData?.items;
       if (!items) return;
-      // 이미지 항목만 가로채고 텍스트는 입력창 기본 동작 유지.
       let handled = false;
       for (const it of items) {
         if (it.type && it.type.startsWith("image/")) {
@@ -7096,7 +7102,7 @@ export default function InZOIConceptTool() {
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [activeTab, detailCard]);
+  }, [wishAddOpen, detailCard]);
 
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
