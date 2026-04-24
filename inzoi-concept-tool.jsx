@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.40";
+const APP_VERSION = "1.10.41";
 const CHANGELOG = [
+  {
+    version: "1.10.41",
+    date: "2026-04-24",
+    changes: [
+      "👍 시안 투표 (단독 재투입) — 각 시안 타일 좌하단에 👍 버튼 + 카운트. 프로필 기반 (card.data.cardVotes = { [designIdx]: { [profileName]: true } }), 토글 방식, 본인 투표는 primary 색",
+      "1등 시안은 🏆 배지 + 초록 테두리, 헤더에 '🏆 투표 1등 선정 (N표)' 버튼 — 클릭 시 selected_design + 썸네일 자동 갱신",
+      "hover 시 투표자 이름 tooltip (voters.join(', '))",
+      "(legacy job.data.votes 와 이름 충돌 방지 위해 cardVotes 로 분리)",
+    ],
+  },
   {
     version: "1.10.40",
     date: "2026-04-24",
@@ -5870,6 +5880,48 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
     } catch (e) { alert("선정 실패: " + e.message); }
   };
 
+  // 👍 시안 투표 (v1.10.41) — 프로필 기반 토글.
+  // card.data.cardVotes = { [designIdx]: { [profileName]: true } } 로 저장.
+  // (legacy job 시스템의 card.data.votes 와 이름 충돌 피하기 위해 cardVotes 사용)
+  const rawCardVotes = card.data?.cardVotes;
+  const cardVotes = (rawCardVotes && typeof rawCardVotes === "object" && !Array.isArray(rawCardVotes))
+    ? rawCardVotes : {};
+  const voteCount = (idx) => {
+    const v = cardVotes[idx];
+    return v && typeof v === "object" ? Object.keys(v).length : 0;
+  };
+  const iVoted = (idx) => {
+    if (!actor) return false;
+    const v = cardVotes[idx];
+    return !!(v && typeof v === "object" && v[actor]);
+  };
+  const votersOf = (idx) => {
+    const v = cardVotes[idx];
+    return v && typeof v === "object" ? Object.keys(v) : [];
+  };
+  let voteLeaderIdx = null, voteLeaderCount = 0;
+  displayDesigns.forEach((_, i) => {
+    const c = voteCount(i);
+    if (c > voteLeaderCount) { voteLeaderCount = c; voteLeaderIdx = i; }
+  });
+  const toggleVote = async (idx) => {
+    if (disabled) return;
+    if (!actor) { alert("프로필을 먼저 선택해 주세요 (헤더 우측)."); return; }
+    const forIdx = (cardVotes[idx] && typeof cardVotes[idx] === "object") ? cardVotes[idx] : {};
+    const hasMine = !!forIdx[actor];
+    const nextForIdx = { ...forIdx };
+    if (hasMine) delete nextForIdx[actor];
+    else nextForIdx[actor] = true;
+    const nextVotes = { ...cardVotes };
+    if (Object.keys(nextForIdx).length === 0) delete nextVotes[idx];
+    else nextVotes[idx] = nextForIdx;
+    await save({ cardVotes: nextVotes });
+  };
+  const selectTopVote = async () => {
+    if (voteLeaderIdx == null) return;
+    await selectDesign(voteLeaderIdx);
+  };
+
   // 보기 모드 토글 버튼.
   const ModeBtn = ({ mode, icon, title }) => (
     <button
@@ -5890,13 +5942,19 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
     : d.source === "upload" ? `📤 #${i + 1}`
     : `#${i + 1}`;
 
-  // 하나의 시안 타일 — 보기 모드에 따라 크기 조절. 선정 버튼도 hover 없이 항상 표시.
+  // 하나의 시안 타일 — 선정 + 투표 UI (v1.10.41).
   const Tile = ({ d, i, height }) => {
     const isSelected = selectedIdx === i;
+    const n = voteCount(i);
+    const mine = iVoted(i);
+    const isLeader = voteLeaderIdx === i && voteLeaderCount > 0;
+    const voters = votersOf(i);
     return (
       <div style={{
         position: "relative", borderRadius: 8, overflow: "hidden",
-        border: isSelected ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+        border: isSelected ? "2px solid #fbbf24"
+          : isLeader ? "2px solid #22c55e"
+          : "1px solid var(--surface-border)",
         background: "#000",
       }}>
         {d?.imageUrl ? (
@@ -5933,6 +5991,27 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
             }}
           >☆ 선정</button>
         )}
+        {/* 👍 투표 버튼 + 카운트 — 좌측 하단 (v1.10.41) */}
+        {d?.imageUrl && !disabled && (
+          <button
+            onClick={() => toggleVote(i)}
+            title={voters.length > 0 ? `투표: ${voters.join(", ")}` : (actor ? "투표하기" : "프로필 선택 후 투표 가능")}
+            style={{
+              position: "absolute", bottom: 6, left: 6,
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "3px 9px", borderRadius: 14,
+              background: mine ? "var(--primary)" : "rgba(0,0,0,0.72)",
+              border: "none",
+              color: "#fff", fontSize: 11, fontWeight: 700,
+              cursor: actor ? "pointer" : "not-allowed",
+              opacity: actor ? 1 : 0.6,
+            }}
+          >
+            <span>👍</span>
+            <span>{n}</span>
+            {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
+          </button>
+        )}
       </div>
     );
   };
@@ -5947,8 +6026,19 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
           🎨 시안 이력 ({displayDesigns.length}개)
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-          AI 생성 + 외부 업로드 · ☆ 로 선정
+          AI 생성 + 외부 업로드 · ☆ 선정 / 👍 투표
         </div>
+        {voteLeaderIdx != null && !disabled && selectedIdx !== voteLeaderIdx && (
+          <button
+            onClick={selectTopVote}
+            title={`투표 1등 (#${voteLeaderIdx + 1}, ${voteLeaderCount}표) 을 대표 시안으로 선정`}
+            style={{
+              padding: "4px 10px", borderRadius: 14,
+              background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.4)",
+              color: "#15803d", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            }}
+          >🏆 투표 1등 선정 ({voteLeaderCount}표)</button>
+        )}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
           {displayDesigns.length > 0 && (
             <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
