@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.35";
+const APP_VERSION = "1.10.36";
 const CHANGELOG = [
+  {
+    version: "1.10.36",
+    date: "2026-04-24",
+    changes: [
+      "추가 프롬프트 결합 방식 강화 — '기존 — 추가' em dash 대신 '기존. Additionally apply: 추가' 영문 접속어로 Gemini 가 뒤 문장을 override 가 아닌 '덧붙임' 으로 해석하게 유도",
+      "추가 프롬프트 입력 아래에 최종 프롬프트 실시간 프리뷰 추가 — '→ 최종: {기존}. Additionally apply: {추가}' 로 점선 박스에 회색 표기",
+    ],
+  },
   {
     version: "1.10.35",
     date: "2026-04-24",
@@ -3536,7 +3544,8 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
     const basePrompt = card.data?.prompt || card.description || card.title;
     if (!basePrompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
     const extra = extraPrompt.trim();
-    const prompt = extra ? `${basePrompt} — ${extra}` : basePrompt;
+    // 영문 접속어로 '덧붙임' 의도 명확화 — Gemini 가 뒤 문장을 override 아닌 추가 지시로 해석 (v1.10.36).
+    const prompt = extra ? `${basePrompt}. Additionally apply: ${extra}` : basePrompt;
     setBusy(true);
     setProgress({ done: 0, total: count });
     onGenerateProgress?.(card, 0, count);
@@ -3634,9 +3643,25 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
             border: "1px solid var(--surface-border)",
             background: busy ? "rgba(0,0,0,0.03)" : "#fff",
             fontSize: 12, color: "var(--text-main)", outline: "none",
-            marginBottom: 10, boxSizing: "border-box",
+            marginBottom: 6, boxSizing: "border-box",
           }}
         />
+        {/* 최종 프롬프트 프리뷰 — 추가 프롬프트가 있을 때만 표시 (v1.10.36) */}
+        {extraPrompt.trim() && (() => {
+          const base = card.data?.prompt || card.description || card.title || "";
+          const preview = `${base}. Additionally apply: ${extraPrompt.trim()}`;
+          return (
+            <div style={{
+              marginBottom: 10, padding: "6px 10px", borderRadius: 6,
+              background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
+              fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5,
+              whiteSpace: "pre-wrap", wordBreak: "break-word",
+            }}>
+              <span style={{ fontWeight: 700, color: "var(--primary)" }}>→ 최종: </span>
+              {preview}
+            </div>
+          );
+        })()}
         {/* 개수 선택 + 생성 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           {[1, 2, 4].map((n) => (
