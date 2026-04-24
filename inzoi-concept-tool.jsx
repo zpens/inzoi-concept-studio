@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.50";
+const APP_VERSION = "1.10.51";
 const CHANGELOG = [
+  {
+    version: "1.10.51",
+    date: "2026-04-25",
+    changes: [
+      "시안 이력 섹션에 이미지 붙여넣기 지원 — 헤더에 '📋 붙여넣기' 버튼 (navigator.clipboard.read) + 패널 내부 hover/focus 중에만 Ctrl+V 로 직접 붙여넣기",
+      "ingestImage 공용 함수로 File 파일 선택 / Clipboard API / Ctrl+V 세 경로 통합",
+      "PromptRefEditor 의 참조 이미지 paste 와 충돌 방지 — capture 모드 + stopImmediatePropagation 으로 패널이 활성 상태일 때만 DesignsPanel 이 가로챔",
+      "패널 활성 상태일 땐 테두리가 primary 색으로 바뀌고 '📋 Ctrl+V 로 붙여넣기 가능' 안내 문구 노출",
+    ],
+  },
   {
     version: "1.10.50",
     date: "2026-04-25",
@@ -6192,8 +6202,9 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
     } catch (e) { alert("저장 실패: " + e.message); }
   };
 
-  const addExternalImage = (file) => {
-    if (!file || disabled) return;
+  // 이미지 파일/blob 을 시안 리스트에 추가하는 공용 함수 (v1.10.51).
+  const ingestImage = (fileOrBlob) => {
+    if (!fileOrBlob || disabled) return;
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
@@ -6203,8 +6214,61 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
         await save({ designs: [...existing, newDesign] });
       } catch (err) { alert("이미지 추가 실패: " + err.message); }
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(fileOrBlob);
   };
+  const addExternalImage = ingestImage; // 기존 호출 호환.
+
+  // 📋 붙여넣기 버튼 — Clipboard API 로 명시적으로 클립보드에서 이미지 읽음 (v1.10.51).
+  const pasteFromClipboard = async () => {
+    if (disabled) return;
+    if (!navigator.clipboard?.read) {
+      alert("이 브라우저는 Clipboard API 를 지원하지 않습니다. Ctrl+V 로 붙여넣거나 '＋ 이미지 추가' 버튼을 사용하세요.");
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith("image/")) {
+            const blob = await item.getType(type);
+            ingestImage(blob);
+            return;
+          }
+        }
+      }
+      alert("클립보드에 이미지가 없습니다.");
+    } catch (e) {
+      alert("클립보드 읽기 실패: " + e.message);
+    }
+  };
+
+  // 패널 내부에 포커스/호버 중일 때 Ctrl+V 로 바로 붙여넣기 (v1.10.51).
+  // PromptRefEditor 의 전역 paste 와 충돌 방지를 위해 '이 패널이 최근 상호작용 대상' 일 때만 처리.
+  const panelRef = React.useRef(null);
+  const [panelActive, setPanelActive] = React.useState(false);
+  React.useEffect(() => {
+    if (disabled) return;
+    const onPaste = (e) => {
+      if (!panelActive) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) {
+            ingestImage(f);
+            e.preventDefault();
+            // 한번만 처리하고 다른 paste 리스너(ref images) 로 전파 중단.
+            e.stopImmediatePropagation?.();
+            return;
+          }
+        }
+      }
+    };
+    // capture 모드로 등록해 PromptRefEditor 의 paste 핸들러보다 먼저 동작.
+    window.addEventListener("paste", onPaste, true);
+    return () => window.removeEventListener("paste", onPaste, true);
+  }, [disabled, panelActive, card.id]);
 
   const selectDesign = async (idx) => {
     if (disabled) return;
@@ -6364,16 +6428,26 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
   };
 
   return (
-    <div style={{
-      padding: 14, borderRadius: 12,
-      background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)",
-    }}>
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      onMouseEnter={() => setPanelActive(true)}
+      onMouseLeave={() => setPanelActive(false)}
+      onMouseDown={() => setPanelActive(true)}
+      style={{
+        padding: 14, borderRadius: 12,
+        background: "rgba(0,0,0,0.02)",
+        border: `1px solid ${panelActive ? "rgba(7,110,232,0.3)" : "var(--surface-border)"}`,
+        outline: "none",
+        transition: "border-color 0.15s",
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
           🎨 시안 이력 ({displayDesigns.length}개)
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-          AI 생성 + 외부 업로드 · ☆ 선정 / 👍 투표
+          {panelActive ? "📋 Ctrl+V 로 붙여넣기 가능" : "AI 생성 + 외부 업로드 · ☆ 선정 / 👍 투표"}
         </div>
         {voteLeaderIdx != null && !disabled && selectedIdx !== voteLeaderIdx && (
           <button
@@ -6395,22 +6469,33 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
             </div>
           )}
           {!disabled && (
-            <label
-              title="다른 곳에서 만든 이미지를 시안으로 추가"
-              style={{
-                padding: "4px 10px", borderRadius: 6,
-                background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
-              }}
-            >
-              ＋ 이미지 추가
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => { addExternalImage(e.target.files?.[0]); e.target.value = ""; }}
-                style={{ display: "none" }}
-              />
-            </label>
+            <>
+              <button
+                onClick={pasteFromClipboard}
+                title="클립보드의 이미지를 시안으로 붙여넣기"
+                style={{
+                  padding: "4px 10px", borderRadius: 6,
+                  background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                  color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                }}
+              >📋 붙여넣기</button>
+              <label
+                title="다른 곳에서 만든 이미지 파일을 시안으로 추가"
+                style={{
+                  padding: "4px 10px", borderRadius: 6,
+                  background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                  color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                ＋ 이미지 추가
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => { addExternalImage(e.target.files?.[0]); e.target.value = ""; }}
+                  style={{ display: "none" }}
+                />
+              </label>
+            </>
           )}
         </div>
       </div>
