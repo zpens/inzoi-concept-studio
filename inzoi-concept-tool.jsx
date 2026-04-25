@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.55";
+const APP_VERSION = "1.10.56";
 const CHANGELOG = [
+  {
+    version: "1.10.56",
+    date: "2026-04-26",
+    changes: [
+      "유사 에셋 / 기존 제작 에셋 그리드에서 중복 아이콘 제거 — 같은 에셋이 여러 inZOI 카테고리에 복사 등록된 경우(같은 icon 파일이 여러 id 로 노출) 가장 점수 높은 한 건만 표시",
+      "findSimilarCatalogAssets 가 score 정렬 후 icon → name → id 순 키로 dedup. fallback(spec.sample_thumbs) 경로도 동일 정책 적용",
+      "결과: 12개 슬롯이 실제 서로 다른 에셋 12개로 채워짐 (이전엔 중복 때문에 의미 있는 후보가 6~8개로 줄던 케이스)",
+    ],
+  },
   {
     version: "1.10.55",
     date: "2026-04-26",
@@ -2598,8 +2607,19 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
     });
   }
   entries.sort((a, b) => b.score - a.score);
-  const maxScore = entries.length ? entries[0].score : 1;
-  return entries.slice(0, topN).map((e) => ({
+  // v1.10.56 — 같은 아이콘이 여러 카테고리에 복사되어 있을 때 중복 제거.
+  // 키 우선순위: icon (실제 이미지 파일) > name. 가장 높은 score 만 유지.
+  const seen = new Set();
+  const deduped = [];
+  for (const e of entries) {
+    const key = e.icon ? `icon:${e.icon}` : e.name ? `name:${e.name}` : `id:${e.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(e);
+    if (deduped.length >= topN) break;
+  }
+  const maxScore = deduped.length ? deduped[0].score : 1;
+  return deduped.map((e) => ({
     id: e.id,
     score: e.score,
     normalized: maxScore > 0 ? e.score / maxScore : 0,
@@ -3568,7 +3588,18 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                       normalized: m.normalized,
                     };
                   })
-                : (spec.sample_thumbs || []).map((t) => ({ ...t }));
+                : (() => {
+                    // v1.10.56 — 같은 icon_url 또는 name 이 여러 카테고리에 복사되어 있어도 한 번만.
+                    const seenT = new Set();
+                    const out = [];
+                    for (const t of (spec.sample_thumbs || [])) {
+                      const key = t.icon_url || t.name || t.id;
+                      if (seenT.has(key)) continue;
+                      seenT.add(key);
+                      out.push({ ...t });
+                    }
+                    return out;
+                  })();
               if (items.length === 0) return null;
               return (
                 <div style={{
