@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.61";
+const APP_VERSION = "1.10.62";
 const CHANGELOG = [
+  {
+    version: "1.10.62",
+    date: "2026-04-26",
+    changes: [
+      "갤러리 캔버스(F) 타일 hover 시 메타 패널 표시 — 좌하단에 해상도 / 종류(AI 시안·업로드·시트·참조) / 모델 / seed / 생성 시각 / 투표 수. 카드 단일 데이터 소스만 사용, 추가 fetch 없음",
+      "메타 패널은 줌과 무관하게 일정 크기 유지 (counter-scale: invScale 적용)",
+      "groups useMemo 가 각 item 에 meta 객체 enrich (kind/seed/model/createdAt/votes/view)",
+    ],
+  },
   {
     version: "1.10.61",
     date: "2026-04-26",
@@ -5558,20 +5567,34 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         url, type: "ref",
         isCover: url === hero,
         label: url === hero ? "⭐ 대표" : null,
+        meta: { kind: url === hero ? "대표 이미지" : "참조 이미지" },
       })));
       if (items.length) out.push({ key: "refs", title: "🖼 대표 / 참조", items });
     }
+    // v1.10.62 — 각 item 에 메타정보(seed/model/createdAt/source/votes) 추가, hover 패널 표시용.
+    const cardVotes = (card.data?.cardVotes && typeof card.data.cardVotes === "object") ? card.data.cardVotes : {};
     const designs = (Array.isArray(card.data?.designs) ? card.data.designs : []).filter((d) => d?.imageUrl);
     if (designs.length) {
-      const items = dedup(designs.map((d, i) => ({
-        url: d.imageUrl, type: "design", designIdx: i,
-        isSelected: card.data?.selected_design === i,
-        isCover: d.imageUrl === hero,
-        label: d._sheet ? "📑 시트"
-          : d._legacy ? "🗂 레거시"
-          : d.source === "upload" ? `📤 #${i + 1}`
-          : `#${i + 1}`,
-      })));
+      const items = dedup(designs.map((d, i) => {
+        const v = cardVotes[i];
+        const voteN = (v && typeof v === "object") ? Object.keys(v).length : 0;
+        return {
+          url: d.imageUrl, type: "design", designIdx: i,
+          isSelected: card.data?.selected_design === i,
+          isCover: d.imageUrl === hero,
+          label: d._sheet ? "📑 시트"
+            : d._legacy ? "🗂 레거시"
+            : d.source === "upload" ? `📤 #${i + 1}`
+            : `#${i + 1}`,
+          meta: {
+            kind: d._sheet ? "시트" : d._legacy ? "레거시" : d.source === "upload" ? "업로드" : "AI 시안",
+            seed: d.seed ?? null,
+            createdAt: d.createdAt || null,
+            votes: voteN,
+            badge: `#${i + 1}`,
+          },
+        };
+      }));
       if (items.length) out.push({ key: "designs", title: `🎨 시안 (${items.length})`, items });
     }
     const v = card.data?.concept_sheet_views;
@@ -5580,6 +5603,12 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         url: v[k], type: "sheet",
         label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
         isCover: v[k] === hero,
+        meta: {
+          kind: "현재 시트",
+          view: k,
+          model: v.model || null,
+          createdAt: v.generated_at || null,
+        },
       })));
       if (items.length) {
         out.push({
@@ -5595,6 +5624,12 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         url: h[k], type: "sheet-history",
         label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
         isCover: h[k] === hero,
+        meta: {
+          kind: `이전 시트 ${hi + 1}`,
+          view: k,
+          model: h.model || null,
+          createdAt: h.generated_at || null,
+        },
       })));
       if (items.length) {
         out.push({
@@ -6464,8 +6499,19 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
   //   이제 IMG bitmap 이 natural pixel 그대로 → 줌인하면 원본 픽셀이 노출됨.
   //   메모리 보호: 단일 IMG 가 최대 2048px 변에 cap.
+  // v1.10.62: hover 시 메타 패널 표시 (해상도 / 종류 / model / seed / 날짜 / 투표).
   const coverBtnTitle = item.isCover ? "현재 대표 이미지" : "카드 대표(썸네일)로 지정";
   const invScale = 1 / Math.max(scale || 1, 0.01);
+  const [hovered, setHovered] = React.useState(false);
+  const meta = item.meta || {};
+  const metaParts = [];
+  if (naturalImgW && naturalImgH) metaParts.push(`${naturalImgW}×${naturalImgH}`);
+  if (meta.kind) metaParts.push(meta.kind);
+  if (meta.model) metaParts.push(meta.model);
+  if (meta.seed != null) metaParts.push(`seed:${meta.seed}`);
+  if (meta.createdAt) metaParts.push(formatLocalTime(meta.createdAt, "ymdhm"));
+  if (meta.votes > 0) metaParts.push(`👍 ${meta.votes}`);
+  const showMeta = hovered && metaParts.length > 0;
 
   // 자연 해상도 알고 있으면 그것 기반, 모르면 fallback (이미지 로드 전).
   let imgStyle;
@@ -6493,13 +6539,16 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
   }
 
   return (
-    <div style={{
-      width, height,
-      position: "relative",
-      display: "inline-block", flexShrink: 0,
-      overflow: "hidden",
-      background: "#111",
-    }}>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        width, height,
+        position: "relative",
+        display: "inline-block", flexShrink: 0,
+        overflow: "hidden",
+        background: "#111",
+      }}>
       <img
         src={item.url}
         alt=""
@@ -6507,6 +6556,23 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
         onLoad={(e) => onImageLoad?.(e, item.url)}
         style={imgStyle}
       />
+      {/* v1.10.62 — 메타 hover 패널 (좌하단). 줌이 변해도 일정 크기 유지하기 위해 counter-scale. */}
+      {showMeta && (
+        <div style={{
+          position: "absolute", bottom: 6, left: 6,
+          padding: "4px 8px", borderRadius: 6,
+          background: "rgba(0,0,0,0.78)", color: "#fff",
+          fontSize: 10, fontWeight: 600, lineHeight: 1.4,
+          fontFamily: "monospace",
+          pointerEvents: "none",
+          maxWidth: "calc(100% - 12px)",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          transform: `scale(${invScale})`, transformOrigin: "bottom left",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+        }}>
+          {metaParts.join(" · ")}
+        </div>
+      )}
       {item.label && (
         <div style={{
           position: "absolute", top: 6, left: 6,
