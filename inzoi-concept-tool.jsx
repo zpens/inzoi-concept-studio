@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.52";
+const APP_VERSION = "1.10.53";
 const CHANGELOG = [
+  {
+    version: "1.10.53",
+    date: "2026-04-25",
+    changes: [
+      "API 상태 안내 문구가 Claude API 키 설정 여부를 반영 — Gemini + Claude 둘 다 등록되어 있으면 'Gemini + Claude 모두 연결됨 — 프롬프트 자동 최적화 활성' 표시. 이전엔 Gemini 만 보고 'Claude 추가하면…' 항상 안내해 혼란",
+    ],
+  },
   {
     version: "1.10.52",
     date: "2026-04-25",
@@ -10161,11 +10168,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
         }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: geminiApiKey ? "#10b981" : "#ef4444", marginBottom: 8 }}>
-            {geminiApiKey ? "✅ 나노바나나2 (Gemini 3.1 Flash Image) API 연결됨" : "⚠️ API 키를 설정해주세요"}
+            {geminiApiKey
+              ? (claudeApiKey
+                  ? "✅ Gemini (나노바나나2) + Claude API 모두 연결됨 — 프롬프트 자동 최적화 활성"
+                  : "✅ 나노바나나2 (Gemini 3.1 Flash Image) API 연결됨")
+              : "⚠️ API 키를 설정해주세요"}
           </div>
           <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
             {geminiApiKey
-              ? "나노바나나2 (Gemini 3.1 Flash Image)로 실제 이미지를 생성합니다. Claude API 키를 추가하면 프롬프트 자동 최적화도 활성화됩니다."
+              ? (claudeApiKey
+                  ? "Gemini 로 이미지 생성 + Claude 로 프롬프트 자동 최적화. 두 API 모두 정상 동작 중."
+                  : "나노바나나2 (Gemini 3.1 Flash Image)로 실제 이미지를 생성합니다. Claude API 키를 추가하면 프롬프트 자동 최적화도 활성화됩니다.")
               : <>상단 <strong>API 설정</strong> 버튼을 눌러 Gemini API 키를 입력하세요. Google AI Studio에서 무료로 발급받을 수 있습니다.</>
             }
           </div>
