@@ -1,8 +1,21 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.57";
+const APP_VERSION = "1.10.58";
 const CHANGELOG = [
+  {
+    version: "1.10.58",
+    date: "2026-04-26",
+    changes: [
+      "[#18] 시안 추가 생성 시 대표이미지를 항상 참조 1순위로 prepend — generateCardVariants 가 ref_images 와 무관하게 thumbnail_url 을 맨 앞에 추가 (중복 제거). 이전엔 ref 가 있으면 대표가 무시됐지만 이제 '대표 기준 보강' 의도가 일관 동작",
+      "추가 프롬프트 자동 복원 — generateCardVariants 가 last_extra_prompt 를 같은 PATCH 에 저장해 race 회피, 다음 회차에 카드별로 자동 입력. 빈 값이면 클리어",
+      "DesignsPanel 정렬 (생성순/최신순/투표순) — 헤더에 셀렉트 추가, sortedRenderOrder 가 원본 idx 보존해 voteCount/selectDesign/removeDesign 정상 동작",
+      "drafting 단계 ☆ 선정 동작 분리 — 이전엔 선정 = 대표 + sheet 자동 이동 묶음. 이제 ☆ 선정 = 대표만 변경, 별도 패널 하단 '✨ 선정 시안 으로 컨셉시트 단계로 이동 →' 버튼 신설. 의도 명확",
+      "카드 복제 (📋) — 상세 모달 헤더에 신설. 어셋 정보·프롬프트·참조 이미지·last_extra_prompt 가져오고 시안/시트/투표는 비워서 drafting 으로 새 카드 생성",
+      "CardActionPanel dead-code 정리 — drafting 분기 흡수 후 남은 count/extraPrompt/doGenerate/selectDesign/setCoverDesign/removeDesign 제거 (~80줄 감소)",
+      "DesignsPanel 생성 행 flexWrap + 버튼 whiteSpace 처리 — 좁은 폭에서 버튼 찌그러짐 방지",
+    ],
+  },
   {
     version: "1.10.57",
     date: "2026-04-26",
@@ -3012,7 +3025,7 @@ const STATUS_META = {
 // - card.data.category / style_preset 으로 enhanced prompt 자동 구성
 // - card.data.ref_images 가 있으면 Gemini multimodal 로 함께 전송
 // - 결과를 card.data.designs 에 append, PATCH 로 저장
-async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress }) {
+async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress, extraPromptToSave }) {
   const seeds = Array.from({ length: Math.max(1, Math.min(4, count)) }, () => generateSeed());
 
   // prompt enhance — 영문 일관성 우선, 카테고리 spec hints 는 제외 (사용자 요청 v1.7.9).
@@ -3046,8 +3059,14 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
 
   // ref_images 가 비어있고 card.thumbnail_url 이 있으면 (위시리스트에서 넘어온
   // 이미지) fallback 으로 포함시켜 Gemini multimodal 에 확실히 전달.
-  let refImages = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
-  if (refImages.length === 0 && card.thumbnail_url) refImages = [card.thumbnail_url];
+  // v1.10.58 — 대표이미지(thumbnail_url) 를 항상 참조 1순위로 prepend.
+  // 이전엔 ref_images 가 있으면 대표가 무시됐지만, 사용자는 "대표를 기준으로 보강" 을 기대.
+  // 대표가 ref_images 에 이미 들어가 있으면 중복 제거 후 맨 앞으로.
+  let refImages = Array.isArray(card.data?.ref_images) ? [...card.data.ref_images] : [];
+  if (card.thumbnail_url) {
+    refImages = refImages.filter((u) => u !== card.thumbnail_url);
+    refImages.unshift(card.thumbnail_url);
+  }
 
   const tasks = seeds.map((s) => async () => {
     try {
@@ -3066,6 +3085,9 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
     prompt,
     enhanced_prompt: enhancedPrompt,
     designs: [...existing, ...valid],
+    // v1.10.58 — 다음 회차 자동 복원용 추가 프롬프트 저장 (빈 값이면 null 로 클리어).
+    last_extra_prompt: (typeof extraPromptToSave === "string" && extraPromptToSave.trim())
+      ? extraPromptToSave.trim() : null,
   };
   // 첫 시안 생성이면 썸네일 갱신 (참조 이미지가 아닌 생성된 결과로).
   const patch = { data: nextData, actor };
@@ -3752,90 +3774,14 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
 //   sheet    → "최종 완료" 버튼 (시트 생성은 기존 흐름 혹은 간단화)
 //   done     → (confirmed 잠금, 이 패널은 렌더 안 함)
 function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedModel, actor, onMoveTo, onRefresh, onOpenApiSettings, onOpenImage, onGenerateProgress, onGenerateEnd }) {
-  const [count, setCount] = React.useState(1);
+  // v1.10.58 — drafting 분기가 DesignsPanel 로 이동(v1.10.57)한 뒤 남은 dead-state 정리.
+  // sheet 분기의 makeSheet 가 busy/progress 만 사용. count/extraPrompt/doGenerate/
+  // selectDesign/setCoverDesign/removeDesign 은 모두 DesignsPanel 로 이주됨.
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(null);
-  // 이 생성 회차에만 프롬프트 끝에 붙일 추가 지시 (저장 안됨, v1.10.25).
-  const [extraPrompt, setExtraPrompt] = React.useState("");
 
   const designs = Array.isArray(card.data?.designs) ? card.data.designs : [];
   const selectedIdx = card.data?.selected_design;
-
-  const doGenerate = async () => {
-    if (!geminiApiKey) { onOpenApiSettings(); return; }
-    const basePrompt = card.data?.prompt || card.description || card.title;
-    if (!basePrompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
-    const extra = extraPrompt.trim();
-    // 영문 접속어로 '덧붙임' 의도 명확화 — Gemini 가 뒤 문장을 override 아닌 추가 지시로 해석 (v1.10.36).
-    const prompt = extra ? `${basePrompt}. Additionally apply: ${extra}` : basePrompt;
-    setBusy(true);
-    setProgress({ done: 0, total: count });
-    onGenerateProgress?.(card, 0, count);
-    try {
-      const r = await generateCardVariants({
-        card, count, prompt, geminiApiKey, selectedModel,
-        slug: projectSlug, actor,
-        onProgress: (done, total) => {
-          setProgress({ done, total });
-          onGenerateProgress?.(card, done, total);
-        },
-      });
-      if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
-      await onRefresh();
-    } catch (e) { alert("생성 실패: " + e.message); }
-    finally {
-      setBusy(false);
-      setProgress(null);
-      onGenerateEnd?.(card);
-    }
-  };
-
-  const selectDesign = async (idx) => {
-    try {
-      const d = designs[idx];
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), selected_design: idx },
-          thumbnail_url: d?.imageUrl || card.thumbnail_url,
-          status_key: "sheet",
-          actor,
-        }),
-      });
-      await onRefresh();
-    } catch (e) { alert("선정 실패: " + e.message); }
-  };
-
-  // 대표 이미지만 지정 (상태 이동 없이 카드 썸네일 + selected_design 만 업데이트).
-  const setCoverDesign = async (idx) => {
-    try {
-      const d = designs[idx];
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), selected_design: idx },
-          thumbnail_url: d?.imageUrl || card.thumbnail_url,
-          actor,
-        }),
-      });
-      await onRefresh();
-    } catch (e) { alert("대표 지정 실패: " + e.message); }
-  };
-
-  const removeDesign = async (idx) => {
-    if (!confirm("이 시안을 삭제하시겠어요?")) return;
-    const next = designs.filter((_, i) => i !== idx);
-    try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: { ...(card.data || {}), designs: next }, actor }),
-      });
-      await onRefresh();
-    } catch (e) { alert("삭제 실패: " + e.message); }
-  };
 
   const sectionStyle = {
     marginBottom: 20, padding: 14, borderRadius: 12,
@@ -6133,7 +6079,15 @@ function DesignsPanel({
   const [count, setCount] = React.useState(1);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(null);
-  const [extraPrompt, setExtraPrompt] = React.useState("");
+  // v1.10.58 — 추가 프롬프트는 카드별로 저장된 last_extra_prompt 로 자동 복원.
+  const [extraPrompt, setExtraPrompt] = React.useState(card.data?.last_extra_prompt || "");
+  // v1.10.58 — 시안 정렬 (생성순 / 최신순 / 투표순). 카드 단위 메모리.
+  const [sortMode, setSortMode] = React.useState("created");
+  // 카드 변경 시 추가 프롬프트 / 정렬 초기화.
+  React.useEffect(() => {
+    setExtraPrompt(card.data?.last_extra_prompt || "");
+    setSortMode("created");
+  }, [card.id]);
 
   const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
   const extras = [];
@@ -6237,10 +6191,9 @@ function DesignsPanel({
     const d = displayDesigns[idx];
     const patch = { selected_design: idx };
     // 업로드/AI 시안을 선정하면 카드 썸네일도 같이 갱신.
+    // v1.10.58 — 단계 자동 이동(drafting → sheet) 제거. 별도 패널 하단 버튼으로 분리.
     const extraPatch = {};
     if (d?.imageUrl) extraPatch.thumbnail_url = d.imageUrl;
-    // v1.10.57 — drafting 단계에서 선정 = 컨셉시트 단계로 이동 (구 CardActionPanel.selectDesign 동작).
-    if (statusKey === "drafting") extraPatch.status_key = "sheet";
     try {
       await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
         method: "PATCH",
@@ -6284,6 +6237,7 @@ function DesignsPanel({
       const r = await generateCardVariants({
         card, count, prompt, geminiApiKey, selectedModel,
         slug: projectSlug, actor,
+        extraPromptToSave: extra, // v1.10.58 — 동일 PATCH 에 last_extra_prompt 함께 저장
         onProgress: (done, total) => {
           setProgress({ done, total });
           onGenerateProgress?.(card, done, total);
@@ -6297,6 +6251,19 @@ function DesignsPanel({
       setProgress(null);
       onGenerateEnd?.(card);
     }
+  };
+
+  // v1.10.58 — drafting → sheet 단계 이동 (선정된 시안으로 컨셉시트 만들기).
+  const moveSelectedToSheet = async () => {
+    if (disabled || selectedIdx == null) return;
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status_key: "sheet", actor }),
+      });
+      await onRefresh?.();
+    } catch (e) { alert("단계 이동 실패: " + e.message); }
   };
 
   // 👍 시안 투표 (v1.10.41) — 프로필 기반 토글.
@@ -6360,6 +6327,21 @@ function DesignsPanel({
     : d._legacy ? "🗂 레거시"
     : d.source === "upload" ? `📤 #${i + 1}`
     : `#${i + 1}`;
+
+  // v1.10.58 — 정렬 적용된 렌더 순서. 원본 인덱스(i) 보존이 핵심: voteCount, selectDesign,
+  // removeDesign 모두 displayDesigns 의 원본 idx 를 받아야 함.
+  const sortedRenderOrder = React.useMemo(() => {
+    const base = displayDesigns.map((d, i) => ({ d, i }));
+    if (sortMode === "newest") return base.slice().reverse();
+    if (sortMode === "votes") {
+      return base.slice().sort((a, b) => {
+        const av = (cardVotes[a.i] && typeof cardVotes[a.i] === "object") ? Object.keys(cardVotes[a.i]).length : 0;
+        const bv = (cardVotes[b.i] && typeof cardVotes[b.i] === "object") ? Object.keys(cardVotes[b.i]).length : 0;
+        return bv - av;
+      });
+    }
+    return base; // "created" — 원본 순
+  }, [displayDesigns, sortMode, cardVotes]);
 
   // 하나의 시안 타일 — 선정 + 투표 UI (v1.10.41).
   const Tile = ({ d, i, height }) => {
@@ -6482,6 +6464,23 @@ function DesignsPanel({
           >🏆 투표 1등 선정 ({voteLeaderCount}표)</button>
         )}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+          {/* v1.10.58 — 시안 정렬 (생성순/최신순/투표순) */}
+          {displayDesigns.length > 1 && (
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value)}
+              title="시안 정렬"
+              style={{
+                padding: "3px 8px", borderRadius: 6,
+                border: "1px solid var(--surface-border)", background: "#fff",
+                color: "var(--text-muted)", fontSize: 11, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              <option value="created">📋 생성순</option>
+              <option value="newest">🆕 최신순</option>
+              <option value="votes">👍 투표순</option>
+            </select>
+          )}
           {displayDesigns.length > 0 && (
             <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
               <ModeBtn mode="grid" icon="🔲" title="그리드" />
@@ -6557,7 +6556,7 @@ function DesignsPanel({
               </div>
             );
           })()}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {[1, 2, 4].map((n) => (
               <button
                 key={n}
@@ -6580,6 +6579,7 @@ function DesignsPanel({
                 background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, var(--primary), var(--secondary))",
                 border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
                 cursor: busy ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap",
               }}
             >
               {busy
@@ -6604,11 +6604,11 @@ function DesignsPanel({
           gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
           gap: 8,
         }}>
-          {displayDesigns.map((d, i) => <Tile key={i} d={d} i={i} height={150} />)}
+          {sortedRenderOrder.map(({ d, i }) => <Tile key={i} d={d} i={i} height={150} />)}
         </div>
       ) : viewMode === "compare" ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {displayDesigns.map((d, i) => <Tile key={i} d={d} i={i} height={280} />)}
+          {sortedRenderOrder.map(({ d, i }) => <Tile key={i} d={d} i={i} height={280} />)}
         </div>
       ) : (
         // single — carousel
@@ -6666,6 +6666,19 @@ function DesignsPanel({
             );
           })()}
         </div>
+      )}
+
+      {/* v1.10.58 — drafting 에서 ☆ 선정은 대표만 변경, 단계 이동은 별도 버튼 */}
+      {statusKey === "drafting" && !disabled && selectedIdx != null && displayDesigns[selectedIdx]?.imageUrl && (
+        <button
+          onClick={moveSelectedToSheet}
+          style={{
+            marginTop: 12, width: "100%", padding: "10px 14px", borderRadius: 10,
+            background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+            border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+            boxShadow: "0 2px 10px rgba(7,110,232,0.2)",
+          }}
+        >✨ 선정 시안 (#{selectedIdx + 1}) 으로 컨셉시트 단계로 이동 →</button>
       )}
     </div>
   );
@@ -11134,6 +11147,45 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     title="컨펌 해제 (편집 가능 상태로 되돌리기)"
                   >🔓 재오픈</button>
                 )}
+                {/* v1.10.58 — 카드 복제 (어셋 정보 + 프롬프트 + 참조 이미지 가져오고 시안/시트는 비움) */}
+                <button
+                  onClick={async () => {
+                    if (!confirm(`"${card.title}" 을 복제하시겠어요?\n어셋 정보·프롬프트·참조 이미지는 가져오고 시안/시트는 비웁니다.`)) return;
+                    try {
+                      const newId = `card-${Date.now()}`;
+                      const src = card.data || {};
+                      // 시안/시트 관련 필드는 제외, 나머지 메타는 복사.
+                      const { designs, concept_sheet_views, concept_sheet_history, concept_sheet_url,
+                              selected_design, image_url, cardVotes, ...meta } = src;
+                      const newData = { ...meta };
+                      const r = await fetch(`/api/projects/${projectSlug}/cards`, {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({
+                          id: newId,
+                          title: `${card.title} (복제)`,
+                          description: card.description || null,
+                          status_key: "drafting",
+                          data: newData,
+                          thumbnail_url: (newData.ref_images && newData.ref_images[0]) || null,
+                          actor: actorName || null,
+                        }),
+                      });
+                      if (!r.ok) throw new Error(`복제 실패 ${r.status}`);
+                      const created = await r.json();
+                      setCards((prev) => [created, ...prev]);
+                      const detail = await fetchCardDetail(projectSlug, created.id);
+                      if (detail) setDetailCard(detail);
+                    } catch (e) { alert("복제 실패: " + e.message); }
+                  }}
+                  style={{
+                    padding: "8px 12px", borderRadius: 10,
+                    background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
+                    color: "var(--primary)", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  }}
+                  title="비슷한 컨셉으로 새 카드 시작 (시안/시트 비움)"
+                >📋 복제</button>
+
                 {/* 영구 삭제 — 아카이브와 구분되는 복구 불가 작업 */}
                 <button
                   onClick={async () => {
