@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.58";
+const APP_VERSION = "1.10.59";
 const CHANGELOG = [
+  {
+    version: "1.10.59",
+    date: "2026-04-26",
+    changes: [
+      "이미지 lightbox 줌/패닝 지원 — 시안/참조/시트 이미지 클릭 시 GalleryCanvas 와 동일한 인터랙션. 휠로 커서 기준 줌(0.05~20×), 좌/휠/우 드래그 패닝, 0 키로 화면 맞춤, ←/→ 로 갤러리 이동, ESC 닫기",
+      "ImageLightbox 컴포넌트로 추출 — 기존 인라인 로직 정리, viewRef + DOM transform 패턴(React 리렌더 회피) 재사용",
+      "좌하단에 ⛶ 맞춤 + 🔍 N% 컨트롤. 우상단 닫기/저장 버튼은 기존대로",
+    ],
+  },
   {
     version: "1.10.58",
     date: "2026-04-26",
@@ -5824,6 +5833,256 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// 🖼 이미지 Lightbox (v1.10.59) — 시안/참조/시트 이미지 클릭 시 줌·패닝 지원.
+// GalleryCanvas 와 동일한 패턴: viewRef + ref-based DOM transform 으로 React 리렌더 회피,
+// 휠 줌(커서 기준), 좌/중/우 클릭 드래그 패닝, 0 키로 fit, ←/→ 로 갤러리 이동, ESC 닫기.
+function ImageLightbox({ src, gallery, onChange, onClose }) {
+  const idx = gallery.indexOf(src);
+  const hasNav = gallery.length > 1 && idx >= 0;
+  const viewRef = React.useRef({ x: 0, y: 0, scale: 1 });
+  const [scale, setScale] = React.useState(1);
+  const [dragging, setDragging] = React.useState(false);
+  const wrapRef = React.useRef(null);
+  const imgRef = React.useRef(null);
+  const panStart = React.useRef(null);
+
+  const apply = React.useCallback(() => {
+    const v = viewRef.current;
+    if (imgRef.current) {
+      imgRef.current.style.transform = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.scale})`;
+    }
+  }, []);
+
+  const fitToViewport = React.useCallback(() => {
+    const wrap = wrapRef.current;
+    const img = imgRef.current;
+    if (!wrap || !img) return;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    if (!iw || !ih) return;
+    const vw = wrap.clientWidth;
+    const vh = wrap.clientHeight;
+    const fit = Math.min((vw - 40) / iw, (vh - 40) / ih);
+    const s = Math.max(0.05, fit);
+    viewRef.current = {
+      scale: s,
+      x: (vw - iw * s) / 2,
+      y: (vh - ih * s) / 2,
+    };
+    apply();
+    setScale(s);
+  }, [apply]);
+
+  // src 변경 시 리셋 + fit (이미지 로드 후 호출됨, 캐시된 경우 useEffect 에서도 시도)
+  React.useEffect(() => {
+    if (imgRef.current?.complete && imgRef.current?.naturalWidth) {
+      fitToViewport();
+    } else {
+      viewRef.current = { x: 0, y: 0, scale: 1 };
+      apply();
+      setScale(1);
+    }
+  }, [src, fitToViewport, apply]);
+
+  const onWheel = React.useCallback((e) => {
+    e.preventDefault();
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const delta = -e.deltaY * 0.0015;
+    const prev = viewRef.current;
+    const nextScale = Math.max(0.05, Math.min(20, prev.scale * Math.exp(delta)));
+    if (nextScale === prev.scale) return;
+    const ratio = nextScale / prev.scale;
+    viewRef.current = {
+      scale: nextScale,
+      x: px - (px - prev.x) * ratio,
+      y: py - (py - prev.y) * ratio,
+    };
+    apply();
+    setScale(nextScale);
+  }, [apply]);
+
+  // 휠 이벤트는 native non-passive 가 필요 (preventDefault) — useEffect 에서 직접 등록.
+  React.useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    return () => wrap.removeEventListener("wheel", onWheel);
+  }, [onWheel]);
+
+  const onPointerDown = (e) => {
+    // 좌(0)/휠(1)/우(2) 모두 패닝 — GalleryCanvas 와 동일.
+    if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
+    // 닫기/네비/다운로드 버튼 위에서는 패닝 시작 안 함.
+    if (e.target.closest("[data-lightbox-ui]")) return;
+    e.preventDefault();
+    setDragging(true);
+    panStart.current = { x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y };
+    wrapRef.current?.setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    if (!panStart.current) return;
+    const dx = e.clientX - panStart.current.x;
+    const dy = e.clientY - panStart.current.y;
+    viewRef.current = { ...viewRef.current, x: panStart.current.vx + dx, y: panStart.current.vy + dy };
+    apply();
+  };
+  const onPointerUp = (e) => {
+    if (!panStart.current) return;
+    // 거의 안 움직였으면 클릭으로 간주 → 배경이면 닫기.
+    const dx = Math.abs(e.clientX - panStart.current.x);
+    const dy = Math.abs(e.clientY - panStart.current.y);
+    setDragging(false);
+    panStart.current = null;
+    wrapRef.current?.releasePointerCapture?.(e.pointerId);
+    if (dx < 4 && dy < 4 && e.button === 0 && e.target === wrapRef.current) {
+      onClose();
+    }
+  };
+
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); onClose(); }
+      else if (e.key === "ArrowLeft" && hasNav) {
+        e.preventDefault();
+        onChange(gallery[(idx - 1 + gallery.length) % gallery.length]);
+      }
+      else if (e.key === "ArrowRight" && hasNav) {
+        e.preventDefault();
+        onChange(gallery[(idx + 1) % gallery.length]);
+      }
+      else if (e.key === "0") { e.preventDefault(); fitToViewport(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasNav, gallery, idx, onChange, onClose, fitToViewport]);
+
+  return (
+    <div
+      ref={wrapRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        position: "fixed", inset: 0, zIndex: 300,
+        background: "rgba(0,0,0,0.92)", backdropFilter: "blur(6px)",
+        cursor: dragging ? "grabbing" : "grab",
+        animation: "fadeIn 0.2s ease",
+        outline: "none", overflow: "hidden",
+        userSelect: "none",
+      }}
+    >
+      <img
+        ref={imgRef}
+        src={src}
+        alt=""
+        draggable={false}
+        onLoad={fitToViewport}
+        style={{
+          position: "absolute", left: 0, top: 0,
+          transformOrigin: "0 0",
+          willChange: "transform",
+          userSelect: "none",
+          pointerEvents: "none", // 클릭/드래그는 wrap 이 받음
+        }}
+      />
+      {hasNav && (
+        <>
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); onChange(gallery[(idx - 1 + gallery.length) % gallery.length]); }}
+            style={{
+              position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)",
+              width: 56, height: 56, borderRadius: 28,
+              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 28, cursor: "pointer", zIndex: 2,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+            title="이전 (←)"
+          >‹</button>
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); onChange(gallery[(idx + 1) % gallery.length]); }}
+            style={{
+              position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)",
+              width: 56, height: 56, borderRadius: 28,
+              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 28, cursor: "pointer", zIndex: 2,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+            title="다음 (→)"
+          >›</button>
+          <div
+            data-lightbox-ui
+            style={{
+              position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
+              padding: "6px 14px", borderRadius: 14,
+              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 12, fontWeight: 600, zIndex: 2,
+            }}
+          >{idx + 1} / {gallery.length}</div>
+        </>
+      )}
+      {/* 줌 / fit 컨트롤 */}
+      <div
+        data-lightbox-ui
+        style={{
+          position: "absolute", bottom: 24, left: 24,
+          display: "flex", gap: 6, zIndex: 2,
+        }}
+      >
+        <button
+          data-lightbox-ui
+          onClick={(e) => { e.stopPropagation(); fitToViewport(); }}
+          title="화면에 맞추기 (0)"
+          style={{
+            padding: "6px 12px", borderRadius: 14,
+            background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+            color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          }}
+        >⛶ 맞춤</button>
+        <div
+          data-lightbox-ui
+          style={{
+            padding: "6px 12px", borderRadius: 14,
+            background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+            color: "#fff", fontSize: 12, fontWeight: 600,
+            display: "flex", alignItems: "center",
+          }}
+        >🔍 {Math.round(scale * 100)}%</div>
+      </div>
+      <button
+        data-lightbox-ui
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        style={{
+          position: "absolute", top: 20, right: 20,
+          width: 44, height: 44, borderRadius: 22,
+          background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+          color: "#fff", fontSize: 20, cursor: "pointer", zIndex: 2,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+        title="닫기 (ESC)"
+      >✕</button>
+      <a
+        data-lightbox-ui
+        href={src}
+        download
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "absolute", top: 20, right: 76,
+          padding: "10px 16px", borderRadius: 22,
+          background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+          color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
+          display: "flex", alignItems: "center", gap: 6, zIndex: 2,
+        }}
+      >📥 저장</a>
     </div>
   );
 }
@@ -12729,9 +12988,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         />
       )}
 
-      {/* 이미지 원본 해상도 뷰어 (lightbox) — 배경 클릭 / ESC / ← → 키 지원.
-          상세 모달이 열려 있으면 해당 카드의 모든 이미지(썸네일, 참조이미지,
-          시안, 컨셉시트) 를 묶어 좌우 이동 가능. */}
+      {/* 이미지 원본 해상도 뷰어 (lightbox) — v1.10.59: ImageLightbox 컴포넌트로 추출.
+          줌/패닝 (휠 + 좌/중/우 드래그), 0 키로 fit, ←/→ 갤러리 이동, ESC 닫기.
+          상세 모달이 열려 있으면 카드의 모든 이미지(썸네일·참조·시안·시트) 를 묶음. */}
       {previewImage && (() => {
         const gallery = (() => {
           if (!detailCard) return [previewImage];
@@ -12747,102 +13006,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           if (!set.includes(previewImage)) set.push(previewImage);
           return set;
         })();
-        const idx = gallery.indexOf(previewImage);
-        const hasNav = gallery.length > 1 && idx >= 0;
-        const go = (dir) => {
-          if (!hasNav) return;
-          const next = (idx + dir + gallery.length) % gallery.length;
-          setPreviewImage(gallery[next]);
-        };
         return (
-          <div
-            onClick={() => setPreviewImage(null)}
-            tabIndex={-1}
-            ref={(el) => {
-              if (el) {
-                el.focus();
-                el.onkeydown = (e) => {
-                  if (e.key === "Escape") setPreviewImage(null);
-                  else if (e.key === "ArrowLeft")  { e.preventDefault(); go(-1); }
-                  else if (e.key === "ArrowRight") { e.preventDefault(); go(1); }
-                };
-              }
-            }}
-            style={{
-              position: "fixed", inset: 0, zIndex: 300,
-              background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "zoom-out", padding: 24, animation: "fadeIn 0.2s ease",
-              outline: "none",
-            }}
-          >
-            <img
-              src={previewImage}
-              alt=""
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                maxWidth: "100%", maxHeight: "100%",
-                objectFit: "contain", borderRadius: 8,
-                boxShadow: "0 20px 80px rgba(0,0,0,0.6)",
-                cursor: "default",
-              }}
-            />
-            {hasNav && (
-              <>
-                <button
-                  onClick={(e) => { e.stopPropagation(); go(-1); }}
-                  style={{
-                    position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)",
-                    width: 56, height: 56, borderRadius: 28,
-                    background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-                    color: "#fff", fontSize: 28, cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                  title="이전 (←)"
-                >‹</button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); go(1); }}
-                  style={{
-                    position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)",
-                    width: 56, height: 56, borderRadius: 28,
-                    background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-                    color: "#fff", fontSize: 28, cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                  title="다음 (→)"
-                >›</button>
-                <div style={{
-                  position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
-                  padding: "6px 14px", borderRadius: 14,
-                  background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-                  color: "#fff", fontSize: 12, fontWeight: 600,
-                }}>{idx + 1} / {gallery.length}</div>
-              </>
-            )}
-            <button
-              onClick={(e) => { e.stopPropagation(); setPreviewImage(null); }}
-              style={{
-                position: "absolute", top: 20, right: 20,
-                width: 44, height: 44, borderRadius: 22,
-                background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-                color: "#fff", fontSize: 20, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}
-              title="닫기 (ESC)"
-            >✕</button>
-            <a
-              href={previewImage}
-              download
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "absolute", top: 20, right: 76,
-                padding: "10px 16px", borderRadius: 22,
-                background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-                color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
-                display: "flex", alignItems: "center", gap: 6,
-              }}
-            >📥 저장</a>
-          </div>
+          <ImageLightbox
+            src={previewImage}
+            gallery={gallery}
+            onChange={setPreviewImage}
+            onClose={() => setPreviewImage(null)}
+          />
         );
       })()}
     </div>
