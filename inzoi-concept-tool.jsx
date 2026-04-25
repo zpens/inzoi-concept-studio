@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.59";
+const APP_VERSION = "1.10.60";
 const CHANGELOG = [
+  {
+    version: "1.10.60",
+    date: "2026-04-26",
+    changes: [
+      "이미지 lightbox 에 그리기 기능 — 좌하단 🖊 그리기 진입. 펜·지우개·되돌리기·전체 비우기·색상 4종(빨강/노랑/파랑/흰색). 그림은 이미지 자연 해상도 캔버스에 직접 그려져 품질 보존",
+      "💾 참조 저장 + 닫기 — 원본 이미지 + 그림을 합성해 PNG 로 업로드 → card.data.ref_images 끝에 추가. 다음 시안 생성 시 자동 반영 (v1.10.58 의 cover prepend + ref_images 로직과 자연 연동)",
+      "draw 모드에서는 줌/패닝 일시 비활성, 캔버스가 pointer 이벤트 가져감. 이미지 ←/→ 이동 시 자동으로 view 모드 복귀 + history 리셋",
+      "지우개는 destination-out 합성 모드 — 원본은 보존하면서 그림만 부분 삭제",
+    ],
+  },
   {
     version: "1.10.59",
     date: "2026-04-26",
@@ -5840,21 +5850,41 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
 // 🖼 이미지 Lightbox (v1.10.59) — 시안/참조/시트 이미지 클릭 시 줌·패닝 지원.
 // GalleryCanvas 와 동일한 패턴: viewRef + ref-based DOM transform 으로 React 리렌더 회피,
 // 휠 줌(커서 기준), 좌/중/우 클릭 드래그 패닝, 0 키로 fit, ←/→ 로 갤러리 이동, ESC 닫기.
-function ImageLightbox({ src, gallery, onChange, onClose }) {
+// v1.10.60 — 그리기 모드 추가 (펜/지우개/색상). 카드 컨텍스트(card+projectSlug+actor) 가
+// 있으면 합성 이미지를 ref_images 끝에 추가해 다음 시안 생성에 자동 반영.
+function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, actor, onSavedRef }) {
   const idx = gallery.indexOf(src);
   const hasNav = gallery.length > 1 && idx >= 0;
+  const canSaveRef = !!(card && projectSlug);
   const viewRef = React.useRef({ x: 0, y: 0, scale: 1 });
   const [scale, setScale] = React.useState(1);
   const [dragging, setDragging] = React.useState(false);
   const wrapRef = React.useRef(null);
   const imgRef = React.useRef(null);
   const panStart = React.useRef(null);
+  // v1.10.60 — 그리기 모드 state.
+  const [mode, setMode] = React.useState("view");        // "view" | "draw"
+  const [tool, setTool] = React.useState("pen");          // "pen" | "eraser"
+  const [color, setColor] = React.useState("#ef4444");
+  const [saving, setSaving] = React.useState(false);
+  const [hasStrokes, setHasStrokes] = React.useState(false);
+  const canvasRef = React.useRef(null);
+  const drawingRef = React.useRef(false);
+  const lastPtRef = React.useRef(null);
+  const historyRef = React.useRef([]);
+  const COLORS = [
+    { id: "#ef4444", label: "빨강" },
+    { id: "#facc15", label: "노랑" },
+    { id: "#3b82f6", label: "파랑" },
+    { id: "#ffffff", label: "흰색" },
+  ];
+  const PEN_W = 6, ERASER_W = 14;
 
   const apply = React.useCallback(() => {
     const v = viewRef.current;
-    if (imgRef.current) {
-      imgRef.current.style.transform = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.scale})`;
-    }
+    const t = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.scale})`;
+    if (imgRef.current) imgRef.current.style.transform = t;
+    if (canvasRef.current) canvasRef.current.style.transform = t;
   }, []);
 
   const fitToViewport = React.useCallback(() => {
@@ -5886,7 +5916,168 @@ function ImageLightbox({ src, gallery, onChange, onClose }) {
       apply();
       setScale(1);
     }
+    // v1.10.60 — 이미지 변경 시 그리기 모드 자동 종료, history 리셋.
+    setMode("view");
+    setHasStrokes(false);
+    historyRef.current = [];
   }, [src, fitToViewport, apply]);
+
+  // v1.10.60 — 그리기 캔버스 초기화 (이미지 natural 크기와 동일).
+  const initCanvas = React.useCallback(() => {
+    const img = imgRef.current;
+    const canvas = canvasRef.current;
+    if (!img || !canvas) return;
+    const w = img.naturalWidth || 1024;
+    const h = img.naturalHeight || 1024;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      historyRef.current = [];
+      setHasStrokes(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (mode === "draw") initCanvas();
+  }, [mode, src, initCanvas]);
+
+  // 캔버스 좌표로 변환 — getBoundingClientRect 가 CSS transform 반영하므로 비율로 환산.
+  const toCanvasCoord = (clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
+
+  const pushHistory = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      const snap = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+      historyRef.current.push(snap);
+      if (historyRef.current.length > 20) historyRef.current.shift();
+    } catch { /* skip */ }
+  };
+
+  const onDrawDown = (e) => {
+    if (mode !== "draw") return;
+    e.stopPropagation();
+    e.preventDefault();
+    drawingRef.current = true;
+    pushHistory();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const p = toCanvasCoord(e.clientX, e.clientY);
+    lastPtRef.current = p;
+    if (tool === "eraser") {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = "#000";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, ERASER_W / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, PEN_W / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    setHasStrokes(true);
+    canvas.setPointerCapture?.(e.pointerId);
+  };
+
+  const onDrawMove = (e) => {
+    if (!drawingRef.current || mode !== "draw") return;
+    const canvas = canvasRef.current;
+    if (!canvas || !lastPtRef.current) return;
+    const ctx = canvas.getContext("2d");
+    const p = toCanvasCoord(e.clientX, e.clientY);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    if (tool === "eraser") {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = ERASER_W;
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = PEN_W;
+    }
+    ctx.beginPath();
+    ctx.moveTo(lastPtRef.current.x, lastPtRef.current.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastPtRef.current = p;
+  };
+
+  const onDrawUp = (e) => {
+    drawingRef.current = false;
+    lastPtRef.current = null;
+    canvasRef.current?.releasePointerCapture?.(e.pointerId);
+  };
+
+  const undo = () => {
+    const snap = historyRef.current.pop();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (snap) {
+      ctx.putImageData(snap, 0, 0);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    setHasStrokes(historyRef.current.length > 0);
+  };
+
+  const clearAll = () => {
+    if (!hasStrokes) return;
+    if (!confirm("그림을 모두 지우시겠어요?")) return;
+    pushHistory();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    setHasStrokes(false);
+  };
+
+  const saveAsRef = async () => {
+    if (!canSaveRef) { alert("이 컨텍스트에서는 참조 저장이 불가합니다."); return; }
+    const img = imgRef.current;
+    const canvas = canvasRef.current;
+    if (!img || !canvas) return;
+    if (!hasStrokes) { alert("먼저 이미지에 그림을 추가해주세요."); return; }
+    setSaving(true);
+    try {
+      const off = document.createElement("canvas");
+      off.width = img.naturalWidth;
+      off.height = img.naturalHeight;
+      const ctx = off.getContext("2d");
+      ctx.drawImage(img, 0, 0, off.width, off.height);
+      ctx.drawImage(canvas, 0, 0, off.width, off.height);
+      const dataUrl = off.toDataURL("image/png");
+      const url = await uploadDataUrl(dataUrl);
+      const existing = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), ref_images: [...existing, url] },
+          actor: actor || null,
+        }),
+      });
+      if (!r.ok) throw new Error(`PATCH ${r.status}`);
+      await onSavedRef?.();
+      alert("✏️ 참조 이미지에 추가됨. 다음 시안 생성에 반영됩니다.");
+      onClose();
+    } catch (e) {
+      alert("참조 저장 실패: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const onWheel = React.useCallback((e) => {
     e.preventDefault();
@@ -5921,6 +6112,8 @@ function ImageLightbox({ src, gallery, onChange, onClose }) {
     if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
     // 닫기/네비/다운로드 버튼 위에서는 패닝 시작 안 함.
     if (e.target.closest("[data-lightbox-ui]")) return;
+    // v1.10.60 — 그리기 모드에서는 캔버스가 자체 처리, wrap 패닝 차단.
+    if (mode === "draw") return;
     e.preventDefault();
     setDragging(true);
     panStart.current = { x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y };
@@ -5984,6 +6177,7 @@ function ImageLightbox({ src, gallery, onChange, onClose }) {
         src={src}
         alt=""
         draggable={false}
+        crossOrigin="anonymous"
         onLoad={fitToViewport}
         style={{
           position: "absolute", left: 0, top: 0,
@@ -5991,6 +6185,22 @@ function ImageLightbox({ src, gallery, onChange, onClose }) {
           willChange: "transform",
           userSelect: "none",
           pointerEvents: "none", // 클릭/드래그는 wrap 이 받음
+        }}
+      />
+      {/* v1.10.60 — 그리기 캔버스 (이미지와 같은 transform). draw 모드일 때만 pointer 활성. */}
+      <canvas
+        ref={canvasRef}
+        onPointerDown={onDrawDown}
+        onPointerMove={onDrawMove}
+        onPointerUp={onDrawUp}
+        style={{
+          position: "absolute", left: 0, top: 0,
+          transformOrigin: "0 0",
+          willChange: "transform",
+          pointerEvents: mode === "draw" ? "auto" : "none",
+          cursor: mode === "draw" ? (tool === "eraser" ? "cell" : "crosshair") : "default",
+          // canvas 픽셀 단위 그리기는 자연 해상도로 하되, 화면 표시는 transform 으로 맞춤.
+          // width/height attribute 는 initCanvas 에서 동적 설정 (style 은 자연 크기에 맞게 강제 안함).
         }}
       />
       {hasNav && (
@@ -6030,34 +6240,166 @@ function ImageLightbox({ src, gallery, onChange, onClose }) {
           >{idx + 1} / {gallery.length}</div>
         </>
       )}
-      {/* 줌 / fit 컨트롤 */}
-      <div
-        data-lightbox-ui
-        style={{
-          position: "absolute", bottom: 24, left: 24,
-          display: "flex", gap: 6, zIndex: 2,
-        }}
-      >
-        <button
-          data-lightbox-ui
-          onClick={(e) => { e.stopPropagation(); fitToViewport(); }}
-          title="화면에 맞추기 (0)"
-          style={{
-            padding: "6px 12px", borderRadius: 14,
-            background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-            color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
-          }}
-        >⛶ 맞춤</button>
+      {/* 줌 / fit / 그리기 컨트롤 — view 모드 */}
+      {mode === "view" && (
         <div
           data-lightbox-ui
           style={{
-            padding: "6px 12px", borderRadius: 14,
-            background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-            color: "#fff", fontSize: 12, fontWeight: 600,
-            display: "flex", alignItems: "center",
+            position: "absolute", bottom: 24, left: 24,
+            display: "flex", gap: 6, zIndex: 2,
           }}
-        >🔍 {Math.round(scale * 100)}%</div>
-      </div>
+        >
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); fitToViewport(); }}
+            title="화면에 맞추기 (0)"
+            style={{
+              padding: "6px 12px", borderRadius: 14,
+              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}
+          >⛶ 맞춤</button>
+          <div
+            data-lightbox-ui
+            style={{
+              padding: "6px 12px", borderRadius: 14,
+              background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 12, fontWeight: 600,
+              display: "flex", alignItems: "center",
+            }}
+          >🔍 {Math.round(scale * 100)}%</div>
+          {canSaveRef && (
+            <button
+              data-lightbox-ui
+              onClick={(e) => { e.stopPropagation(); setMode("draw"); }}
+              title="이미지에 그리기 → 다음 시안 생성에 참조로 추가"
+              style={{
+                padding: "6px 12px", borderRadius: 14,
+                background: "rgba(7,110,232,0.5)", border: "1px solid rgba(7,110,232,0.7)",
+                color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+              }}
+            >🖊 그리기</button>
+          )}
+        </div>
+      )}
+      {/* v1.10.60 — draw 모드 도구바 */}
+      {mode === "draw" && (
+        <div
+          data-lightbox-ui
+          style={{
+            position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
+            display: "flex", gap: 6, alignItems: "center", zIndex: 3,
+            padding: "8px 12px", borderRadius: 16,
+            background: "rgba(20,20,28,0.92)", border: "1px solid rgba(255,255,255,0.2)",
+            boxShadow: "0 8px 28px rgba(0,0,0,0.5)",
+          }}
+        >
+          {COLORS.map((c) => (
+            <button
+              key={c.id}
+              data-lightbox-ui
+              onClick={(e) => { e.stopPropagation(); setColor(c.id); setTool("pen"); }}
+              title={c.label}
+              style={{
+                width: 26, height: 26, borderRadius: 13,
+                background: c.id,
+                border: color === c.id && tool === "pen"
+                  ? "3px solid #fff"
+                  : "1px solid rgba(255,255,255,0.4)",
+                cursor: "pointer", padding: 0,
+                boxShadow: color === c.id && tool === "pen" ? "0 0 0 2px " + c.id : "none",
+              }}
+            />
+          ))}
+          <div style={{ width: 1, height: 22, background: "rgba(255,255,255,0.2)", margin: "0 4px" }} />
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); setTool("pen"); }}
+            title="펜"
+            style={{
+              padding: "5px 10px", borderRadius: 8,
+              background: tool === "pen" ? "rgba(255,255,255,0.2)" : "transparent",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}
+          >✏️ 펜</button>
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); setTool("eraser"); }}
+            title="지우개"
+            style={{
+              padding: "5px 10px", borderRadius: 8,
+              background: tool === "eraser" ? "rgba(255,255,255,0.2)" : "transparent",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}
+          >🧹 지우개</button>
+          <div style={{ width: 1, height: 22, background: "rgba(255,255,255,0.2)", margin: "0 4px" }} />
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); undo(); }}
+            disabled={historyRef.current.length === 0}
+            title="되돌리기"
+            style={{
+              padding: "5px 10px", borderRadius: 8,
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: historyRef.current.length === 0 ? "rgba(255,255,255,0.4)" : "#fff",
+              fontSize: 12, fontWeight: 700,
+              cursor: historyRef.current.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >↶ 되돌리기</button>
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); clearAll(); }}
+            disabled={!hasStrokes}
+            title="전체 지우기"
+            style={{
+              padding: "5px 10px", borderRadius: 8,
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: hasStrokes ? "#fff" : "rgba(255,255,255,0.4)",
+              fontSize: 12, fontWeight: 700,
+              cursor: hasStrokes ? "pointer" : "not-allowed",
+            }}
+          >🗑 비우기</button>
+          <div style={{ width: 1, height: 22, background: "rgba(255,255,255,0.2)", margin: "0 4px" }} />
+          <button
+            data-lightbox-ui
+            onClick={(e) => { e.stopPropagation(); saveAsRef(); }}
+            disabled={saving || !hasStrokes}
+            style={{
+              padding: "6px 14px", borderRadius: 8,
+              background: saving || !hasStrokes
+                ? "rgba(255,255,255,0.1)"
+                : "linear-gradient(135deg, #10b981, #059669)",
+              border: "none",
+              color: saving || !hasStrokes ? "rgba(255,255,255,0.5)" : "#fff",
+              fontSize: 12, fontWeight: 700,
+              cursor: saving || !hasStrokes ? "not-allowed" : "pointer",
+            }}
+          >{saving ? "저장 중…" : "💾 참조 저장 + 닫기"}</button>
+          <button
+            data-lightbox-ui
+            onClick={(e) => {
+              e.stopPropagation();
+              if (hasStrokes && !confirm("그림을 버리고 종료하시겠어요?")) return;
+              setMode("view");
+              const c = canvasRef.current;
+              if (c) c.getContext("2d").clearRect(0, 0, c.width, c.height);
+              historyRef.current = [];
+              setHasStrokes(false);
+            }}
+            title="그리기 종료 (저장 안 함)"
+            style={{
+              padding: "5px 10px", borderRadius: 8,
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}
+          >✕</button>
+        </div>
+      )}
       <button
         data-lightbox-ui
         onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -13012,6 +13354,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             gallery={gallery}
             onChange={setPreviewImage}
             onClose={() => setPreviewImage(null)}
+            card={detailCard}
+            projectSlug={projectSlug}
+            actor={actorName}
+            onSavedRef={async () => {
+              if (!detailCard) return;
+              const d = await fetchCardDetail(projectSlug, detailCard.id);
+              if (d) {
+                setDetailCard(d);
+                setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+              }
+            }}
           />
         );
       })()}
