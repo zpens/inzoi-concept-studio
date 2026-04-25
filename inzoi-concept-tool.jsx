@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.54";
+const APP_VERSION = "1.10.55";
 const CHANGELOG = [
+  {
+    version: "1.10.55",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 활동 이력 / 댓글 / 카드 날짜 표시가 KST(+9) 보다 9시간 늦게 보이던 문제 — SQLite datetime('now') 가 UTC 'YYYY-MM-DD HH:MM:SS' (Z 없음) 로 저장되는데 프런트가 단순 slice 로 잘라 그대로 표시했음. 명시적 UTC 파싱 → 로컬 변환 헬퍼 formatLocalTime 도입",
+      "적용 위치: 활동 이력 (MM-DD HH:MM), 댓글 (YYYY-MM-DD HH:MM), 리스트 뷰 날짜, 카드 그리드 완료/생성일, 시트 history generated_at, 갤러리 시트 그룹 타이틀, 아카이브 updated_at",
+      "기존 ISO 'Z' 또는 timezone 이 있는 값은 그대로, 없으면 UTC 로 간주하는 휴리스틱 — 두 형식 모두 안전",
+    ],
+  },
   {
     version: "1.10.54",
     date: "2026-04-23",
@@ -1824,6 +1833,32 @@ function categoryToDefaultSize(categoryId) {
 // ─── Utility Functions ───
 function generateSeed() {
   return Math.floor(Math.random() * 2147483647);
+}
+
+// SQLite datetime('now') 는 UTC 'YYYY-MM-DD HH:MM:SS' (Z 없음).
+// 단순 slice 로 표시하면 KST(+9) 보다 9시간 늦어 보임 → 명시적 UTC 파싱 후 local 변환.
+// fmt: "ymd" → "MM-DD", "ymdhm" → "MM-DD HH:MM", "ymdhms" → "MM-DD HH:MM:SS",
+//      "full" → "YYYY-MM-DD HH:MM", "date" → "YYYY-MM-DD".
+function formatLocalTime(s, fmt = "ymdhm") {
+  if (!s) return "";
+  let iso = String(s);
+  // ISO 'Z' 또는 timezone 이 이미 붙어있으면 그대로, 아니면 UTC 로 간주.
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso)) {
+    iso = iso.includes("T") ? iso + "Z" : iso.replace(" ", "T") + "Z";
+  }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(s).slice(0, 16);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  if (fmt === "date") return `${yy}-${mm}-${dd}`;
+  if (fmt === "ymd") return `${mm}-${dd}`;
+  if (fmt === "ymdhms") return `${mm}-${dd} ${hh}:${mi}:${ss}`;
+  if (fmt === "full") return `${yy}-${mm}-${dd} ${hh}:${mi}`;
+  return `${mm}-${dd} ${hh}:${mi}`;
 }
 
 function generateColors(count) {
@@ -4108,7 +4143,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
               {card.data.concept_sheet_history.map((h, i) => (
                 <div key={i} style={{ padding: 8, borderRadius: 8, background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)" }}>
                   <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
-                    {h.generated_at ? h.generated_at.slice(0, 16).replace("T", " ") : "시점 불명"}
+                    {h.generated_at ? formatLocalTime(h.generated_at, "full") : "시점 불명"}
                     {h.model && ` · ${h.model}`}
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
@@ -5438,7 +5473,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         )}
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
-        {date ? date.slice(0, 10) : "-"}
+        {date ? formatLocalTime(date, "date") : "-"}
       </div>
       {/* 작성자 아이콘 (v1.10.14) — 마우스 올리면 이름 tooltip */}
       {(() => {
@@ -5694,7 +5729,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       if (items.length) {
         out.push({
           key: "sheet-current",
-          title: `📑 현재 시트${v.model ? ` · ${v.model}` : ""}${v.generated_at ? ` · ${v.generated_at.slice(0, 10)}` : ""}`,
+          title: `📑 현재 시트${v.model ? ` · ${v.model}` : ""}${v.generated_at ? ` · ${formatLocalTime(v.generated_at, "date")}` : ""}`,
           items,
         });
       }
@@ -5709,7 +5744,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       if (items.length) {
         out.push({
           key: `sheet-history-${hi}`,
-          title: `🗂 이전 시트 ${hi + 1}${h.generated_at ? ` · ${h.generated_at.slice(0, 10)}` : ""}${h.model ? ` · ${h.model}` : ""}`,
+          title: `🗂 이전 시트 ${hi + 1}${h.generated_at ? ` · ${formatLocalTime(h.generated_at, "date")}` : ""}${h.model ? ` · ${h.model}` : ""}`,
           items,
         });
       }
@@ -6665,7 +6700,7 @@ function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, on
         <span style={{ fontWeight: 600, color: "var(--text-lighter)" }}>
           {comment.actor || "익명"}
         </span>
-        <span>· {comment.created_at?.slice(0, 16).replace("T", " ")}</span>
+        <span>· {formatLocalTime(comment.created_at, "full")}</span>
       </div>
       {editing && mine ? (
         <textarea
@@ -6932,12 +6967,12 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
         )}
         {tabId === "completed" && card.confirmed_at && (
           <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
-            완료 {card.confirmed_at.slice(0, 10)}
+            완료 {formatLocalTime(card.confirmed_at, "date")}
           </div>
         )}
         {tabId === "wishlist" && (
           <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
-            {card.created_at?.slice(0, 10) || "-"}
+            {card.created_at ? formatLocalTime(card.created_at, "date") : "-"}
           </div>
         )}
         {tabId === "vote" && (
@@ -10933,7 +10968,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           {c.title}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          {meta?.icon} {meta?.label} · {c.updated_at?.slice(0, 10)}
+                          {meta?.icon} {meta?.label} · {formatLocalTime(c.updated_at, "date")}
                         </div>
                         <div style={{ fontSize: 10, color: "var(--primary)", marginTop: 6, fontWeight: 600 }}>
                           클릭하여 복구
@@ -11451,7 +11486,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                                   )}
                                 </div>
                                 <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
-                                  {a.created_at?.slice(5, 16).replace("T", " ")}
+                                  {formatLocalTime(a.created_at, "ymdhm")}
                                 </div>
                               </div>
                             </div>
