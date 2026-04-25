@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.53";
+const APP_VERSION = "1.10.54";
 const CHANGELOG = [
+  {
+    version: "1.10.54",
+    date: "2026-04-23",
+    changes: [
+      "메인뷰 좌/우 끝 통일 — 시안 생성/투표/시트/완료/위시 sticky 헤더의 marginLeft:-40, marginRight:-40, paddingLeft:40, paddingRight:40 제거. 이전엔 헤더 배경이 maxWidth 1400 까지 확장되어 1320 폭의 카드와 좌우가 어긋나 보였음. 이제 헤더·태그 chip·리스트 헤더·카드 모두 동일한 1320 inner 콘텐츠 영역에 정렬",
+      "리스트 뷰 컬럼 폭 재조정 — 우선순위 70→56, 업데이트 90→120 (긴 태그 ellipsis 110), 카테고리 150→140, 스타일 80→70, 크기 130→115, 상태 95→70, 진행 110→130 (🗳️ 투표 및 선정 등 긴 라벨 수용), 날짜 100→92. 빈 공간/잘림 양쪽 균형 맞춤",
+      "갤러리 캔버스 (F) — 같은 URL 이미지를 여러 그룹(대표/시안/시트)에 중복 표시하지 않도록 dedup. 대표가 시안이기도 하면 첫 그룹(대표)에서만 보임",
+      "갤러리 캔버스 초기 fit-to-viewport — 작은 콘텐츠도 화면 가득 채우도록 fitScale cap(1) 제거. 이미지 적은 카드도 첫 진입 시 크게 표시",
+    ],
+  },
   {
     version: "1.10.53",
     date: "2026-04-25",
@@ -5007,9 +5017,13 @@ function ViewModeToggle({ value, onChange }) {
 // 리스트 뷰 공통 grid 템플릿 — 11컬럼 (v1.10.44: 진행 컬럼 추가).
 // 썸네일 / 제목 / 우선순위 / 업데이트 / 카테고리 / 스타일 / 크기 / 상태 / 진행 / 날짜 / 작성자
 // 썸네일 컬럼만 scale 배율 적용 (v1.10.48). 나머지 텍스트 컬럼은 고정.
+// v1.10.54 — 콘텐츠 길이에 맞춰 좌우폭 재조정.
+//   우선순위(P0-P3): 70→56, 업데이트(태그): 90→120, 카테고리: 150→140, 스타일: 80→70,
+//   크기(W×D×H cm): 130→115, 상태(시안 N): 95→70, 진행(🗳️ 투표 및 선정): 110→130,
+//   날짜(YYYY-MM-DD): 100→92.
 const getListGrid = (scale = 1) => {
   const thumb = Math.round(90 * scale);
-  return `${thumb}px 1fr 70px 90px 150px 80px 130px 95px 110px 100px 32px`;
+  return `${thumb}px 1fr 56px 120px 140px 70px 115px 70px 130px 92px 32px`;
 };
 const LIST_GRID = getListGrid(1); // 기본
 
@@ -5289,7 +5303,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
             <span style={{
               padding: "2px 8px", borderRadius: 10,
               background: "rgba(180,83,9,0.1)", color: "#b45309", fontWeight: 600,
-              overflow: "hidden", textOverflow: "ellipsis", display: "inline-block", maxWidth: 80,
+              overflow: "hidden", textOverflow: "ellipsis", display: "inline-block", maxWidth: 110,
             }}>🗓️ {tu}</span>
           );
         })()}
@@ -5600,7 +5614,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     const vh = wrap.clientHeight;
     content.style.transform = prev;
     if (cw === 0 || ch === 0) return;
-    const fitScale = Math.min((vw - 40) / cw, (vh - 100) / ch, 1);
+    // v1.10.54 — 가득 채우기: 작은 콘텐츠는 뷰포트 가득 차게 확대 (cap 제거).
+    const fitScale = Math.min((vw - 40) / cw, (vh - 100) / ch);
     const safe = Math.max(0.05, fitScale);
     viewRef.current = {
       scale: safe,
@@ -5634,60 +5649,63 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     }
   }, [fitToViewport]);
 
-  // 이미지 수집 — 그룹 단위.
+  // 이미지 수집 — 그룹 단위. v1.10.54: 같은 URL 은 한 번만 표시 (그룹 우선순위: refs → designs → sheet → history).
   const groups = React.useMemo(() => {
     const out = [];
+    const seen = new Set();
+    const dedup = (items) => items.filter((it) => {
+      if (!it.url || seen.has(it.url)) return false;
+      seen.add(it.url);
+      return true;
+    });
     const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
     const hero = card.thumbnail_url;
     const headRefs = [];
     if (hero && !refs.includes(hero)) headRefs.push(hero);
     headRefs.push(...refs);
     if (headRefs.length) {
-      out.push({
-        key: "refs",
-        title: "🖼 대표 / 참조",
-        items: headRefs.map((url) => ({
-          url, type: "ref",
-          isCover: url === hero,
-          label: url === hero ? "⭐ 대표" : null,
-        })),
-      });
+      const items = dedup(headRefs.map((url) => ({
+        url, type: "ref",
+        isCover: url === hero,
+        label: url === hero ? "⭐ 대표" : null,
+      })));
+      if (items.length) out.push({ key: "refs", title: "🖼 대표 / 참조", items });
     }
     const designs = (Array.isArray(card.data?.designs) ? card.data.designs : []).filter((d) => d?.imageUrl);
     if (designs.length) {
-      out.push({
-        key: "designs",
-        title: `🎨 시안 (${designs.length})`,
-        items: designs.map((d, i) => ({
-          url: d.imageUrl, type: "design", designIdx: i,
-          isSelected: card.data?.selected_design === i,
-          isCover: d.imageUrl === hero,
-          label: d._sheet ? "📑 시트"
-            : d._legacy ? "🗂 레거시"
-            : d.source === "upload" ? `📤 #${i + 1}`
-            : `#${i + 1}`,
-        })),
-      });
+      const items = dedup(designs.map((d, i) => ({
+        url: d.imageUrl, type: "design", designIdx: i,
+        isSelected: card.data?.selected_design === i,
+        isCover: d.imageUrl === hero,
+        label: d._sheet ? "📑 시트"
+          : d._legacy ? "🗂 레거시"
+          : d.source === "upload" ? `📤 #${i + 1}`
+          : `#${i + 1}`,
+      })));
+      if (items.length) out.push({ key: "designs", title: `🎨 시안 (${items.length})`, items });
     }
     const v = card.data?.concept_sheet_views;
     if (v && (v.front || v.side || v.back || v.top)) {
-      out.push({
-        key: "sheet-current",
-        title: `📑 현재 시트${v.model ? ` · ${v.model}` : ""}${v.generated_at ? ` · ${v.generated_at.slice(0, 10)}` : ""}`,
-        items: ["front", "side", "back", "top"].filter((k) => v[k]).map((k) => ({
-          url: v[k], type: "sheet",
-          label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
-          isCover: v[k] === hero,
-        })),
-      });
+      const items = dedup(["front", "side", "back", "top"].filter((k) => v[k]).map((k) => ({
+        url: v[k], type: "sheet",
+        label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
+        isCover: v[k] === hero,
+      })));
+      if (items.length) {
+        out.push({
+          key: "sheet-current",
+          title: `📑 현재 시트${v.model ? ` · ${v.model}` : ""}${v.generated_at ? ` · ${v.generated_at.slice(0, 10)}` : ""}`,
+          items,
+        });
+      }
     }
     const history = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
     history.forEach((h, hi) => {
-      const items = ["front", "side", "back", "top"].filter((k) => h[k]).map((k) => ({
+      const items = dedup(["front", "side", "back", "top"].filter((k) => h[k]).map((k) => ({
         url: h[k], type: "sheet-history",
         label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
         isCover: h[k] === hero,
-      }));
+      })));
       if (items.length) {
         out.push({
           key: `sheet-history-${hi}`,
@@ -8779,11 +8797,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
         return (
           <main style={{ padding: "32px 40px 0", maxWidth: 1400, margin: "0 auto" }}>
-            {/* 제목 ~ 업데이트 chip 까지는 sticky 로 고정, 아래 카드만 스크롤 */}
+            {/* 제목 ~ 업데이트 chip 까지는 sticky 로 고정, 아래 카드만 스크롤.
+                v1.10.54 — 좌/우 끝을 카드와 통일 (음수 margin 제거). */}
             <div style={{
               position: "sticky", top: 64, zIndex: 50,
               background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
-              marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40,
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
                 <div>
@@ -10190,11 +10208,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {/* ═══ Completed Tab ═══ */}
       {activeTab === "completed" && (
         <main style={{ padding: "40px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
-          {/* 제목 ~ 업데이트 chip 까지 sticky */}
+          {/* 제목 ~ 업데이트 chip 까지 sticky. v1.10.54 — 좌/우 끝 통일. */}
           <div style={{
             position: "sticky", top: 64, zIndex: 50,
             background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
-            marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40,
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: completedList.length === 0 ? 36 : 20 }}>
               <div>
@@ -10329,11 +10346,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {/* ═══ Wishlist Tab ═══ */}
       {activeTab === "wishlist" && (
         <main style={{ padding: "32px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
-          {/* 제목 ~ 업데이트 chip 까지 sticky */}
+          {/* 제목 ~ 업데이트 chip 까지 sticky. v1.10.54 — 좌/우 끝 통일. */}
           <div style={{
             position: "sticky", top: 64, zIndex: 50,
             background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
-            marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40,
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: wishlist.length === 0 ? 24 : 16 }}>
               <div>
