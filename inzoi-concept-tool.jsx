@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.56";
+const APP_VERSION = "1.10.57";
 const CHANGELOG = [
+  {
+    version: "1.10.57",
+    date: "2026-04-26",
+    changes: [
+      "시안 생성 / 시안 이력 패널 통합 — drafting 단계에서 같은 썸네일 그리드가 두 번(시안 생성 패널 + 시안 이력 패널) 렌더되던 시각 중복 제거. DesignsPanel 한 곳에서 생성·표시·선정·삭제·투표 일원화",
+      "DesignsPanel 헤더에 추가 프롬프트 + [1][2][4] + 🎨 N개 생성 컨트롤 노출 (drafting 일 때만)",
+      "Tile 에 🗑 삭제 버튼 추가 (우측 하단). _sheet/_legacy 시안은 보호",
+      "DesignsPanel.selectDesign 가 drafting 단계에서는 컨셉시트로 자동 이동 (구 CardActionPanel.selectDesign 동작 보존)",
+      "타이틀 '🎨 시안 이력' → '🎨 시안' 으로 단순화. CardActionPanel 의 drafting 분기는 null 반환",
+    ],
+  },
   {
     version: "1.10.56",
     date: "2026-04-26",
@@ -3837,176 +3848,9 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
     return <WishlistToDraftingAction card={card} onMoveTo={onMoveTo} />;
   }
 
-  if (statusKey === "drafting") {
-    return (
-      <div style={sectionStyle}>
-        <div style={titleStyle}>시안 생성 ({designs.length}개)</div>
-        {/* 추가 프롬프트 — 이 생성 회차에만 붙는 한 줄 지시 (저장 안됨). v1.10.25 */}
-        <input
-          type="text"
-          value={extraPrompt}
-          disabled={busy}
-          onChange={(e) => setExtraPrompt(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !busy) doGenerate(); }}
-          placeholder="추가 프롬프트 (선택) — 예: 더 단순하게, 파스텔 톤, 다리 없애기"
-          style={{
-            width: "100%", padding: "7px 10px", borderRadius: 8,
-            border: "1px solid var(--surface-border)",
-            background: busy ? "rgba(0,0,0,0.03)" : "#fff",
-            fontSize: 12, color: "var(--text-main)", outline: "none",
-            marginBottom: 6, boxSizing: "border-box",
-          }}
-        />
-        {/* 최종 프롬프트 프리뷰 — 추가 프롬프트가 있을 때만 표시 (v1.10.36) */}
-        {extraPrompt.trim() && (() => {
-          const base = card.data?.prompt || card.description || card.title || "";
-          const preview = `${base}. Additionally apply: ${extraPrompt.trim()}`;
-          return (
-            <div style={{
-              marginBottom: 10, padding: "6px 10px", borderRadius: 6,
-              background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
-              fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5,
-              whiteSpace: "pre-wrap", wordBreak: "break-word",
-            }}>
-              <span style={{ fontWeight: 700, color: "var(--primary)" }}>→ 최종: </span>
-              {preview}
-            </div>
-          );
-        })()}
-        {/* 개수 선택 + 생성 버튼 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          {[1, 2, 4].map((n) => (
-            <button
-              key={n}
-              onClick={() => setCount(n)}
-              disabled={busy}
-              style={{
-                padding: "6px 12px", borderRadius: 8,
-                background: count === n ? "var(--primary)" : "rgba(0,0,0,0.04)",
-                border: count === n ? "none" : "1px solid var(--surface-border)",
-                color: count === n ? "#fff" : "var(--text-muted)",
-                fontSize: 12, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
-              }}
-            >{n}</button>
-          ))}
-          <button
-            onClick={doGenerate}
-            disabled={busy}
-            style={{
-              marginLeft: "auto", padding: "8px 14px", borderRadius: 10,
-              background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, var(--primary), var(--secondary))",
-              border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
-          >
-            {busy
-              ? `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`
-              : `🎨 ${count}개 생성`}
-          </button>
-        </div>
-
-        {/* 시안 썸네일 그리드 */}
-        {designs.length > 0 ? (
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-            gap: 8,
-          }}>
-            {designs.map((d, i) => (
-              <div
-                key={i}
-                onMouseEnter={(e) => {
-                  const ov = e.currentTarget.querySelector(".design-hover-overlay");
-                  if (ov) ov.style.opacity = 1;
-                }}
-                onMouseLeave={(e) => {
-                  const ov = e.currentTarget.querySelector(".design-hover-overlay");
-                  if (ov) ov.style.opacity = 0;
-                }}
-                style={{
-                  position: "relative", borderRadius: 8, overflow: "hidden",
-                  border: selectedIdx === i ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
-                  background: "#000",
-                }}
-              >
-                {d.imageUrl ? (
-                  <img
-                    src={d.imageUrl}
-                    alt=""
-                    onClick={() => onOpenImage?.(d.imageUrl)}
-                    style={{ width: "100%", height: 200, objectFit: "cover", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
-                  />
-                ) : (
-                  <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
-                )}
-                {/* hover 오버레이 — pointerEvents: none 으로 이미지 클릭(zoom) 을
-                    가로채지 않도록 하고, 내부 버튼에만 auto 부여 */}
-                <div style={{
-                  position: "absolute", inset: 0,
-                  display: "flex", flexDirection: "column", justifyContent: "flex-end",
-                  padding: 4, background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent 55%)",
-                  opacity: 0, transition: "opacity 0.2s",
-                  pointerEvents: "none",
-                }}
-                  className="design-hover-overlay"
-                >
-                  <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", pointerEvents: "auto" }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setCoverDesign(i); }}
-                      style={{
-                        padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                        background: selectedIdx === i ? "#fbbf24" : "rgba(255,255,255,0.9)",
-                        border: "none", color: selectedIdx === i ? "#000" : "var(--text-main)", cursor: "pointer",
-                      }}
-                      title="대표 이미지로 지정 (카드 썸네일 변경, 상태 유지)"
-                    >{selectedIdx === i ? "⭐ 대표" : "☆ 대표"}</button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); selectDesign(i); }}
-                      style={{
-                        padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                        background: "var(--primary)", border: "none", color: "#fff", cursor: "pointer",
-                      }}
-                      title="이 시안 선정 → 컨셉시트 단계로 이동"
-                    >선정 →</button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeDesign(i); }}
-                      style={{
-                        padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                        background: "rgba(239,68,68,0.9)", border: "none", color: "#fff", cursor: "pointer",
-                      }}
-                    >삭제</button>
-                  </div>
-                </div>
-                {/* 인덱스 + 대표 표시 (항상 보이도록 오버레이 밖) */}
-                <div style={{
-                  position: "absolute", top: 4, left: 4,
-                  padding: "1px 6px", borderRadius: 4,
-                  background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
-                  pointerEvents: "none",
-                }}>#{i + 1}</div>
-                {selectedIdx === i && (
-                  <div style={{
-                    position: "absolute", top: 4, right: 4,
-                    padding: "1px 6px", borderRadius: 4,
-                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
-                    pointerEvents: "none",
-                  }}>⭐ 대표</div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{
-            padding: 20, textAlign: "center", borderRadius: 10,
-            background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
-            color: "var(--text-muted)", fontSize: 12,
-          }}>
-            아직 생성된 시안이 없습니다. 위 "🎨 N개 생성" 버튼을 눌러 시작하세요.
-          </div>
-        )}
-      </div>
-    );
-  }
+  // v1.10.57 — drafting 분기는 DesignsPanel 로 흡수됨. 시안 그리드와 생성 UI 가
+  // 한 패널에 통합되어 시각 중복 제거.
+  if (statusKey === "drafting") return null;
 
   if (statusKey === "sheet") {
     const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
@@ -6277,9 +6121,19 @@ function CardDescriptionEditor({ card, projectSlug, actor, disabled, onSaved }) 
 
 // 시안 이력 패널 — 그리드 / 나란히(2열) / 하나씩(carousel) 3가지 보기 모드 + 선정 + 외부 이미지 업로드.
 // v1.10.22 — 복수 시안 비교 / 단일 확대 / ⭐ 선정 UI 한 곳에 모음.
-function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefresh }) {
+function DesignsPanel({
+  card, projectSlug, actor, disabled, statusKey,
+  geminiApiKey, selectedModel, onOpenApiSettings,
+  onGenerateProgress, onGenerateEnd,
+  onOpenImage, onRefresh,
+}) {
   const [viewMode, setViewMode] = React.useState("grid"); // "grid" | "compare" | "single"
   const [singleIdx, setSingleIdx] = React.useState(0);
+  // v1.10.57 — CardActionPanel drafting 분기를 흡수: 생성 UI 상태.
+  const [count, setCount] = React.useState(1);
+  const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState(null);
+  const [extraPrompt, setExtraPrompt] = React.useState("");
 
   const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
   const extras = [];
@@ -6385,6 +6239,8 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
     // 업로드/AI 시안을 선정하면 카드 썸네일도 같이 갱신.
     const extraPatch = {};
     if (d?.imageUrl) extraPatch.thumbnail_url = d.imageUrl;
+    // v1.10.57 — drafting 단계에서 선정 = 컨셉시트 단계로 이동 (구 CardActionPanel.selectDesign 동작).
+    if (statusKey === "drafting") extraPatch.status_key = "sheet";
     try {
       await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
         method: "PATCH",
@@ -6397,6 +6253,50 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
       });
       await onRefresh?.();
     } catch (e) { alert("선정 실패: " + e.message); }
+  };
+
+  // v1.10.57 — 시안 삭제 (구 CardActionPanel.removeDesign 흡수).
+  const removeDesign = async (idx) => {
+    if (disabled) return;
+    if (!confirm("이 시안을 삭제하시겠어요?")) return;
+    const next = raw.filter((_, i) => i !== idx);
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: { ...(card.data || {}), designs: next }, actor }),
+      });
+      await onRefresh?.();
+    } catch (e) { alert("삭제 실패: " + e.message); }
+  };
+
+  // v1.10.57 — 시안 생성 (구 CardActionPanel.doGenerate 흡수). drafting 단계에서만 노출.
+  const doGenerate = async () => {
+    if (!geminiApiKey) { onOpenApiSettings?.(); return; }
+    const basePrompt = card.data?.prompt || card.description || card.title;
+    if (!basePrompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
+    const extra = extraPrompt.trim();
+    const prompt = extra ? `${basePrompt}. Additionally apply: ${extra}` : basePrompt;
+    setBusy(true);
+    setProgress({ done: 0, total: count });
+    onGenerateProgress?.(card, 0, count);
+    try {
+      const r = await generateCardVariants({
+        card, count, prompt, geminiApiKey, selectedModel,
+        slug: projectSlug, actor,
+        onProgress: (done, total) => {
+          setProgress({ done, total });
+          onGenerateProgress?.(card, done, total);
+        },
+      });
+      if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
+      await onRefresh?.();
+    } catch (e) { alert("생성 실패: " + e.message); }
+    finally {
+      setBusy(false);
+      setProgress(null);
+      onGenerateEnd?.(card);
+    }
   };
 
   // 👍 시안 투표 (v1.10.41) — 프로필 기반 토글.
@@ -6531,6 +6431,19 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
             {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
           </button>
         )}
+        {/* 🗑 삭제 — 우측 하단 (v1.10.57: CardActionPanel drafting 흡수) */}
+        {d?.imageUrl && !disabled && !d._sheet && !d._legacy && (
+          <button
+            onClick={() => removeDesign(i)}
+            title="이 시안 삭제"
+            style={{
+              position: "absolute", bottom: 6, right: 6,
+              padding: "3px 9px", borderRadius: 14,
+              background: "rgba(239,68,68,0.85)", border: "none",
+              color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            }}
+          >🗑</button>
+        )}
       </div>
     );
   };
@@ -6552,10 +6465,10 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
-          🎨 시안 이력 ({displayDesigns.length}개)
+          🎨 시안 ({displayDesigns.length}개)
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-          {panelActive ? "📋 Ctrl+V 로 붙여넣기 가능" : "AI 생성 + 외부 업로드 · ☆ 선정 / 👍 투표"}
+          {panelActive ? "📋 Ctrl+V 로 붙여넣기 가능" : "AI 생성 + 외부 업로드 · ☆ 선정 / 👍 투표 / 🗑 삭제"}
         </div>
         {voteLeaderIdx != null && !disabled && selectedIdx !== voteLeaderIdx && (
           <button
@@ -6607,6 +6520,75 @@ function DesignsPanel({ card, projectSlug, actor, disabled, onOpenImage, onRefre
           )}
         </div>
       </div>
+
+      {/* 시안 생성 — drafting 단계에서만 노출 (v1.10.57: 구 CardActionPanel 흡수) */}
+      {statusKey === "drafting" && !disabled && (
+        <div style={{
+          marginBottom: 10, padding: 10, borderRadius: 10,
+          background: "linear-gradient(135deg, rgba(7,110,232,0.05), rgba(139,92,246,0.03))",
+          border: "1px solid rgba(7,110,232,0.18)",
+        }}>
+          <input
+            type="text"
+            value={extraPrompt}
+            disabled={busy}
+            onChange={(e) => setExtraPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !busy) doGenerate(); }}
+            placeholder="추가 프롬프트 (선택) — 예: 더 단순하게, 파스텔 톤, 다리 없애기"
+            style={{
+              width: "100%", padding: "7px 10px", borderRadius: 8,
+              border: "1px solid var(--surface-border)",
+              background: busy ? "rgba(0,0,0,0.03)" : "#fff",
+              fontSize: 12, color: "var(--text-main)", outline: "none",
+              marginBottom: 6, boxSizing: "border-box",
+            }}
+          />
+          {extraPrompt.trim() && (() => {
+            const base = card.data?.prompt || card.description || card.title || "";
+            return (
+              <div style={{
+                marginBottom: 8, padding: "6px 10px", borderRadius: 6,
+                background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
+                fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5,
+                whiteSpace: "pre-wrap", wordBreak: "break-word",
+              }}>
+                <span style={{ fontWeight: 700, color: "var(--primary)" }}>→ 최종: </span>
+                {`${base}. Additionally apply: ${extraPrompt.trim()}`}
+              </div>
+            );
+          })()}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {[1, 2, 4].map((n) => (
+              <button
+                key={n}
+                onClick={() => setCount(n)}
+                disabled={busy}
+                style={{
+                  padding: "5px 11px", borderRadius: 7,
+                  background: count === n ? "var(--primary)" : "rgba(0,0,0,0.04)",
+                  border: count === n ? "none" : "1px solid var(--surface-border)",
+                  color: count === n ? "#fff" : "var(--text-muted)",
+                  fontSize: 12, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
+                }}
+              >{n}</button>
+            ))}
+            <button
+              onClick={doGenerate}
+              disabled={busy}
+              style={{
+                marginLeft: "auto", padding: "7px 14px", borderRadius: 9,
+                background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, var(--primary), var(--secondary))",
+                border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
+                cursor: busy ? "not-allowed" : "pointer",
+              }}
+            >
+              {busy
+                ? `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`
+                : `🎨 ${count}개 생성`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {displayDesigns.length === 0 ? (
         <div style={{
@@ -11380,12 +11362,25 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     />
                   )}
 
-                  {/* 2) 시안 이력 — 그리드 / 나란히 / 하나씩 보기 + 선정 + 외부 업로드 (v1.10.22) */}
+                  {/* 2) 시안 — 생성 + 갤러리 + 선정 + 투표 + 삭제 통합 (v1.10.57: CardActionPanel drafting 흡수) */}
                   <DesignsPanel
                     card={card}
                     projectSlug={projectSlug}
                     actor={actorName}
                     disabled={confirmed}
+                    statusKey={statusKey}
+                    geminiApiKey={geminiApiKey}
+                    selectedModel={selectedModel}
+                    onOpenApiSettings={() => setShowApiSettings(true)}
+                    onGenerateProgress={(c, done, total) => setGeneratingCards((prev) => ({
+                      ...prev,
+                      [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total, completed: false },
+                    }))}
+                    onGenerateEnd={(c) => setGeneratingCards((prev) => {
+                      const cur = prev[c.id];
+                      if (!cur) return prev;
+                      return { ...prev, [c.id]: { ...cur, completed: true, done: cur.total } };
+                    })}
                     onOpenImage={setPreviewImage}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
