@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.60";
+const APP_VERSION = "1.10.61";
 const CHANGELOG = [
+  {
+    version: "1.10.61",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 갤러리 캔버스(F) 에서 이미지가 원본 해상도로 안 보이던 문제 — 셀 크기(약 460px)로 다운샘플 후 GPU 업스케일되어 줌인해도 흐림. 이제 IMG 를 자연 해상도(최대 2048px cap) 로 렌더하고 CSS transform 으로 셀에 fit → 줌인 시 원본 픽셀 노출",
+      "aspects 상태가 {aspect, w, h} 객체로 확장 (이전 number 와 호환). LAYOUT 이 naturalImgW/H 를 GalleryTile 에 전달",
+      "MAX_DIM 2048 cap — 4K+ 이미지 메모리 폭주 방지 (2K로 다운샘플하지만 기존 460 대비 4배 해상도)",
+    ],
+  },
   {
     version: "1.10.60",
     date: "2026-04-26",
@@ -5512,11 +5521,17 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const onImageLoad = React.useCallback((e, url) => {
-    // aspect ratio 수집 — justified 레이아웃 계산에 사용.
+    // v1.10.61 — aspect 와 자연 해상도(w, h) 모두 저장. 자연 해상도로 IMG 렌더해야
+    // 줌인 시 원본 픽셀이 보임 (이전엔 셀 크기로 다운샘플 → GPU 업스케일 → 흐림).
     const img = e?.currentTarget;
     if (img && img.naturalWidth && img.naturalHeight && url) {
       const a = img.naturalWidth / img.naturalHeight;
-      setAspects((prev) => (prev[url] === a ? prev : { ...prev, [url]: a }));
+      setAspects((prev) => {
+        const cur = prev[url];
+        const same = cur && typeof cur === "object" && cur.w === img.naturalWidth && cur.h === img.naturalHeight;
+        if (same) return prev;
+        return { ...prev, [url]: { aspect: a, w: img.naturalWidth, h: img.naturalHeight } };
+      });
     }
     loadedCountRef.current += 1;
     if (loadedCountRef.current === totalImagesRef.current) {
@@ -5708,8 +5723,15 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     const rows = [];
     let cur = [];
     let curW = 0;
+    // v1.10.61 — aspects 가 객체 {aspect,w,h} 또는 옛 number 일 수도 있어 헬퍼.
+    const aspectOf = (url) => {
+      const v = aspects[url];
+      if (typeof v === "number") return v;
+      if (v && typeof v === "object") return v.aspect || 1;
+      return 1;
+    };
     for (const item of flat) {
-      const a = aspects[item.url] || 1;
+      const a = aspectOf(item.url);
       const w = TARGET_H * a;
       if (curW + w + GAP * cur.length > CONTAINER_W && cur.length > 0) {
         rows.push({ items: cur, totalW: curW, full: true });
@@ -5727,7 +5749,12 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       const rowH = TARGET_H * rowScale;
       return {
         height: rowH,
-        items: row.items.map((x) => ({ item: x.item, width: x.naturalW * rowScale })),
+        items: row.items.map((x) => {
+          const meta = aspects[x.item.url];
+          const natW = (meta && typeof meta === "object" && meta.w) ? meta.w : null;
+          const natH = (meta && typeof meta === "object" && meta.h) ? meta.h : null;
+          return { item: x.item, width: x.naturalW * rowScale, naturalImgW: natW, naturalImgH: natH };
+        }),
       };
     });
     return { rows: laid, gap: GAP, containerWidth: CONTAINER_W };
@@ -5828,12 +5855,14 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               display: "flex", gap: LAYOUT.gap,
               height: row.height,
             }}>
-              {row.items.map(({ item, width }, ii) => (
+              {row.items.map(({ item, width, naturalImgW, naturalImgH }, ii) => (
                 <GalleryTile
                   key={`${ri}-${ii}`}
                   item={item}
                   width={width}
                   height={row.height}
+                  naturalImgW={naturalImgW}
+                  naturalImgH={naturalImgH}
                   scale={scale}
                   onSetCover={setCover}
                   onImageLoad={onImageLoad}
@@ -6429,12 +6458,40 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
   );
 }
 
-function GalleryTile({ item, width, height, scale, onSetCover, onImageLoad }) {
-  // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height), 이미지는 cover 로 채움.
-  // 셀 비율이 이미 이미지 aspect 와 같으므로 object-fit: cover 여도 crop 없이 딱 맞음.
-  // 별 아이콘은 scale 의 역수로 counter-scale.
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onImageLoad }) {
+  // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
+  // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
+  //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
+  //   이제 IMG bitmap 이 natural pixel 그대로 → 줌인하면 원본 픽셀이 노출됨.
+  //   메모리 보호: 단일 IMG 가 최대 2048px 변에 cap.
   const coverBtnTitle = item.isCover ? "현재 대표 이미지" : "카드 대표(썸네일)로 지정";
   const invScale = 1 / Math.max(scale || 1, 0.01);
+
+  // 자연 해상도 알고 있으면 그것 기반, 모르면 fallback (이미지 로드 전).
+  let imgStyle;
+  if (naturalImgW && naturalImgH) {
+    const MAX_DIM = 2048; // 메모리 cap
+    const cap = Math.min(MAX_DIM / naturalImgW, MAX_DIM / naturalImgH, 1);
+    const renderW = naturalImgW * cap;
+    const renderH = naturalImgH * cap;
+    const fit = Math.max(width / renderW, height / renderH); // cover 동작
+    imgStyle = {
+      display: "block", pointerEvents: "none",
+      width: renderW, height: renderH,
+      transform: `scale(${fit})`,
+      transformOrigin: "top left",
+      imageRendering: "auto",
+      position: "absolute", left: 0, top: 0,
+    };
+  } else {
+    imgStyle = {
+      display: "block", pointerEvents: "none",
+      width: "100%", height: "100%",
+      objectFit: "cover",
+      imageRendering: "auto",
+    };
+  }
+
   return (
     <div style={{
       width, height,
@@ -6448,12 +6505,7 @@ function GalleryTile({ item, width, height, scale, onSetCover, onImageLoad }) {
         alt=""
         draggable={false}
         onLoad={(e) => onImageLoad?.(e, item.url)}
-        style={{
-          display: "block", pointerEvents: "none",
-          width: "100%", height: "100%",
-          objectFit: "cover",
-          imageRendering: "auto",
-        }}
+        style={imgStyle}
       />
       {item.label && (
         <div style={{
