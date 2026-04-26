@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.97";
+const APP_VERSION = "1.10.98";
 const CHANGELOG = [
+  {
+    version: "1.10.98",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 시안 생성 완료 시 닫혀있던 카드 모달이 자동으로 다시 열리던 문제 — DesignsPanel / PromptRefEditor 의 onRefresh 가 generation 완료 후 무조건 setDetailCard(d) 를 호출해 사용자가 도중에 닫아도 모달이 다시 튀어나옴. CardActionPanel(v1.10.23) 와 동일 정책으로 통일: '모달 열려있고 같은 카드일 때만 갱신' (setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev))",
+      "결과: 시안 생성 시작 → 모달 닫음 → 작업큐에 ✓ 완료만 뜨고 모달 안 열림. 클릭해야 열림 (의도된 v1.10.95 정책)",
+    ],
+  },
   {
     version: "1.10.97",
     date: "2026-04-26",
@@ -13979,10 +13987,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     onOpenImage={setPreviewImage}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
-                      if (d) {
-                        setDetailCard(d);
-                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                      }
+                      if (!d) return;
+                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      // v1.10.98 — 모달이 닫혀 있으면 다시 열지 않음 (CardActionPanel v1.10.23 와 동일 정책).
+                      setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
                     }}
                   />
 
@@ -14042,10 +14050,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     onOpenImage={setPreviewImage}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
-                      if (d) {
-                        setDetailCard(d);
-                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                      }
+                      if (!d) return;
+                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      // v1.10.98 — 모달이 닫혀 있으면 다시 열지 않음 (CardActionPanel v1.10.23 와 동일 정책).
+                      setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
                     }}
                   />
 
