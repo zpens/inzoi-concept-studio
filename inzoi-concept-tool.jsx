@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.64";
+const APP_VERSION = "1.10.65";
 const CHANGELOG = [
+  {
+    version: "1.10.65",
+    date: "2026-04-26",
+    changes: [
+      "갤러리 캔버스(F) 다중 선택 + 비교 — Ctrl/Cmd-클릭으로 타일 선택(녹색 inset border + ✓ badge), 2장 이상이면 상단에 🔀 비교 버튼. 클릭 시 풀스크린 비교 그리드(2~4 columns 자동) — contain 으로 풀사이즈 유지, 각 이미지 클릭 시 lightbox 진입",
+      "비교 모드 ESC 또는 ← 갤러리로 버튼으로 복귀. 선택 상태는 비교 종료 후에도 유지 (해제는 ✕ 해제 명시)",
+      "일반 클릭은 그대로 lightbox, 모디파이어 키만 선택 토글 — 기존 워크플로 비파괴",
+    ],
+  },
   {
     version: "1.10.64",
     date: "2026-04-26",
@@ -5497,6 +5506,18 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   const [aspects, setAspects] = React.useState({});
   // v1.10.63 — 타일 클릭 시 lightbox (줌/패닝/그리기 전체 기능) 열기.
   const [lightboxSrc, setLightboxSrc] = React.useState(null);
+  // v1.10.65 — 다중 선택 + 비교 오버레이 (Cmd/Ctrl-클릭으로 토글).
+  const [selectedUrls, setSelectedUrls] = React.useState(() => new Set());
+  const [compareMode, setCompareMode] = React.useState(false);
+  const toggleSelect = (url) => {
+    setSelectedUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url);
+      else next.add(url);
+      return next;
+    });
+  };
+  const clearSelect = () => setSelectedUrls(new Set());
   // v1.10.64 — 그룹별 표시 토글 (refs / designs / sheet-current / sheet-history-N).
   // localStorage 에 카드별 비활성 그룹 키 저장. 기본은 모두 활성.
   const groupStateKey = `gallery_disabled_groups_${card?.id || "_"}`;
@@ -5913,8 +5934,38 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           </div>
         )}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, pointerEvents: "auto" }}>
+          {/* v1.10.65 — 다중 선택 액션 */}
+          {selectedUrls.size > 0 && (
+            <>
+              <span style={{
+                padding: "4px 10px", borderRadius: 12,
+                background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.5)",
+                color: "#86efac", fontSize: 11, fontWeight: 700,
+              }}>✓ {selectedUrls.size}장 선택</span>
+              {selectedUrls.size >= 2 && (
+                <button
+                  onClick={() => setCompareMode(true)}
+                  title="선택한 이미지 나란히 비교"
+                  style={{
+                    padding: "5px 12px", borderRadius: 12,
+                    background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+                    border: "none", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  }}
+                >🔀 비교</button>
+              )}
+              <button
+                onClick={clearSelect}
+                title="선택 해제"
+                style={{
+                  padding: "5px 10px", borderRadius: 12,
+                  background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
+                  color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                }}
+              >✕ 해제</button>
+            </>
+          )}
           <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
-            휠 줌 · 가운데/우클릭 드래그 팬 · 0 전체 보기 · ±/화살표 · Esc/F 닫기
+            휠 줌 · 가운데/우클릭 드래그 팬 · 0 전체 · Ctrl+클릭 선택 · Esc/F 닫기
           </span>
           <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "monospace", padding: "3px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)" }}>
             {Math.round(scale * 100)}%
@@ -6000,6 +6051,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                   onSetCover={setCover}
                   onCopyToRef={copyToRef}
                   onOpenLightbox={(url) => setLightboxSrc(url)}
+                  selected={selectedUrls.has(item.url)}
+                  onToggleSelect={toggleSelect}
                   onImageLoad={onImageLoad}
                 />
               ))}
@@ -6023,6 +6076,81 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
             onSavedRef={async () => { await onSaved?.(); }}
             zIndex={1100}
           />
+        );
+      })()}
+      {/* v1.10.65 — 다중 비교 오버레이. 선택 순서대로 격자 배치, contain 으로 풀사이즈. */}
+      {compareMode && selectedUrls.size >= 2 && (() => {
+        const urls = [...selectedUrls];
+        const n = urls.length;
+        const cols = n <= 2 ? n : (n <= 4 ? 2 : (n <= 6 ? 3 : 4));
+        return (
+          <div
+            onKeyDown={(e) => { if (e.key === "Escape") setCompareMode(false); }}
+            tabIndex={-1}
+            ref={(el) => el?.focus()}
+            style={{
+              position: "fixed", inset: 0, zIndex: 1200,
+              background: "rgba(8,10,14,0.97)",
+              display: "flex", flexDirection: "column",
+              outline: "none",
+            }}
+          >
+            <div style={{
+              padding: "10px 16px", display: "flex", alignItems: "center", gap: 10,
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
+            }}>
+              <div style={{ color: "#fff", fontSize: 14, fontWeight: 800 }}>
+                🔀 비교 — {n}장
+              </div>
+              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
+                ESC 로 갤러리 복귀
+              </span>
+              <button
+                onClick={() => setCompareMode(false)}
+                style={{
+                  marginLeft: "auto", padding: "5px 12px", borderRadius: 8,
+                  background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
+                  color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                }}
+              >← 갤러리로</button>
+            </div>
+            <div style={{
+              flex: 1, padding: 14, overflow: "hidden",
+              display: "grid",
+              gridTemplateColumns: `repeat(${cols}, 1fr)`,
+              gridAutoRows: "1fr",
+              gap: 10,
+            }}>
+              {urls.map((u, i) => (
+                <div
+                  key={u}
+                  style={{
+                    position: "relative", borderRadius: 10, overflow: "hidden",
+                    background: "#000",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                  }}
+                >
+                  <img
+                    src={u}
+                    alt=""
+                    onClick={() => setLightboxSrc(u)}
+                    style={{
+                      width: "100%", height: "100%",
+                      objectFit: "contain",
+                      cursor: "zoom-in", display: "block",
+                      background: "#000",
+                    }}
+                  />
+                  <div style={{
+                    position: "absolute", top: 6, left: 6,
+                    padding: "2px 9px", borderRadius: 11,
+                    background: "rgba(0,0,0,0.7)", color: "#fff",
+                    fontSize: 11, fontWeight: 700, pointerEvents: "none",
+                  }}>#{i + 1}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         );
       })()}
     </div>
@@ -6611,7 +6739,7 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
   );
 }
 
-function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, onImageLoad }) {
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, onImageLoad }) {
   // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
   // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
@@ -6657,19 +6785,21 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
   }
 
   // v1.10.63 — 좌클릭 시 lightbox(줌/패닝/그리기 전체 기능). 작은 클릭만 → 드래그-팬과 충돌 회피.
+  // v1.10.65 — Cmd/Ctrl-클릭은 선택 토글, 일반 클릭은 lightbox.
   const downRef = React.useRef(null);
   const onTileDown = (e) => {
     if (e.button !== 0) return;
-    downRef.current = { x: e.clientX, y: e.clientY };
+    downRef.current = { x: e.clientX, y: e.clientY, mod: e.ctrlKey || e.metaKey };
   };
   const onTileUp = (e) => {
     if (e.button !== 0 || !downRef.current) return;
     const dx = Math.abs(e.clientX - downRef.current.x);
     const dy = Math.abs(e.clientY - downRef.current.y);
+    const mod = downRef.current.mod;
     downRef.current = null;
     if (dx < 4 && dy < 4) {
-      // 데이터 액션 버튼은 stopPropagation 으로 여기 도달 안 함.
-      onOpenLightbox?.(item.url);
+      if (mod) onToggleSelect?.(item.url);
+      else onOpenLightbox?.(item.url);
     }
   };
   const isCopyable = item.type === "design" || item.type === "sheet" || item.type === "sheet-history";
@@ -6687,6 +6817,7 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
         overflow: "hidden",
         background: "#111",
         cursor: "zoom-in",
+        boxShadow: selected ? "inset 0 0 0 4px #22c55e" : "none",
       }}>
       <img
         src={item.url}
@@ -6695,6 +6826,19 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
         onLoad={(e) => onImageLoad?.(e, item.url)}
         style={imgStyle}
       />
+      {/* v1.10.65 — 선택된 타일 ✓ badge (좌상단, label 위쪽 제외하고 우하단 사용) */}
+      {selected && (
+        <div style={{
+          position: "absolute", bottom: 6, right: 6,
+          width: 26, height: 26, borderRadius: 13,
+          background: "#22c55e", color: "#fff",
+          fontSize: 14, fontWeight: 800,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transform: `scale(${invScale})`, transformOrigin: "bottom right",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+          pointerEvents: "none",
+        }}>✓</div>
+      )}
       {/* v1.10.62 — 메타 hover 패널 (좌하단). 줌이 변해도 일정 크기 유지하기 위해 counter-scale. */}
       {showMeta && (
         <div style={{
