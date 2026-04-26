@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.99";
+const APP_VERSION = "1.10.100";
 const CHANGELOG = [
+  {
+    version: "1.10.100",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] API 설정 모달 스크롤이 끝에 도달하면 뒤 페이지가 같이 스크롤되던 문제 — overscrollBehavior: contain 추가해 스크롤 체이닝 차단",
+    ],
+  },
   {
     version: "1.10.99",
     date: "2026-04-26",
@@ -13377,8 +13384,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             position: "fixed", top: "50%", left: "50%",
             transform: "translate(-50%, -50%)",
             width: 520, maxWidth: "90vw",
-            // v1.10.99 — 사용량 패널 추가로 길어진 모달이 화면 밖으로 나가는 문제 — 세로 스크롤 + 최대 높이.
-            maxHeight: "92vh", overflowY: "auto",
+            // v1.10.99 — 사용량 패널 추가로 길어진 모달 — 세로 스크롤 + 최대 높이.
+            // v1.10.100 — overscroll-behavior: contain 으로 모달 끝에 도달했을 때 뒤 페이지 스크롤로 전파되지 않게.
+            maxHeight: "92vh", overflowY: "auto", overscrollBehavior: "contain",
             background: "rgba(255, 255, 255, 0.97)",
             backdropFilter: "blur(20px)",
             border: "1px solid var(--surface-border)",
