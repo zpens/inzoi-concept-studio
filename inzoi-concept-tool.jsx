@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.92";
+const APP_VERSION = "1.10.93";
 const CHANGELOG = [
+  {
+    version: "1.10.93",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 한글 프로필(예: 조영복) 사용 시 자동 분류 / 시안 생성 등 모든 AI 호출 실패 — fetch 가 'String contains non ISO-8859-1 code point' TypeError throw. HTTP 헤더는 ISO-8859-1 만 허용되는데 X-Actor-Name 에 한글 그대로 넣어서 발생",
+      "수정: 클라이언트가 encodeURIComponent 로 인코딩 후 헤더 전송, 서버 프록시가 decodeURIComponent 로 복원. Gemini / Claude 두 경로 모두 적용",
+    ],
+  },
   {
     version: "1.10.92",
     date: "2026-04-26",
@@ -2671,12 +2679,14 @@ async function fetchImagePart(url) {
 
 // v1.10.71 — apiKey 인자는 personal override 만. "[server]" placeholder 면 서버 팀 키 사용.
 // v1.10.89 — X-Actor-Name 헤더로 actor 전달 → 서버가 사용량 로그에 기록.
+// v1.10.93 — 한글 등 non-ISO-8859-1 문자가 헤더에 들어가면 fetch 가 throw.
+//            encodeURIComponent 로 안전하게 변환, 서버에서 decodeURIComponent.
 function geminiProxyHeaders(apiKey) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey && apiKey !== "[server]") headers["X-Personal-Gemini-Key"] = apiKey;
   try {
     const actor = localStorage.getItem("inzoi_actor_name");
-    if (actor) headers["X-Actor-Name"] = actor;
+    if (actor) headers["X-Actor-Name"] = encodeURIComponent(actor);
   } catch { /* ignore */ }
   return headers;
 }
@@ -10783,8 +10793,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         };
         if (claudeApiKey && claudeApiKey !== "[server]") claudeHeaders["X-Personal-Claude-Key"] = claudeApiKey;
         try {
+          // v1.10.93 — 한글 actor 이름 encodeURIComponent 처리.
           const _actor = localStorage.getItem("inzoi_actor_name");
-          if (_actor) claudeHeaders["X-Actor-Name"] = _actor;
+          if (_actor) claudeHeaders["X-Actor-Name"] = encodeURIComponent(_actor);
         } catch { /* ignore */ }
         const claudeResp = await fetch("/api/ai/claude/v1/messages", {
           method: "POST",

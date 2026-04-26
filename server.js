@@ -355,7 +355,10 @@ function logUsage({ actor, endpoint, model, status, inTok, outTok, imgCount, ms,
 app.all("/api/ai/gemini/*", async (c) => {
   const subPath = c.req.path.replace(/^\/api\/ai\/gemini\//, "");
   const personalKey = c.req.header("x-personal-gemini-key");
-  const actor = c.req.header("x-actor-name") || null;
+  // v1.10.93 — 클라가 encodeURIComponent 로 보낸 actor 이름 디코딩 (한글 호환).
+  const actorRaw = c.req.header("x-actor-name") || null;
+  let actor = actorRaw;
+  if (actorRaw) { try { actor = decodeURIComponent(actorRaw); } catch { /* keep raw */ } }
   const apiKey = personalKey || process.env.GEMINI_API_KEY;
   if (!apiKey) return c.json({ error: { message: "Gemini API key not configured on server" } }, 503);
   const sep = subPath.includes("?") ? "&" : "?";
@@ -403,7 +406,10 @@ app.all("/api/ai/gemini/*", async (c) => {
 app.all("/api/ai/claude/*", async (c) => {
   const subPath = c.req.path.replace(/^\/api\/ai\/claude\//, "");
   const personalKey = c.req.header("x-personal-claude-key");
-  const actor = c.req.header("x-actor-name") || null;
+  // v1.10.93 — 한글 actor 이름 디코딩.
+  const actorRaw = c.req.header("x-actor-name") || null;
+  let actor = actorRaw;
+  if (actorRaw) { try { actor = decodeURIComponent(actorRaw); } catch { /* keep raw */ } }
   const apiKey = personalKey || process.env.CLAUDE_API_KEY;
   if (!apiKey) return c.json({ error: { message: "Claude API key not configured on server" } }, 503);
   const upstream = `https://api.anthropic.com/${subPath}`;
