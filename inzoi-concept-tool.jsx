@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.98";
+const APP_VERSION = "1.10.99";
 const CHANGELOG = [
+  {
+    version: "1.10.99",
+    date: "2026-04-26",
+    changes: [
+      "자동 분류 + 시안 생성 진단 강화 — doGenerate 가 자동 분류 결과를 console.log + 부분 실패 시 alert 로 안내. catalog_matches 도 함께 저장 (runCategorySuggest 와 동일)",
+      "API 설정 모달 세로 스크롤 — maxHeight 92vh + overflowY auto 추가. 사용량 패널이 길어져 화면 밖으로 나가던 문제 해결",
+      "API 사용량 가독성 개선 — 모델별 / 최근 호출 글자 크기 10→11~12, 색상 muted→lighter/main 으로 contrast ↑",
+      "Claude 미사용 안내 — 모델별 탭에 Claude 호출 0건이면 'Gemini 만 사용 / Claude 는 레거시 워크플로우 프롬프트 최적화에만 호출' 안내",
+      "태그 공유 링크에 탭 정보 포함 — UpdateChipBar 의 🔗 링크 복사가 ?tab=wishlist&tag=... 로 현재 탭과 태그를 함께 인코딩. 받는 사람이 같은 탭 + 같은 필터로 자동 진입",
+      "URL ?tab= 부팅 시 자동 인식 + activeTab 변경 시 URL 동기 (popstate 도). 기본값 progress 는 URL 미포함",
+    ],
+  },
   {
     version: "1.10.98",
     date: "2026-04-26",
@@ -5231,7 +5243,7 @@ function UpdateChipItem({ chip, active, faded, onToggle, onRename }) {
   );
 }
 
-function UpdateChipBar({ chips, selected, onChange, totalCount, onRename }) {
+function UpdateChipBar({ chips, selected, onChange, totalCount, onRename, currentTab }) {
   if (chips.length === 0) return null;
   const toggle = (value) => {
     if (selected.includes(value)) onChange(selected.filter((v) => v !== value));
@@ -5251,6 +5263,9 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename }) {
     const url = new URL(window.location.href);
     if (selected.length > 0) url.searchParams.set("tag", selected.join(","));
     else url.searchParams.delete("tag");
+    // v1.10.99 — 현재 탭(위시/진행/완료) 도 URL 쿼리에 포함해 받는 사람이 같은 탭에 진입.
+    if (currentTab) url.searchParams.set("tab", currentTab);
+    else url.searchParams.delete("tab");
     const text = url.toString();
     const ok = await copyToClipboard(text);
     if (ok) {
@@ -8191,33 +8206,42 @@ function ApiUsagePanel({ currentActor, profiles = [] }) {
         ))}
       </div>
 
-      {/* 모델별 */}
+      {/* 모델별 — v1.10.99: 가독성 개선 (글자 크기·색상 contrast) */}
       {view === "model" && (
         periodRows && periodRows.length > 0 ? (
-          <div style={{ border: "1px solid var(--surface-border)", borderRadius: 8, overflow: "hidden", marginBottom: 8 }}>
-            {periodRows.map((r, i) => (
-              <div key={`${r.endpoint}-${r.model}-${i}`} style={{
-                display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 10,
-                alignItems: "center", padding: "6px 10px", fontSize: 11,
-                background: i % 2 ? "rgba(0,0,0,0.02)" : "transparent",
-              }}>
-                <span style={{ color: r.endpoint === "claude" ? "#a855f7" : "#076ee8", fontWeight: 700 }}>
-                  {r.endpoint === "claude" ? "🤖 Claude" : "✨ Gemini"}
-                </span>
-                <span style={{ color: "var(--text-muted)", fontFamily: "monospace", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {r.model || "—"}
-                </span>
-                <span style={{ color: "var(--text-muted)" }}>
-                  {r.image_count > 0 ? `🖼 ${r.image_count}장` : `${fmtTok(r.input_tokens)}↓ / ${fmtTok(r.output_tokens)}↑`}
-                </span>
-                <span style={{ fontWeight: 700, minWidth: 70, textAlign: "right" }}>
-                  {fmtCost(r.cost_usd)} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {r.calls}회</span>
-                </span>
+          <>
+            <div style={{ border: "1px solid var(--surface-border)", borderRadius: 8, overflow: "hidden", marginBottom: 8 }}>
+              {periodRows.map((r, i) => (
+                <div key={`${r.endpoint}-${r.model}-${i}`} style={{
+                  display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 10,
+                  alignItems: "center", padding: "8px 12px", fontSize: 12,
+                  background: i % 2 ? "rgba(0,0,0,0.03)" : "transparent",
+                  color: "var(--text-main)",
+                }}>
+                  <span style={{ color: r.endpoint === "claude" ? "#a855f7" : "#076ee8", fontWeight: 700, fontSize: 12 }}>
+                    {r.endpoint === "claude" ? "🤖 Claude" : "✨ Gemini"}
+                  </span>
+                  <span style={{ color: "var(--text-lighter)", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.model || "—"}
+                  </span>
+                  <span style={{ color: "var(--text-lighter)", fontSize: 11 }}>
+                    {r.image_count > 0 ? `🖼 ${r.image_count}장` : `${fmtTok(r.input_tokens)}↓ / ${fmtTok(r.output_tokens)}↑`}
+                  </span>
+                  <span style={{ fontWeight: 700, minWidth: 80, textAlign: "right", fontSize: 12 }}>
+                    {fmtCost(r.cost_usd)} <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 11 }}>· {r.calls}회</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            {/* Claude 미사용 안내 */}
+            {!periodRows.some((r) => r.endpoint === "claude") && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 4px 8px", lineHeight: 1.5 }}>
+                ℹ Claude 호출 기록 없음 — 현재 시안 생성·자동 분류는 Gemini 만 사용. Claude 는 레거시 워크플로우의 프롬프트 최적화에만 호출됨
               </div>
-            ))}
-          </div>
+            )}
+          </>
         ) : (
-          <div style={{ padding: 14, textAlign: "center", fontSize: 11, color: "var(--text-muted)", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
+          <div style={{ padding: 14, textAlign: "center", fontSize: 12, color: "var(--text-muted)", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
             기록 없음
           </div>
         )
@@ -8255,26 +8279,27 @@ function ApiUsagePanel({ currentActor, profiles = [] }) {
         )
       )}
 
-      {/* 최근 호출 */}
+      {/* 최근 호출 — v1.10.99: 글자 크기·색상 가독성 개선 */}
       {view === "recent" && (
         data && data.recent && data.recent.length > 0 ? (
-          <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--surface-border)", borderRadius: 8, marginBottom: 8 }}>
+          <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--surface-border)", borderRadius: 8, marginBottom: 8 }}>
             {data.recent.map((r, i) => (
               <div key={i} style={{
-                display: "grid", gridTemplateColumns: "auto auto 1fr auto auto", gap: 8,
-                padding: "5px 10px", fontSize: 10, color: "var(--text-muted)",
-                fontFamily: "monospace", background: i % 2 ? "rgba(0,0,0,0.02)" : "transparent",
+                display: "grid", gridTemplateColumns: "auto auto 1fr auto auto", gap: 10,
+                padding: "7px 12px", fontSize: 11, color: "var(--text-lighter)",
+                fontFamily: "monospace",
+                background: i % 2 ? "rgba(0,0,0,0.03)" : "transparent",
               }}>
-                <span>{formatLocalTime(r.created_at, "ymdhms")}</span>
+                <span style={{ color: "var(--text-main)" }}>{formatLocalTime(r.created_at, "ymdhms")}</span>
                 <span style={{ color: r.endpoint === "claude" ? "#a855f7" : "#076ee8", fontWeight: 700 }}>{r.endpoint}</span>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.model || "—"}</span>
-                <span style={{ color: r.status_code && r.status_code < 300 ? "#15803d" : "#dc2626" }}>{r.status_code || "?"}</span>
-                <span style={{ color: "var(--text-main)", fontWeight: 700 }}>{fmtCost(r.cost_usd)}</span>
+                <span style={{ color: r.status_code && r.status_code < 300 ? "#15803d" : "#dc2626", fontWeight: 600 }}>{r.status_code || "?"}</span>
+                <span style={{ color: "var(--text-main)", fontWeight: 700, minWidth: 64, textAlign: "right" }}>{fmtCost(r.cost_usd)}</span>
               </div>
             ))}
           </div>
         ) : (
-          <div style={{ padding: 14, textAlign: "center", fontSize: 11, color: "var(--text-muted)", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
+          <div style={{ padding: 14, textAlign: "center", fontSize: 12, color: "var(--text-muted)", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
             기록 없음
           </div>
         )
@@ -8649,6 +8674,7 @@ function DesignsPanel({
     // 1) 자동 분류 선행 — prompt/description 모두 없고 이미지가 있으면.
     let workingCard = card;
     let basePrompt = card.data?.prompt || card.description || card.title;
+    let autoNotice = null;  // 생성 후 사용자에게 알릴 부분 실패 메시지
     const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
     const imgSrc = refs[0] || card.thumbnail_url;
     const needsAutoClassify = !card.data?.prompt && !card.description && imgSrc;
@@ -8661,10 +8687,16 @@ function DesignsPanel({
         ]);
         const clsR = clsResult.status === "fulfilled" ? clsResult.value : null;
         const p = promptResult.status === "fulfilled" ? promptResult.value : null;
+        // v1.10.99 — 진단 로그.
+        console.log("[자동 분류 + 시안 생성]", {
+          classify: clsResult.status, classifyResult: clsR,
+          prompt: promptResult.status, promptValue: p ? p.slice(0, 80) + "..." : null,
+        });
         const patch = {};
-        if (clsR?.category_id) patch.category = clsR.category_id;
-        if (clsR?.style_id) patch.style_preset = clsR.style_id;
-        if (clsR?.posmap_features) patch.posmap_features = clsR.posmap_features;
+        const savedFields = [];
+        if (clsR?.category_id) { patch.category = clsR.category_id; savedFields.push("카테고리"); }
+        if (clsR?.style_id) { patch.style_preset = clsR.style_id; savedFields.push("스타일"); }
+        if (clsR?.posmap_features) { patch.posmap_features = clsR.posmap_features; savedFields.push("posmap"); }
         if (clsR?.size_info) {
           patch.size_info = {
             width_cm: clsR.size_info.width_cm,
@@ -8675,18 +8707,44 @@ function DesignsPanel({
             reason: clsR.size_info.reason,
             updated_at: new Date().toISOString(),
           };
+          savedFields.push("크기");
         }
         if (p) {
           patch.prompt = p;
           basePrompt = p;
+          savedFields.push("프롬프트");
+        }
+        // posmap features 가 있으면 카탈로그 매칭도 같이 계산 (runCategorySuggest 와 동일).
+        if (clsR?.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+          const catId = clsR.category_id || card.data?.category;
+          const matches = findSimilarCatalogAssets(clsR.posmap_features, catId, 12);
+          if (matches.length > 0) {
+            patch.catalog_matches = {
+              features: clsR.posmap_features,
+              items: matches.map((m) => ({
+                id: m.id, score: m.score, normalized: m.normalized,
+                filter: m.filter, lv1: m.lv1, lv2: m.lv2,
+              })),
+              generated_at: new Date().toISOString(),
+            };
+          }
         }
         if (Object.keys(patch).length > 0) {
           await save(patch);
-          // save 가 onRefresh 호출하지만 workingCard 는 로컬에서 만들어 사용 (prompt 즉시 반영).
           workingCard = { ...card, data: { ...(card.data || {}), ...patch } };
+          console.log("[자동 분류 + 시안 생성] 저장됨:", savedFields.join(", "));
+          // 부분 실패 안내 (분류만 또는 프롬프트만 성공)
+          if (!clsR && p) autoNotice = "프롬프트만 자동 생성됨. 카테고리·스타일은 수동 입력 필요.";
+          else if (clsR && !p) autoNotice = "분류 정보만 저장됨. 프롬프트는 description/title 사용.";
+        } else {
+          autoNotice = "자동 분류 실패 — 카테고리·프롬프트 둘 다 인식 안 됨. F12 콘솔 확인.";
+          console.warn("[자동 분류 + 시안 생성] 모두 실패:",
+            clsResult.status === "rejected" ? clsResult.reason : "classify=null",
+            promptResult.status === "rejected" ? promptResult.reason : "prompt=null");
         }
       } catch (e) {
-        console.warn("[자동 분류 + 시안 생성] 자동 분류 실패, 기존 fallback 으로 진행:", e.message);
+        console.warn("[자동 분류 + 시안 생성] 예외 발생:", e);
+        autoNotice = "자동 분류 중 오류 — F12 콘솔 확인. 시안은 fallback 으로 진행 시도.";
       }
     }
 
@@ -8714,6 +8772,7 @@ function DesignsPanel({
         },
       });
       if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
+      else if (autoNotice) alert(`✓ 시안 ${r.added}개 생성됨\n\n⚠ ${autoNotice}`);
       await onRefresh?.();
     } catch (e) { alert("생성 실패: " + e.message); }
     finally {
@@ -10007,7 +10066,14 @@ export default function InZOIConceptTool() {
   // setCompletedList(...) 호출부는 전부 cards API 로 이관됨.
   const setCompletedList = () => { /* deprecated: cards 가 SOT */ };
   // v1.10.72 — 시안 생성 / 투표 및 선정 / 컨셉시트 생성 → "🚀 진행 중" 단일 탭으로 통합.
-  const [activeTab, setActiveTab] = useState("progress"); // "wishlist" | "progress" | "completed"
+  // v1.10.99 — 부팅 시 URL ?tab= 읽어 초기값으로 사용 (공유 링크 진입 지원).
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t === "wishlist" || t === "progress" || t === "completed") return t;
+    } catch { /* ignore */ }
+    return "progress";
+  });
   const [sortBy, setSortBy] = useState("date_desc"); // "date_desc" | "date_asc" | "title_asc" | "title_desc"
   const [cardScale, setCardScale] = useState(() => {
     const v = parseFloat(localStorage.getItem("inzoi_card_scale"));
@@ -10401,19 +10467,32 @@ export default function InZOIConceptTool() {
   }, [projectSlug, detailCard?.id]);
 
   // v1.10.87 — selectedUpdates 변경 시 URL 쿼리 ?tag=... 에 동기 (replaceState 로 history 오염 X).
+  // v1.10.99 — activeTab 도 URL ?tab= 에 동기.
   useEffect(() => {
     try {
       const url = new URL(window.location.href);
-      const cur = url.searchParams.get("tag") || "";
-      const next = selectedUpdates.length > 0 ? selectedUpdates.join(",") : "";
-      if (cur === next) return;
-      if (next) url.searchParams.set("tag", next);
-      else url.searchParams.delete("tag");
-      window.history.replaceState({}, "", url.toString());
+      let changed = false;
+      const curTag = url.searchParams.get("tag") || "";
+      const nextTag = selectedUpdates.length > 0 ? selectedUpdates.join(",") : "";
+      if (curTag !== nextTag) {
+        if (nextTag) url.searchParams.set("tag", nextTag);
+        else url.searchParams.delete("tag");
+        changed = true;
+      }
+      const curTab = url.searchParams.get("tab") || "";
+      // 기본값 progress 는 URL 에 안 적음 (깔끔하게).
+      const nextTab = activeTab && activeTab !== "progress" ? activeTab : "";
+      if (curTab !== nextTab) {
+        if (nextTab) url.searchParams.set("tab", nextTab);
+        else url.searchParams.delete("tab");
+        changed = true;
+      }
+      if (changed) window.history.replaceState({}, "", url.toString());
     } catch { /* ignore */ }
-  }, [selectedUpdates]);
+  }, [selectedUpdates, activeTab]);
 
   // popstate 시 URL 의 tag 쿼리 ↔ state 동기 (브라우저 뒤로/앞으로 + 외부 공유 링크 진입 지원).
+  // v1.10.99 — tab 쿼리도 함께 동기.
   useEffect(() => {
     const onPop = () => {
       try {
@@ -10424,6 +10503,10 @@ export default function InZOIConceptTool() {
           if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
           return next;
         });
+        const tab = sp.get("tab");
+        if (tab === "wishlist" || tab === "progress" || tab === "completed") {
+          setActiveTab(tab);
+        }
       } catch { /* ignore */ }
     };
     window.addEventListener("popstate", onPop);
@@ -11436,6 +11519,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     onChange={setSelectedUpdates}
                     totalCount={inRangeCards.length}
                     onRename={renameUpdateTag}
+                    currentTab={activeTab}
                   />
                 );
               })()}
@@ -12864,6 +12948,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   onChange={setSelectedUpdates}
                   totalCount={completedList.length}
                   onRename={renameUpdateTag}
+                  currentTab={activeTab}
                 />
               );
             })()}
@@ -13003,6 +13088,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   onChange={setSelectedUpdates}
                   totalCount={wishlist.length}
                   onRename={renameUpdateTag}
+                  currentTab={activeTab}
                 />
               );
             })()}
@@ -13291,6 +13377,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             position: "fixed", top: "50%", left: "50%",
             transform: "translate(-50%, -50%)",
             width: 520, maxWidth: "90vw",
+            // v1.10.99 — 사용량 패널 추가로 길어진 모달이 화면 밖으로 나가는 문제 — 세로 스크롤 + 최대 높이.
+            maxHeight: "92vh", overflowY: "auto",
             background: "rgba(255, 255, 255, 0.97)",
             backdropFilter: "blur(20px)",
             border: "1px solid var(--surface-border)",
