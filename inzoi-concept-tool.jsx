@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.88";
+const APP_VERSION = "1.10.89";
 const CHANGELOG = [
+  {
+    version: "1.10.89",
+    date: "2026-04-26",
+    changes: [
+      "API 사용량 추적 (옵션 B 풀 구현) — 서버 프록시(/api/ai/gemini/* + /api/ai/claude/*)가 응답에서 토큰/이미지 수 추출 → 모델별 가격표 적용 → ai_usage_log 테이블에 INSERT. 헤더 X-Actor-Name 으로 프로필별 집계",
+      "GET /api/usage?actor=<name> — 오늘/주(7일)/월(30일) 합계 + 엔드포인트·모델별 breakdown + 최근 30건. ?actor=* 로 전체 사용자 비교",
+      "API 설정 모달에 📊 API 사용량 패널 — 3개 카드(오늘/주/월), 엔드포인트별 표, 최근 호출 details, 👥 전체 비교 토글",
+      "가격표: Gemini 3 Flash Image $0.039/장, Gemini 1.5/2.5 Flash $0.075/$0.30 per 1M, Claude Sonnet $3/$15, Claude Opus $15/$75 — 추정 ±10%",
+      "schema.sqlite.sql 에 ai_usage_log 테이블 + 인덱스 2개 추가 (actor+date / date)",
+    ],
+  },
   {
     version: "1.10.88",
     date: "2026-04-26",
@@ -2634,9 +2645,14 @@ async function fetchImagePart(url) {
 }
 
 // v1.10.71 — apiKey 인자는 personal override 만. "[server]" placeholder 면 서버 팀 키 사용.
+// v1.10.89 — X-Actor-Name 헤더로 actor 전달 → 서버가 사용량 로그에 기록.
 function geminiProxyHeaders(apiKey) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey && apiKey !== "[server]") headers["X-Personal-Gemini-Key"] = apiKey;
+  try {
+    const actor = localStorage.getItem("inzoi_actor_name");
+    if (actor) headers["X-Actor-Name"] = actor;
+  } catch { /* ignore */ }
   return headers;
 }
 async function generateImageWithGemini(apiKey, prompt, model, refImages = []) {
@@ -7842,6 +7858,171 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
 }
 
 // 카드 공유 링크 복사 — 제목 옆 작은 🔗 아이콘, 클릭 시 현재 카드 URL 을 클립보드에 복사 (v1.10.24).
+// v1.10.89 — API 설정 모달 안의 사용량 패널. /api/usage?actor=... 폴링.
+function ApiUsagePanel({ actor }) {
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [showAll, setShowAll] = React.useState(false);
+  const [allRows, setAllRows] = React.useState(null);
+  const reload = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const q = actor ? `?actor=${encodeURIComponent(actor)}` : "";
+      const r = await fetch(`/api/usage${q}`);
+      if (r.ok) setData(await r.json());
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [actor]);
+  React.useEffect(() => { reload(); }, [reload]);
+  const reloadAll = async () => {
+    try {
+      const r = await fetch(`/api/usage?actor=*&days=30`);
+      if (r.ok) setAllRows((await r.json()).rows);
+    } catch { /* ignore */ }
+  };
+  const fmtCost = (n) => "$" + (Number(n) || 0).toFixed(4);
+  const fmtTok = (n) => (Number(n) || 0).toLocaleString();
+  const sumCost = (arr) => (arr || []).reduce((s, r) => s + (Number(r.cost_usd) || 0), 0);
+  const sumCalls = (arr) => (arr || []).reduce((s, r) => s + (Number(r.calls) || 0), 0);
+  return (
+    <div style={{ marginTop: 24, paddingTop: 18, borderTop: "1px solid var(--surface-border)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-main)" }}>📊 API 사용량</span>
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          {actor ? `프로필: ${actor}` : "(프로필 미선택 — 익명 호출)"}
+        </span>
+        <button
+          onClick={reload}
+          disabled={loading}
+          title="새로고침"
+          style={{
+            marginLeft: "auto", padding: "4px 10px", borderRadius: 8,
+            background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+            color: "var(--text-muted)", fontSize: 11, fontWeight: 600,
+            cursor: loading ? "wait" : "pointer",
+          }}
+        >{loading ? "로딩..." : "🔄 새로고침"}</button>
+        <button
+          onClick={() => { setShowAll((v) => !v); if (!allRows) reloadAll(); }}
+          title="전체 사용자 비교"
+          style={{
+            padding: "4px 10px", borderRadius: 8,
+            background: showAll ? "rgba(7,110,232,0.1)" : "rgba(0,0,0,0.04)",
+            border: `1px solid ${showAll ? "var(--primary)" : "var(--surface-border)"}`,
+            color: showAll ? "var(--primary)" : "var(--text-muted)",
+            fontSize: 11, fontWeight: 600, cursor: "pointer",
+          }}
+        >👥 전체 비교</button>
+      </div>
+      {data && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+          {[
+            { key: "today", label: "오늘", rows: data.today },
+            { key: "week",  label: "이번주(7일)", rows: data.week },
+            { key: "month", label: "이번달(30일)", rows: data.month },
+          ].map((p) => (
+            <div key={p.key} style={{
+              padding: 10, borderRadius: 10,
+              background: "rgba(0,0,0,0.03)", border: "1px solid var(--surface-border)",
+            }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{p.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)", marginTop: 4 }}>
+                {fmtCost(sumCost(p.rows))}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                {sumCalls(p.rows)}회 호출
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {data && data.month && data.month.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4 }}>
+            엔드포인트별 (이번달)
+          </div>
+          <div style={{
+            border: "1px solid var(--surface-border)", borderRadius: 8, overflow: "hidden",
+          }}>
+            {data.month.map((r, i) => (
+              <div key={`${r.endpoint}-${r.model}-${i}`} style={{
+                display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 10,
+                alignItems: "center", padding: "6px 10px",
+                fontSize: 11,
+                background: i % 2 ? "rgba(0,0,0,0.02)" : "transparent",
+              }}>
+                <span style={{ color: r.endpoint === "claude" ? "#a855f7" : "#076ee8", fontWeight: 700 }}>
+                  {r.endpoint === "claude" ? "🤖 Claude" : "✨ Gemini"}
+                </span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "monospace", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {r.model || "—"}
+                </span>
+                <span style={{ color: "var(--text-muted)" }}>
+                  {r.image_count > 0 ? `🖼 ${r.image_count}장` : `${fmtTok(r.input_tokens)}↓ / ${fmtTok(r.output_tokens)}↑`}
+                </span>
+                <span style={{ fontWeight: 700, color: "var(--text-main)", minWidth: 70, textAlign: "right" }}>
+                  {fmtCost(r.cost_usd)} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {r.calls}회</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {data && data.recent && data.recent.length > 0 && (
+        <details style={{ marginBottom: 8 }}>
+          <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", cursor: "pointer", padding: "4px 0" }}>
+            최근 호출 ({data.recent.length}건)
+          </summary>
+          <div style={{ marginTop: 4, maxHeight: 220, overflowY: "auto", border: "1px solid var(--surface-border)", borderRadius: 8 }}>
+            {data.recent.map((r, i) => (
+              <div key={i} style={{
+                display: "grid", gridTemplateColumns: "auto auto 1fr auto auto", gap: 8,
+                padding: "5px 10px", fontSize: 10, color: "var(--text-muted)",
+                fontFamily: "monospace", background: i % 2 ? "rgba(0,0,0,0.02)" : "transparent",
+              }}>
+                <span>{formatLocalTime(r.created_at, "ymdhms")}</span>
+                <span style={{ color: r.endpoint === "claude" ? "#a855f7" : "#076ee8", fontWeight: 700 }}>{r.endpoint}</span>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.model || "—"}</span>
+                <span style={{ color: r.status_code && r.status_code < 300 ? "#15803d" : "#dc2626" }}>{r.status_code || "?"}</span>
+                <span style={{ color: "var(--text-main)", fontWeight: 700 }}>{fmtCost(r.cost_usd)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      {showAll && allRows && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4 }}>
+            전체 사용자 (이번달)
+          </div>
+          <div style={{ border: "1px solid var(--surface-border)", borderRadius: 8, overflow: "hidden" }}>
+            {allRows.length === 0
+              ? <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>호출 기록 없음</div>
+              : allRows.map((r, i) => (
+                <div key={r.actor + "-" + i} style={{
+                  display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8,
+                  alignItems: "center", padding: "6px 10px",
+                  fontSize: 11,
+                  background: i % 2 ? "rgba(0,0,0,0.02)" : "transparent",
+                  fontWeight: r.actor === actor ? 700 : 500,
+                }}>
+                  <span style={{ color: r.actor === actor ? "var(--primary)" : "var(--text-main)" }}>
+                    {r.actor === actor ? "👤 " : ""}{r.actor || "(익명)"}
+                  </span>
+                  <span style={{ color: "var(--text-muted)" }}>{r.calls}회</span>
+                  <span style={{ fontWeight: 700, minWidth: 70, textAlign: "right" }}>{fmtCost(r.cost_usd)}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+      <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5 }}>
+        💡 비용은 모델별 공개 단가(Gemini 3 Flash Image $0.039/장, Claude Sonnet $3/$15 per 1M 등)로 추정. 실제 청구액과 ±10% 차이 가능
+      </div>
+    </div>
+  );
+}
+
 function CardShareLink({ slug, cardId }) {
   const [copied, setCopied] = React.useState(false);
   if (!slug || !cardId) return null;
@@ -10373,11 +10554,16 @@ User description: ${snap.prompt}${spec.hint ? `\nDimension & scale reference: ${
 Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
         // v1.10.71 — 서버 프록시. claudeApiKey 가 "[server]" 가 아니면 personal override 헤더로 전달.
+        // v1.10.89 — X-Actor-Name 헤더로 사용량 로그용 actor 전달.
         const claudeHeaders = {
           "Content-Type": "application/json",
           "anthropic-version": "2023-06-01",
         };
         if (claudeApiKey && claudeApiKey !== "[server]") claudeHeaders["X-Personal-Claude-Key"] = claudeApiKey;
+        try {
+          const _actor = localStorage.getItem("inzoi_actor_name");
+          if (_actor) claudeHeaders["X-Actor-Name"] = _actor;
+        } catch { /* ignore */ }
         const claudeResp = await fetch("/api/ai/claude/v1/messages", {
           method: "POST",
           headers: claudeHeaders,
@@ -12998,6 +13184,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
                 개인 키는 브라우저 로컬 스토리지에만 저장됩니다 · 팀 기본값은 서버 환경변수에서 제공
               </div>
+
+              {/* v1.10.89 — API 사용량 (현재 프로필 기준) */}
+              <ApiUsagePanel actor={actorName} />
             </div>
           </div>
         </>

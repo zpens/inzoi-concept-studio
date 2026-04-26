@@ -238,3 +238,22 @@ CREATE TABLE IF NOT EXISTS profiles (
   icon TEXT NOT NULL DEFAULT '🧑',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ─── AI API 사용량 로그 (v1.10.89) ─────────────────────────
+-- /api/ai/gemini/* 와 /api/ai/claude/* 프록시 통과 시마다 한 줄 INSERT.
+-- actor 별로 토큰 / 추정 비용 집계해 API 설정 모달에서 확인.
+CREATE TABLE IF NOT EXISTS ai_usage_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor TEXT,                  -- 호출한 프로필 이름 (헤더 X-Actor-Name)
+  endpoint TEXT NOT NULL,      -- 'gemini' / 'claude'
+  model TEXT,                  -- 'gemini-3-flash-image' 등
+  status_code INTEGER,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  image_count INTEGER,         -- 이미지 생성 모델은 토큰 대신 이미지 개수
+  duration_ms INTEGER,
+  cost_usd REAL,               -- 추정 (모델별 가격표 × 사용량)
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_usage_actor_date ON ai_usage_log(actor, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_date ON ai_usage_log(created_at DESC);

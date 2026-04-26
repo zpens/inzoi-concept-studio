@@ -321,25 +321,75 @@ app.get("/api/config", (c) => c.json({
   source: "server",
 }));
 
+// v1.10.89 — AI 모델별 단가 (USD, /1M tokens 또는 /image). 추정치, 변동 가능.
+const AI_PRICING = [
+  { match: /gemini.*flash.*image/i,      type: "image", perImage: 0.039 },
+  { match: /gemini.*image/i,             type: "image", perImage: 0.039 },
+  { match: /gemini.*2\.5.*flash/i,       type: "text",  input: 0.075,  output: 0.30 },
+  { match: /gemini.*1\.5.*flash/i,       type: "text",  input: 0.075,  output: 0.30 },
+  { match: /gemini.*1\.5.*pro/i,         type: "text",  input: 1.25,   output: 5.00 },
+  { match: /gemini.*flash/i,             type: "text",  input: 0.075,  output: 0.30 },
+  { match: /gemini.*pro/i,               type: "text",  input: 1.25,   output: 5.00 },
+  { match: /claude.*opus/i,              type: "text",  input: 15.00,  output: 75.00 },
+  { match: /claude.*sonnet/i,            type: "text",  input: 3.00,   output: 15.00 },
+  { match: /claude.*haiku/i,             type: "text",  input: 0.80,   output: 4.00 },
+];
+function priceFor(model) {
+  if (!model) return null;
+  return AI_PRICING.find((p) => p.match.test(model)) || null;
+}
+const insertUsage = db.prepare(`
+  INSERT INTO ai_usage_log (actor, endpoint, model, status_code, input_tokens, output_tokens, image_count, duration_ms, cost_usd)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+function logUsage({ actor, endpoint, model, status, inTok, outTok, imgCount, ms, cost }) {
+  try {
+    insertUsage.run(actor || null, endpoint, model || null, status || null,
+      inTok || null, outTok || null, imgCount || null, ms || null, cost || null);
+  } catch (e) { console.warn("ai_usage_log insert 실패:", e.message); }
+}
+
 // Gemini 프록시 — 클라이언트가 보낸 path/body 를 그대로 Google 에 forward, ?key=... 만 서버가 부착.
 // 헤더 X-Personal-Gemini-Key 가 있으면 그 값으로 override (사용자 개인 키).
+// v1.10.89: 헤더 X-Actor-Name 받아 사용량 로그 INSERT.
 app.all("/api/ai/gemini/*", async (c) => {
   const subPath = c.req.path.replace(/^\/api\/ai\/gemini\//, "");
   const personalKey = c.req.header("x-personal-gemini-key");
+  const actor = c.req.header("x-actor-name") || null;
   const apiKey = personalKey || process.env.GEMINI_API_KEY;
   if (!apiKey) return c.json({ error: { message: "Gemini API key not configured on server" } }, 503);
   const sep = subPath.includes("?") ? "&" : "?";
   const upstream = `https://generativelanguage.googleapis.com/${subPath}${sep}key=${encodeURIComponent(apiKey)}`;
-  const init = {
-    method: c.req.method,
-    headers: { "content-type": "application/json" },
-  };
-  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-    init.body = await c.req.text();
-  }
+  const init = { method: c.req.method, headers: { "content-type": "application/json" } };
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") init.body = await c.req.text();
+  const startMs = Date.now();
   try {
     const r = await fetch(upstream, init);
     const body = await r.text();
+    const durationMs = Date.now() - startMs;
+    // 사용량 추출 (성공 응답일 때만)
+    const modelMatch = subPath.match(/models\/([^:?]+)/);
+    const model = modelMatch?.[1] || null;
+    if (r.ok && r.headers.get("content-type")?.includes("application/json")) {
+      try {
+        const data = JSON.parse(body);
+        const usage = data.usageMetadata || {};
+        const inTok = usage.promptTokenCount || 0;
+        const outTok = usage.candidatesTokenCount || 0;
+        const imgCount = (data.candidates?.[0]?.content?.parts || [])
+          .filter((p) => p.inlineData).length;
+        const pricing = priceFor(model);
+        let cost = 0;
+        if (pricing) {
+          if (pricing.type === "image") cost = pricing.perImage * (imgCount || 1);
+          else cost = (inTok / 1e6) * pricing.input + (outTok / 1e6) * pricing.output;
+        }
+        logUsage({ actor, endpoint: "gemini", model, status: r.status,
+                   inTok, outTok, imgCount, ms: durationMs, cost });
+      } catch { /* parse 실패는 로그 생략 */ }
+    } else {
+      logUsage({ actor, endpoint: "gemini", model, status: r.status, ms: durationMs, cost: 0 });
+    }
     return new Response(body, {
       status: r.status,
       headers: { "content-type": r.headers.get("content-type") || "application/json" },
@@ -353,9 +403,11 @@ app.all("/api/ai/gemini/*", async (c) => {
 app.all("/api/ai/claude/*", async (c) => {
   const subPath = c.req.path.replace(/^\/api\/ai\/claude\//, "");
   const personalKey = c.req.header("x-personal-claude-key");
+  const actor = c.req.header("x-actor-name") || null;
   const apiKey = personalKey || process.env.CLAUDE_API_KEY;
   if (!apiKey) return c.json({ error: { message: "Claude API key not configured on server" } }, 503);
   const upstream = `https://api.anthropic.com/${subPath}`;
+  const reqText = c.req.method !== "GET" && c.req.method !== "HEAD" ? await c.req.text() : null;
   const init = {
     method: c.req.method,
     headers: {
@@ -364,12 +416,32 @@ app.all("/api/ai/claude/*", async (c) => {
       "anthropic-version": c.req.header("anthropic-version") || "2023-06-01",
     },
   };
-  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-    init.body = await c.req.text();
+  if (reqText !== null) init.body = reqText;
+  // 모델명: 요청 body 의 "model" 필드.
+  let model = null;
+  if (reqText) {
+    try { model = JSON.parse(reqText).model || null; } catch { /* ignore */ }
   }
+  const startMs = Date.now();
   try {
     const r = await fetch(upstream, init);
     const body = await r.text();
+    const durationMs = Date.now() - startMs;
+    if (r.ok && r.headers.get("content-type")?.includes("application/json")) {
+      try {
+        const data = JSON.parse(body);
+        const usage = data.usage || {};
+        const inTok = usage.input_tokens || 0;
+        const outTok = usage.output_tokens || 0;
+        const pricing = priceFor(model);
+        const cost = pricing && pricing.type === "text"
+          ? (inTok / 1e6) * pricing.input + (outTok / 1e6) * pricing.output : 0;
+        logUsage({ actor, endpoint: "claude", model, status: r.status,
+                   inTok, outTok, ms: durationMs, cost });
+      } catch { /* parse 실패는 로그 생략 */ }
+    } else {
+      logUsage({ actor, endpoint: "claude", model, status: r.status, ms: durationMs, cost: 0 });
+    }
     return new Response(body, {
       status: r.status,
       headers: { "content-type": r.headers.get("content-type") || "application/json" },
@@ -377,6 +449,55 @@ app.all("/api/ai/claude/*", async (c) => {
   } catch (e) {
     return c.json({ error: { message: `Claude proxy failed: ${e.message}` } }, 502);
   }
+});
+
+// v1.10.89 — 사용량 조회. ?actor= 단일, ?actor=* 전체 합산, ?days= 기간.
+app.get("/api/usage", (c) => {
+  const actor = c.req.query("actor") || null;
+  const days = Math.min(365, Math.max(1, parseInt(c.req.query("days") || "30", 10)));
+  if (actor === "*") {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const rows = db.prepare(`
+      SELECT COALESCE(actor, '(익명)') AS actor,
+             COUNT(*) AS calls,
+             SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+             SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+             SUM(COALESCE(image_count, 0)) AS image_count,
+             SUM(COALESCE(cost_usd, 0)) AS cost_usd
+      FROM ai_usage_log WHERE created_at >= ?
+      GROUP BY actor ORDER BY cost_usd DESC
+    `).all(since);
+    return c.json({ scope: "all", days, since, rows });
+  }
+  // actor 단일 (null = 익명 호출 합산)
+  const aggregate = (sinceISO) => db.prepare(`
+    SELECT endpoint, model,
+           COUNT(*) AS calls,
+           SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+           SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+           SUM(COALESCE(image_count, 0)) AS image_count,
+           SUM(COALESCE(cost_usd, 0)) AS cost_usd
+    FROM ai_usage_log
+    WHERE created_at >= ? AND ((? IS NULL AND actor IS NULL) OR actor = ?)
+    GROUP BY endpoint, model ORDER BY cost_usd DESC
+  `).all(sinceISO, actor, actor);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const week  = new Date(Date.now() - 7  * 86400000);
+  const month = new Date(Date.now() - 30 * 86400000);
+  const recent = db.prepare(`
+    SELECT endpoint, model, status_code, input_tokens, output_tokens, image_count,
+           duration_ms, cost_usd, created_at
+    FROM ai_usage_log
+    WHERE (? IS NULL AND actor IS NULL) OR actor = ?
+    ORDER BY created_at DESC LIMIT 30
+  `).all(actor, actor);
+  return c.json({
+    scope: "actor", actor,
+    today: aggregate(today.toISOString()),
+    week:  aggregate(week.toISOString()),
+    month: aggregate(month.toISOString()),
+    recent,
+  });
 });
 
 // upstream fetch 에 5초 타임아웃 — :8080 이 꺼져있거나 느릴 때 요청이 무한 대기하지 않게.
