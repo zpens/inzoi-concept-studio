@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.71";
+const APP_VERSION = "1.10.72";
 const CHANGELOG = [
+  {
+    version: "1.10.72",
+    date: "2026-04-26",
+    changes: [
+      "탭 통합 — 시안 생성 / 투표 및 선정 / 컨셉시트 생성 → '🚀 진행 중' 단일 탭. 3탭 → 2단계(드래프팅 + 시트) 카드를 한 화면에. 탭 5개 → 3개 (위시 / 진행 / 완료)",
+      "정렬 옵션에 🎯 진행 단계순 추가 (정렬 시 자연스럽게 단계별 그룹으로 시각화)",
+      "카드 그리드 좌상단에 stage badge — computeStage 기반으로 🎨 시안 / 🗳️ 투표 및 선정 / 📑 시트 / ✅ 완료 표시",
+      "+ 새 시안 버튼이 진행 중 탭에서 항상 노출 (이전엔 시안 생성 탭에서만)",
+      "단계별 카드 컴포넌트 분기는 카드의 _statusKey 로 자동 결정 (drafting → create 렌더, sheet → sheet 렌더)",
+      "각 카드 모달에서 stage 자동 전환 시 더 이상 탭 이동 필요 없음 — 탭 한 곳에서 모든 진행 흐름 확인",
+    ],
+  },
   {
     version: "1.10.71",
     date: "2026-04-26",
@@ -5559,6 +5571,8 @@ function SortSelect({ value, onChange }) {
       <option value="date_asc">📅 오래된순</option>
       <option value="title_asc">🔤 이름 A→Z</option>
       <option value="title_desc">🔤 이름 Z→A</option>
+      <option value="stage_asc">🎯 진행 단계 (시안→시트)</option>
+      <option value="stage_desc">🎯 진행 단계 (시트→시안)</option>
     </select>
   );
 }
@@ -8705,6 +8719,22 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
         ) : (
           <span style={{ fontSize: Math.round(72 * scale), opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
+        {/* v1.10.72 — stage badge (좌상단). progress 탭에서 단계 식별에 핵심. */}
+        {(() => {
+          const stage = computeStage(card);
+          const opt = STAGE_OPTIONS.find((o) => o.key === stage);
+          if (!opt) return null;
+          return (
+            <div style={{
+              position: "absolute", top: 10, left: 10,
+              padding: "3px 10px", borderRadius: 10,
+              background: "rgba(124,58,237,0.92)", color: "#fff",
+              fontSize: Math.round(11 * Math.sqrt(scale)), fontWeight: 800,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+              whiteSpace: "nowrap",
+            }}>{opt.label}</div>
+          );
+        })()}
         {designs.length > 0 && (
           <div style={{
             position: "absolute", top: 10, right: 10,
@@ -9257,7 +9287,8 @@ export default function InZOIConceptTool() {
   // 하위 호환용으로 동일한 배열 shape 를 내려주고 기존 컴포넌트는 수정 없이 작동.
   // setCompletedList(...) 호출부는 전부 cards API 로 이관됨.
   const setCompletedList = () => { /* deprecated: cards 가 SOT */ };
-  const [activeTab, setActiveTab] = useState("create"); // "create" | "completed" | "wishlist"
+  // v1.10.72 — 시안 생성 / 투표 및 선정 / 컨셉시트 생성 → "🚀 진행 중" 단일 탭으로 통합.
+  const [activeTab, setActiveTab] = useState("progress"); // "wishlist" | "progress" | "completed"
   const [sortBy, setSortBy] = useState("date_desc"); // "date_desc" | "date_asc" | "title_asc" | "title_desc"
   const [cardScale, setCardScale] = useState(() => {
     const v = parseFloat(localStorage.getItem("inzoi_card_scale"));
@@ -9529,18 +9560,7 @@ export default function InZOIConceptTool() {
     }
   }, [jobs, activeJobId]);
 
-  // 활성 legacy job 의 step 이 변하면 워크플로우 탭 자동 전환 — 단, 사용자가
-  // 명시적으로 상세 UI(showWorkflowDetail) 를 열었을 때만. 그냥 탭 클릭만으로
-  // 선택한 경우엔 step 에 따라 강제로 되돌리지 않는다 (카드 플로우 우선).
-  useEffect(() => {
-    if (!showWorkflowDetail) return;
-    if (activeTab !== "create" && activeTab !== "vote" && activeTab !== "sheet") return;
-    let target = null;
-    if (step <= 1) target = "create";
-    else if (step <= 3) target = "vote";
-    else if (step <= 6) target = "sheet";
-    if (target && target !== activeTab) setActiveTab(target);
-  }, [step, activeTab, showWorkflowDetail]);
+  // v1.10.72 — 3 탭이 통합되어 step 기반 자동 전환은 의미 없어짐. 무시.
 
   // ── 프로젝트 slug / 동기화 상태 ──
   const [projectSlug, setProjectSlug] = useState(null);
@@ -9729,16 +9749,13 @@ export default function InZOIConceptTool() {
       if (activeTab === "wishlist") {
         const lid = findByStatus("wishlist");
         if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
-      } else if (activeTab === "create") {
-        const lid = findByStatus("drafting");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
-      } else if (activeTab === "vote") {
-        const lid = findByStatus("drafting");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived
-          && Array.isArray(c.data?.designs) && c.data.designs.length > 0);
-      } else if (activeTab === "sheet") {
-        const lid = findByStatus("sheet");
-        if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
+      } else if (activeTab === "progress") {
+        // v1.10.72 — drafting + sheet 모두 포함.
+        const draftingLid = findByStatus("drafting");
+        const sheetLid = findByStatus("sheet");
+        list = cards.filter((c) =>
+          (c.list_id === draftingLid || c.list_id === sheetLid) && !c.is_archived
+        );
       } else if (activeTab === "completed") {
         const lid = findByStatus("done");
         if (lid) list = cards.filter((c) => c.list_id === lid && !c.is_archived);
@@ -10451,27 +10468,24 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           // 각 탭이 "담당하는" step 범위. 탭 클릭 시 해당 범위의 작업으로
           // active 를 옮기고, 범위 밖이면 empty 상태 UI 가 표시된다.
           const TAB_STEP_RANGES = {
-            create: [0, 1],
-            vote: [2, 3],
-            sheet: [4, 6],
+            progress: [0, 6], // v1.10.72 — 통합 탭은 step 0~6 전체 커버
           };
           // 자연스러운 흐름: 아이디어(위시) → 시안 → 투표 → 컨셉시트 → 완료
           // count 는 legacy jobs + 새 카드 시스템 합산.
+          // v1.10.72 — 3 탭(시안 생성 / 투표 및 선정 / 컨셉시트 생성) 을 "🚀 진행 중" 단일 탭으로 통합.
           const draftingListId = lists.find((l) => l.status_key === "drafting")?.id;
           const sheetListId    = lists.find((l) => l.status_key === "sheet")?.id;
           const activeDraftingCards = draftingListId
             ? cards.filter((c) => c.list_id === draftingListId && !c.is_archived)
             : [];
-          const draftingHasDesigns = activeDraftingCards.filter((c) => Array.isArray(c.data?.designs) && c.data.designs.length > 0).length;
           const sheetCount = sheetListId
             ? cards.filter((c) => c.list_id === sheetListId && !c.is_archived).length
             : 0;
+          const progressCount = activeDraftingCards.length + sheetCount + jobs.filter(j => j.step >= 0 && j.step <= 6).length;
           const TABS = [
-            { id: "wishlist",  label: "위시리스트",    icon: "⭐", count: wishlist.length },
-            { id: "create",    label: "시안 생성",     icon: "✨", count: jobs.filter(j => j.step >= 0 && j.step <= 1).length + activeDraftingCards.length },
-            { id: "vote",      label: "투표 및 선정",  icon: "🗳️", count: jobs.filter(j => j.step >= 2 && j.step <= 3).length + draftingHasDesigns },
-            { id: "sheet",     label: "컨셉시트 생성", icon: "📑", count: jobs.filter(j => j.step >= 4 && j.step <= 6).length + sheetCount },
-            { id: "completed", label: "완료 목록",     icon: "📋", count: completedList.length },
+            { id: "wishlist",  label: "위시리스트", icon: "⭐", count: wishlist.length },
+            { id: "progress",  label: "진행 중",     icon: "🚀", count: progressCount },
+            { id: "completed", label: "완료 목록",   icon: "📋", count: completedList.length },
           ];
           const switchTab = (id) => {
             setActiveTab(id);
@@ -10487,7 +10501,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: 14, border: "1px solid var(--surface-border)" }}>
               {TABS.map((tab, idx) => (
                 <React.Fragment key={tab.id}>
-                  {(idx === 1 || idx === 4) && <div style={{ width: 1, height: 20, background: "var(--surface-border)", margin: "0 2px" }} />}
+                  {(idx === 1 || idx === 2) && <div style={{ width: 1, height: 20, background: "var(--surface-border)", margin: "0 2px" }} />}
                   <button onClick={() => switchTab(tab.id)} style={{
                     padding: "8px 14px", borderRadius: 10,
                     background: activeTab === tab.id ? "#fff" : "transparent",
@@ -10586,37 +10600,24 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           - vote:   step 2~3
           - sheet:  step 4~6
           범위 밖이면 빈 상태 안내 */}
-      {(activeTab === "create" || activeTab === "vote" || activeTab === "sheet") && <>
+      {activeTab === "progress" && <>
 
-      {/* 카드 허브 — 탭 헤더 + 해당 step 범위의 작업 카드 그리드. 카드 클릭
-          시 해당 작업을 active 로 전환하고 아래쪽에 step-based 상세 UI 표시. */}
+      {/* v1.10.72 — 카드 허브 (통합 진행 중 탭). 시안 생성·투표·시트 단계 카드를 한 화면에. */}
       {(() => {
-        const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
-        const [min, max] = ranges[activeTab];
-        const inRangeJobs = jobs.filter((j) => j.step >= min && j.step <= max);
-
-        // 새 카드 시스템: 각 탭이 담당하는 카드 집합 필터.
-        //   create: drafting 단계 모든 카드 (입력/생성 중)
-        //   vote  : drafting 단계 중 designs 가 1개 이상 생성되어 '선정 대기' 인 카드
-        //   sheet : sheet 단계 카드 (선정 완료, 컨셉시트 생성 대기/진행)
+        // 통합: drafting + sheet 모든 카드. jobs 는 step 0~6 전 범위.
+        const inRangeJobs = jobs.filter((j) => j.step >= 0 && j.step <= 6);
         const draftingLid = lists.find((l) => l.status_key === "drafting")?.id;
         const sheetLid    = lists.find((l) => l.status_key === "sheet")?.id;
-        let inRangeCards = [];
-        if (activeTab === "create" && draftingLid) {
-          inRangeCards = cards.filter((c) => c.list_id === draftingLid && !c.is_archived);
-        } else if (activeTab === "vote" && draftingLid) {
-          inRangeCards = cards.filter((c) => c.list_id === draftingLid && !c.is_archived
-            && Array.isArray(c.data?.designs) && c.data.designs.length > 0);
-        } else if (activeTab === "sheet" && sheetLid) {
-          inRangeCards = cards.filter((c) => c.list_id === sheetLid && !c.is_archived);
-        }
+        const inRangeCards = cards.filter((c) =>
+          (c.list_id === draftingLid || c.list_id === sheetLid) && !c.is_archived
+        );
         const totalCount = inRangeJobs.length + inRangeCards.length;
 
         const tabMeta = {
-          create: { title: "시안 생성",     icon: "✨", desc: "새 어셋 시안을 만들고 갤러리에서 확인하세요." },
-          vote:   { title: "투표 및 선정",  icon: "🗳️", desc: "생성된 시안 중 팀 투표로 최종안을 선정하세요." },
-          sheet:  { title: "컨셉시트 생성", icon: "📑", desc: "선정된 시안으로 멀티뷰 컨셉시트를 만들고 파이프라인에 전송하세요." },
-        }[activeTab];
+          title: "진행 중",
+          icon: "🚀",
+          desc: "시안 생성 → 투표 → 컨셉시트 단계 카드를 한 화면에. 정렬을 '진행 단계' 로 두면 단계별 그룹으로 보입니다.",
+        };
 
         return (
           <main style={{ padding: "32px 40px 0", maxWidth: 1400, margin: "0 auto" }}>
@@ -10641,18 +10642,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <ViewModeToggle value={viewMode} onChange={setViewMode} />
                   <CardScaleSelect value={cardScale} onChange={setCardScale} />
                   <SortSelect value={sortBy} onChange={setSortBy} />
-                  {activeTab === "create" && (
-                    <button
-                      onClick={spawnNewJob}
-                      className="btn-primary hover-lift"
-                      style={{
-                        padding: "12px 22px", borderRadius: 12, border: "none",
-                        color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                        display: "flex", alignItems: "center", gap: 6,
-                        boxShadow: "0 4px 14px var(--primary-glow)",
-                      }}
-                    >＋ 새 시안</button>
-                  )}
+                  {/* v1.10.72 — 진행 중 탭에서 항상 노출. 새 카드는 drafting 으로 생성. */}
+                  <button
+                    onClick={spawnNewJob}
+                    className="btn-primary hover-lift"
+                    style={{
+                      padding: "12px 22px", borderRadius: 12, border: "none",
+                      color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6,
+                      boxShadow: "0 4px 14px var(--primary-glow)",
+                    }}
+                  >＋ 새 시안</button>
                 </div>
               </div>
 
@@ -10680,11 +10680,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     {(() => {
                       const statusByList = new Map(lists.map((l) => [l.id, l.status_key]));
                       const inRangeEnriched = inRangeCards.map((c) => ({ ...c, _statusKey: statusByList.get(c.list_id) }));
+                      // v1.10.72 — progress 탭에서 카드 단계에 맞춰 컴포넌트 분기 결정.
+                      const tabIdFor = (c) => c._statusKey === "sheet" ? "sheet" : "create";
                       return sortCardArray(inRangeEnriched.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
                         <CardListRow
                           key={`card-${c.id}`}
                           card={c}
-                          tabId={activeTab}
+                          tabId={tabIdFor(c)}
                           scale={cardScale}
                           profileByName={profileByName}
                           projectSlug={projectSlug}
@@ -10718,11 +10720,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 marginBottom: 40,
               }}>
                 {/* 새 카드 시스템의 카드들 — 위시에서 넘어온 것 포함. 정렬 sortBy 적용 */}
-                {sortCardArray(inRangeCards.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
+                {(() => {
+                  // v1.10.72 — progress 탭: 카드 단계 별 derivedTab 으로 렌더 분기.
+                  const statusByList = new Map(lists.map((l) => [l.id, l.status_key]));
+                  const enriched = inRangeCards.map((c) => ({ ...c, _statusKey: statusByList.get(c.list_id) }));
+                  const tabIdFor = (c) => c._statusKey === "sheet" ? "sheet" : "create";
+                  return sortCardArray(enriched.filter((c) => matchesUpdateFilter(c, selectedUpdates)), sortBy).map((c) => (
                   <CardHubCard
                     key={`card-${c.id}`}
                     card={c}
-                    tabId={activeTab}
+                    tabId={tabIdFor(c)}
                     scale={cardScale}
                     onClick={async () => {
                       if (!projectSlug) return;
@@ -10732,16 +10739,19 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       } catch (e) { console.warn("카드 열기 실패", e); }
                     }}
                   />
-                ))}
+                  ));
+                })()}
                 {/* 레거시 jobs 기반 카드 — 빈 '새작업' 은 클릭 시 card 로 마이그레이션해 모달 오픈 */}
                 {inRangeJobs.map((j) => {
                   const isBlank = !j.category && (!j.designs || j.designs.length === 0) && !j.prompt;
+                  // v1.10.72 — progress 탭에서 job.step 기반 derivedTab.
+                  const jobTabId = j.step >= 4 ? "sheet" : (j.step >= 2 ? "vote" : "create");
                   return (
                     <WorkflowJobCard
                       key={j.id}
                       job={j}
                       active={j.id === activeJobId && showWorkflowDetail}
-                      tabId={activeTab}
+                      tabId={jobTabId}
                       onSelect={async () => {
                         if (isBlank && projectSlug) {
                           // 빈 레거시 job → 대응되는 card 를 drafting 상태로 새로 만들고 상세 모달 오픈
@@ -10784,14 +10794,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               }}>
                 <div style={{ fontSize: 52, marginBottom: 14, opacity: 0.6 }}>{tabMeta.icon}</div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-main)", marginBottom: 8 }}>
-                  {activeTab === "create" ? "아직 생성된 시안이 없습니다" :
-                   activeTab === "vote"   ? "투표할 시안이 없습니다" :
-                                            "컨셉시트를 만들 작업이 없습니다"}
+                  진행 중인 카드가 없습니다
                 </div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                  {activeTab === "create" ? "＋ 새 시안 버튼을 눌러 첫 번째 작업을 시작하세요." :
-                   activeTab === "vote"   ? "시안 생성 탭에서 먼저 이미지를 만든 뒤 '투표 시작하기' 를 눌러주세요." :
-                                            "투표 및 선정을 마치면 이 탭으로 자동 이동합니다."}
+                  ＋ 새 시안 버튼으로 시작하거나, 위시리스트에서 카드를 시안 단계로 이동하세요.
                 </div>
               </div>
             )}
