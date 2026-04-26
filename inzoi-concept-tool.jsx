@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.74";
+const APP_VERSION = "1.10.75";
 const CHANGELOG = [
+  {
+    version: "1.10.75",
+    date: "2026-04-26",
+    changes: [
+      "리스트뷰 진행 컬럼 폭 130 → 92. 용어 단축('투표 및 선정' → '투표') 으로 모든 stage 라벨이 비슷한 길이가 되어 넓게 둘 필요 없어짐",
+    ],
+  },
   {
     version: "1.10.74",
     date: "2026-04-26",
@@ -5046,8 +5053,9 @@ function ViewModeToggle({ value, onChange }) {
 //   크기(W×D×H cm): 130→115, 상태(시안 N): 95→70, 진행(🗳️ 투표 및 선정): 110→130,
 //   날짜(YYYY-MM-DD): 100→92.
 const getListGrid = (scale = 1) => {
+  // v1.10.75 — 진행 컬럼 130 → 92. v1.10.74 에서 "🗳️ 투표 및 선정" → "🗳️ 투표" 로 짧아져 더 좁게.
   const thumb = Math.round(90 * scale);
-  return `${thumb}px 1fr 56px 120px 140px 70px 115px 70px 130px 92px 32px`;
+  return `${thumb}px 1fr 56px 120px 140px 70px 115px 70px 92px 92px 32px`;
 };
 const LIST_GRID = getListGrid(1); // 기본
 
