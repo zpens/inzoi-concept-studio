@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.73";
+const APP_VERSION = "1.10.74";
 const CHANGELOG = [
+  {
+    version: "1.10.74",
+    date: "2026-04-26",
+    changes: [
+      "용어 통일 — 위시 / 시안 / 투표 / 시트 / 완료 5단계 단일 어휘. 같은 단계가 곳곳에서 다른 이름(위시리스트=아이디어, 시안=시안 생성, 시트=컨셉시트)으로 불리던 혼란 정리",
+      "STATUS_META 라벨: 위시리스트→위시, 시안 생성→시안, 컨셉시트→시트 (icon 도 ✨→🎨 통일)",
+      "STAGE_OPTIONS 에 wishlist 엔트리 신규 + '🗳️ 투표 및 선정' → '🗳️ 투표' 단축",
+      "탭 라벨: 위시리스트→위시, 완료 목록→완료 (icon 📋→✅)",
+      "페이지 헤딩 / 버튼 / 모달 제목 일괄 정리: 'Completed → 완료', '⭐ 위시리스트 → ⭐ 위시', '＋ 새 아이디어 → ＋ 새 위시', 'WishlistToDraftingAction 헤더', 'DesignsPanel 컨셉시트 단계로 이동 → 시트 단계로 이동' 등",
+      "단축키 치트시트 N 키 라벨도 '새 위시 추가'",
+    ],
+  },
   {
     version: "1.10.73",
     date: "2026-04-26",
@@ -3169,11 +3181,12 @@ async function patchCardComment(slug, cardId, commentId, body, actor) {
   return r.json();
 }
 
+// v1.10.74 — 용어 통일: 위시 / 시안 / 투표 / 시트 / 완료
 const STATUS_META = {
-  wishlist: { label: "아이디어",   icon: "⭐", color: "#f59e0b" },
-  drafting: { label: "시안 생성",  icon: "✨", color: "#7c3aed" },
-  sheet:    { label: "컨셉시트",   icon: "📑", color: "#076ee8" },
-  done:     { label: "완료",       icon: "✅", color: "#22c55e" },
+  wishlist: { label: "위시",  icon: "⭐", color: "#f59e0b" },
+  drafting: { label: "시안",  icon: "🎨", color: "#7c3aed" },
+  sheet:    { label: "시트",  icon: "📑", color: "#076ee8" },
+  done:     { label: "완료",  icon: "✅", color: "#22c55e" },
 };
 
 // 카드 내부 "시안 생성" 액션.
@@ -4038,7 +4051,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
     return (
       <div style={sectionStyle}>
-        <div style={titleStyle}>컨셉시트 (4뷰 · Gemini)</div>
+        <div style={titleStyle}>시트 (4뷰 · Gemini)</div>
         {sourceImageUrl && (
           <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "rgba(0,0,0,0.03)" }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
@@ -4203,7 +4216,7 @@ function WishlistToDraftingAction({ card, onMoveTo }) {
   return (
     <div style={sectionStyle}>
       <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
-        아이디어 → 시안 생성
+        위시 → 시안
       </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
         좌측 어셋 정보의 🤖 자동 분류로 카테고리·스타일·크기·프롬프트를 한 번에 채우거나 수동 입력한 뒤 이동하세요.
@@ -4226,7 +4239,7 @@ function WishlistToDraftingAction({ card, onMoveTo }) {
           color: ready ? "#fff" : "var(--text-muted)",
           fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
         }}
-      >✨ 시안 생성 단계로 이동</button>
+      >✨ 시안 단계로 이동</button>
     </div>
   );
 }
@@ -5039,11 +5052,13 @@ const getListGrid = (scale = 1) => {
 const LIST_GRID = getListGrid(1); // 기본
 
 // 진행 단계 옵션 (v1.10.44) — 리스트 뷰 인라인 편집용. 시안/투표는 같은 drafting 상태.
+// v1.10.74 — 위시 단계 추가, "투표 및 선정" → "투표" 로 단축. 5단계 단일 어휘.
 const STAGE_OPTIONS = [
-  { key: "drafting", label: "🎨 시안",        statusKey: "drafting" },
-  { key: "voting",   label: "🗳️ 투표 및 선정", statusKey: "drafting" },
-  { key: "sheet",    label: "📑 시트",         statusKey: "sheet" },
-  { key: "done",     label: "✅ 완료",         statusKey: "done" },
+  { key: "wishlist", label: "⭐ 위시",  statusKey: "wishlist" },
+  { key: "drafting", label: "🎨 시안",  statusKey: "drafting" },
+  { key: "voting",   label: "🗳️ 투표",  statusKey: "drafting" },
+  { key: "sheet",    label: "📑 시트",  statusKey: "sheet" },
+  { key: "done",     label: "✅ 완료",  statusKey: "done" },
 ];
 function computeStage(card) {
   const confirmedAt = card.confirmed_at;
@@ -8444,7 +8459,7 @@ function DesignsPanel({
             border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
             boxShadow: "0 2px 10px rgba(7,110,232,0.2)",
           }}
-        >✨ 선정 시안 (#{selectedIdx + 1}) 으로 컨셉시트 단계로 이동 →</button>
+        >✨ 선정 시안 (#{selectedIdx + 1}) 으로 시트 단계로 이동 →</button>
       )}
     </div>
   );
@@ -8770,7 +8785,7 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
         )}
         {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
           <div style={{ marginTop: 4, fontSize: Math.round(10 * Math.sqrt(scale)), color: "#22c55e", fontWeight: 600 }}>
-            ✓ 컨셉시트
+            ✓ 시트
           </div>
         )}
         {tabId === "completed" && card.confirmed_at && (
@@ -10491,9 +10506,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             : 0;
           const progressCount = activeDraftingCards.length + sheetCount + jobs.filter(j => j.step >= 0 && j.step <= 6).length;
           const TABS = [
-            { id: "wishlist",  label: "위시리스트", icon: "⭐", count: wishlist.length },
-            { id: "progress",  label: "진행 중",     icon: "🚀", count: progressCount },
-            { id: "completed", label: "완료 목록",   icon: "📋", count: completedList.length },
+            { id: "wishlist",  label: "위시",     icon: "⭐", count: wishlist.length },
+            { id: "progress",  label: "진행 중",  icon: "🚀", count: progressCount },
+            { id: "completed", label: "완료",     icon: "✅", count: completedList.length },
           ];
           const switchTab = (id) => {
             setActiveTab(id);
@@ -10624,7 +10639,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         const tabMeta = {
           title: "진행 중",
           icon: "🚀",
-          desc: "시안 생성 → 투표 → 컨셉시트 단계 카드를 한 화면에. 정렬을 '진행 단계' 로 두면 단계별 그룹으로 보입니다.",
+          desc: "위시 → 시안 → 투표 → 시트 단계 카드를 한 화면에. 정렬을 '진행 단계' 로 두면 단계별 그룹으로 보입니다.",
         };
 
         return (
@@ -10805,7 +10820,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   진행 중인 카드가 없습니다
                 </div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                  ＋ 새 시안 버튼으로 시작하거나, 위시리스트에서 카드를 시안 단계로 이동하세요.
+                  ＋ 새 시안 버튼으로 시작하거나, 위시 탭에서 카드를 시안 단계로 이동하세요.
                 </div>
               </div>
             )}
@@ -12066,8 +12081,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: completedList.length === 0 ? 36 : 20 }}>
               <div>
-                <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>완료된 컨셉시트</h2>
-                <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 에셋 컨셉시트가 완성됐습니다.</p>
+                <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>완료</h2>
+                <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 시트가 완성됐습니다.</p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <ViewModeToggle value={viewMode} onChange={setViewMode} />
@@ -12083,7 +12098,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     display: "flex", alignItems: "center", gap: 8,
                   }}
                 >
-                  <span>✨</span> 새 시안 생성
+                  <span>✨</span> 새 시안
                 </button>
               </div>
             </div>
@@ -12110,12 +12125,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           {completedList.length === 0 ? (
             <div style={{ textAlign: "center", padding: "100px 20px", color: "var(--text-muted)" }}>
               <div style={{ fontSize: 64, marginBottom: 20 }}>📭</div>
-              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>완료된 컨셉시트가 없습니다</div>
+              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>완료된 시트가 없습니다</div>
               <button onClick={() => setActiveTab("progress")} className="btn-primary" style={{
                 padding: "12px 28px", borderRadius: 14, border: "none",
                 color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
               }}>
-                첫 시안 생성하기
+                첫 시안 만들기
               </button>
             </div>
           ) : (() => {
@@ -12204,7 +12219,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: wishlist.length === 0 ? 24 : 16 }}>
               <div>
-                <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>⭐ 위시리스트</h2>
+                <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>⭐ 위시</h2>
                 <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
                   {wishlist.length > 0 ? `${wishlist.length}개의 아이디어` : "만들고 싶은 가구 아이디어를 기록하세요."}
                 </p>
@@ -12223,7 +12238,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     display: "flex", alignItems: "center", gap: 6,
                     boxShadow: "0 4px 14px rgba(234,179,8,0.3)",
                   }}
-                >＋ 새 아이디어</button>
+                >＋ 새 위시</button>
               </div>
             </div>
             {wishlist.length > 0 && (() => {
@@ -12350,7 +12365,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             display: "flex", flexDirection: "column", overflow: "hidden",
           }}>
             <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--surface-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)" }}>⭐ 새 아이디어 추가</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)" }}>⭐ 새 위시 추가</div>
               <button
                 onClick={() => setWishAddOpen(false)}
                 style={{
@@ -14500,7 +14515,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             {[
               { title: "전역", items: [
                 ["?", "이 치트시트 열기/닫기"],
-                ["N", "새 아이디어 추가"],
+                ["N", "새 위시 추가"],
                 ["Esc", "모달 / 갤러리 / 치트시트 닫기"],
               ]},
               { title: "카드 상세 모달", items: [
