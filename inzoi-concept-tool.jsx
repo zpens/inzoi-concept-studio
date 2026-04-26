@@ -1,8 +1,23 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.93";
+const APP_VERSION = "1.10.95";
 const CHANGELOG = [
+  {
+    version: "1.10.95",
+    date: "2026-04-26",
+    changes: [
+      "v1.10.94 의 자동 상세 오픈 롤백 — 위시 카드에서 시안 생성 후 모달이 자동으로 띄워지면 '진행중으로 넘어간 듯' 보여 사용자가 혼란. 다시 작업큐 ✓ 완료 표시 → 사용자 클릭으로 상세 열기 (v1.10.23 정책 복귀)",
+      "[참고] 위시→진행 list_id 변경은 코드상 자동 이동이 없으며, 사용자가 명시적으로 'WishlistToDraftingAction → 시안 단계로 이동' 버튼 클릭 시에만 발생",
+    ],
+  },
+  {
+    version: "1.10.94",
+    date: "2026-04-26",
+    changes: [
+      "시안 생성 완료 시 카드 상세 자동 오픈 — 작업큐에서 ✓ 완료 표시되면 동시에 해당 카드 상세 모달 자동 활성화. 단, 사용자가 다른 카드 모달을 열어 보고 있으면 방해하지 않음(현재 작업 우선). v1.10.23 의 완전 비활성화에서 '다른 모달이 안 열린 경우만 자동 오픈' 정책으로 완화",
+    ],
+  },
   {
     version: "1.10.93",
     date: "2026-04-26",
@@ -13923,7 +13938,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       onGenerateEnd={(c) => setGeneratingCards((prev) => {
                         const cur = prev[c.id];
                         if (!cur) return prev;
-                        // 작업큐에서 즉시 제거하지 않고 완료 상태로 남겨둠 — 사용자가 클릭해야 상세 열림 (v1.10.23).
+                        // v1.10.95 — v1.10.94 의 자동 상세 오픈 롤백. 작업큐의 ✓ 완료 표시 후 사용자가
+                        // 클릭해야 상세 열림 (위시에서 시안만 만들고 보는 사용자 경험 방해 X).
                         return { ...prev, [c.id]: { ...cur, completed: true, done: cur.total } };
                       })}
                     />
