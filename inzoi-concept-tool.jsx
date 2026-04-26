@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.65";
+const APP_VERSION = "1.10.66";
 const CHANGELOG = [
+  {
+    version: "1.10.66",
+    date: "2026-04-26",
+    changes: [
+      "갤러리 캔버스(F) 외부 이미지 드래그-드롭 → ref_images 자동 추가. 데스크탑 / 다른 브라우저 탭에서 이미지 드래그해 갤러리에 놓으면 업로드 후 참조 이미지에 추가, 다음 시안 생성에 자동 반영",
+      "드래그 중 시각 오버레이 (점선 테두리 + 📥 안내). 업로드 중에는 ⏳ 진행 표시",
+      "다중 파일 동시 드롭 지원. 중복 URL 은 무시",
+      "기존 paste / + 이미지 추가 / lightbox 그리기 → 참조 저장과 같은 ref_images 흐름 공유",
+    ],
+  },
   {
     version: "1.10.65",
     date: "2026-04-26",
@@ -5518,6 +5528,59 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     });
   };
   const clearSelect = () => setSelectedUrls(new Set());
+  // v1.10.66 — 외부 이미지 드래그-드롭 → ref_images 에 추가.
+  const [dropActive, setDropActive] = React.useState(false);
+  const [dropBusy, setDropBusy] = React.useState(false);
+  const dragCountRef = React.useRef(0);
+  const onDragEnter = (e) => {
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    e.preventDefault();
+    dragCountRef.current += 1;
+    setDropActive(true);
+  };
+  const onDragOver = (e) => {
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    e.preventDefault();
+  };
+  const onDragLeave = (e) => {
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    e.preventDefault();
+    dragCountRef.current = Math.max(0, dragCountRef.current - 1);
+    if (dragCountRef.current === 0) setDropActive(false);
+  };
+  const onDrop = async (e) => {
+    e.preventDefault();
+    dragCountRef.current = 0;
+    setDropActive(false);
+    const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/"));
+    if (files.length === 0) return;
+    setDropBusy(true);
+    try {
+      const dataUrls = await Promise.all(files.map((f) => new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = (ev) => resolve(ev.target.result);
+        r.onerror = reject;
+        r.readAsDataURL(f);
+      })));
+      const urls = await Promise.all(dataUrls.map((d) => uploadDataUrl(d)));
+      const existing = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+      const merged = [...existing];
+      for (const u of urls) { if (u && !merged.includes(u)) merged.push(u); }
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), ref_images: merged },
+          actor,
+        }),
+      });
+      await onSaved?.();
+    } catch (e) {
+      alert("이미지 추가 실패: " + e.message);
+    } finally {
+      setDropBusy(false);
+    }
+  };
   // v1.10.64 — 그룹별 표시 토글 (refs / designs / sheet-current / sheet-history-N).
   // localStorage 에 카드별 비활성 그룹 키 저장. 기본은 모두 활성.
   const groupStateKey = `gallery_disabled_groups_${card?.id || "_"}`;
@@ -6011,6 +6074,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onContextMenu={(e) => e.preventDefault()} /* 우클릭 팬 중 브라우저 메뉴 차단 */
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
         style={{
           position: "absolute", inset: 0,
           overflow: "hidden",
@@ -6078,6 +6145,25 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           />
         );
       })()}
+      {/* v1.10.66 — 드래그-드롭 활성 오버레이 + 진행 상태 */}
+      {(dropActive || dropBusy) && (
+        <div style={{
+          position: "absolute", inset: 16, zIndex: 1150,
+          border: "3px dashed rgba(7,110,232,0.7)",
+          borderRadius: 18,
+          background: "rgba(7,110,232,0.08)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          color: "#fff", fontSize: 18, fontWeight: 800,
+          pointerEvents: "none",
+          backdropFilter: "blur(2px)",
+        }}>
+          <div style={{ fontSize: 56, marginBottom: 8 }}>{dropBusy ? "⏳" : "📥"}</div>
+          <div>{dropBusy ? "이미지 업로드 중…" : "여기에 놓아 참조 이미지로 추가"}</div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.7)", marginTop: 6 }}>
+            {dropBusy ? "잠시 기다려주세요" : "다음 시안 생성에 자동 반영됩니다"}
+          </div>
+        </div>
+      )}
       {/* v1.10.65 — 다중 비교 오버레이. 선택 순서대로 격자 배치, contain 으로 풀사이즈. */}
       {compareMode && selectedUrls.size >= 2 && (() => {
         const urls = [...selectedUrls];
