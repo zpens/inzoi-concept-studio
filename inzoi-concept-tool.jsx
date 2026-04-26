@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.77";
+const APP_VERSION = "1.10.78";
 const CHANGELOG = [
+  {
+    version: "1.10.78",
+    date: "2026-04-26",
+    changes: [
+      "카드 상세 모달 폭 1440 → 1600. 우측 프레임이 시안 그리드 1열(160px) 더 수용 — auto-fill minmax(160) 기준 4열 → 5열",
+      "좌/우 비율 1:1 → 1:1.3 (좌 ≈ 696, 우 ≈ 904). 좌측은 기존 폭 유지, 우측만 확장",
+      "[버그 수정] 카드 상태 이동 후 자동 탭 전환 — STATUS_TO_TAB 가 옛 tab id (create/sheet) 를 가리키고 있어 의미 없는 setActiveTab 호출. 통합 'progress' 로 매핑 정정",
+    ],
+  },
   {
     version: "1.10.77",
     date: "2026-04-26",
@@ -12898,7 +12907,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         const meta = STATUS_META[statusKey] || STATUS_META.wishlist;
         const confirmed = !!card.confirmed_at;
 
-        const STATUS_TO_TAB = { wishlist: "wishlist", drafting: "create", sheet: "sheet", done: "completed" };
+        // v1.10.78 — 진행 중 탭으로 통합되어 drafting/sheet 모두 progress 로 매핑.
+        const STATUS_TO_TAB = { wishlist: "wishlist", drafting: "progress", sheet: "progress", done: "completed" };
         const moveTo = async (newStatusKey) => {
           if (!projectSlug) return;
           try {
@@ -12934,7 +12944,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <div style={{
               position: "fixed", top: "50%", left: "50%",
               transform: "translate(-50%, -50%)",
-              width: 1440, maxWidth: "96vw", maxHeight: "94vh",
+              // v1.10.78 — 폭 1440 → 1600. 우측 프레임이 시안 그리드 1열(160px) 추가 수용.
+              width: 1600, maxWidth: "96vw", maxHeight: "94vh",
               background: "rgba(255, 255, 255, 0.98)",
               backdropFilter: "blur(20px)",
               border: "1px solid var(--surface-border)",
@@ -13138,8 +13149,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 >✕</button>
               </div>
 
-              {/* Body — 좌우 동일 폭 (v1.10.16) */}
-              <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+              {/* Body — v1.10.78: 우측이 시안 그리드 1열 더 수용하도록 1fr → 1.3fr 비율 (좌 ≈ 696, 우 ≈ 904). */}
+              <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 0 }}>
                 {/* 왼쪽: 업데이트 일정 · 우선순위 · 대표이미지 · 어셋정보 (v1.10.7) */}
                 <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
                   {/* 1) 업데이트 일정 */}
