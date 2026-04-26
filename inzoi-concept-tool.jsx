@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.80";
+const APP_VERSION = "1.10.81";
 const CHANGELOG = [
+  {
+    version: "1.10.81",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 생성 실패한 시안(imageUrl: null) 이 삭제 안 되던 문제 — Tile 의 🗑 버튼이 'd?.imageUrl &&' 가드로 숨겨지고 있었음. 가드 완화하고 raw.length 안쪽 idx 만 허용해 _sheet/_legacy 는 여전히 보호. 이제 '실패' placeholder 도 우측 하단 🗑 로 제거 가능",
+    ],
+  },
   {
     version: "1.10.80",
     date: "2026-04-26",
@@ -8243,11 +8250,11 @@ function DesignsPanel({
             {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
           </button>
         )}
-        {/* 🗑 삭제 — 우측 하단 (v1.10.57: CardActionPanel drafting 흡수) */}
-        {d?.imageUrl && !disabled && !d._sheet && !d._legacy && (
+        {/* 🗑 삭제 — 우측 하단. v1.10.81: imageUrl 없는(생성 실패) 시안도 삭제 가능. */}
+        {!disabled && !d._sheet && !d._legacy && i < raw.length && (
           <button
             onClick={() => removeDesign(i)}
-            title="이 시안 삭제"
+            title={d?.imageUrl ? "이 시안 삭제" : "실패한 시안 삭제"}
             style={{
               position: "absolute", bottom: 6, right: 6,
               padding: "3px 9px", borderRadius: 14,
