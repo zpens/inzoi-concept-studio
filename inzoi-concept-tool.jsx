@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.103";
+const APP_VERSION = "1.10.108";
 const CHANGELOG = [
   {
     version: "1.10.103",
@@ -3111,20 +3111,18 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
   }));
 }
 
-// 컨셉시트 4뷰(front/side/back/top) 를 Gemini 3 Flash Image (나노바나나2) 로 생성.
-// 소스 이미지를 multimodal 참조로 주고 각 뷰별 프롬프트로 병렬 호출.
-// onProgress(done, total) 로 진행률 보고.
-// v1.10.103 — 시트 4뷰 → 단일 이미지 (인체 실루엣 스케일 참조 포함).
-// SHEET_VIEWS 는 legacy 4뷰 사용 위치 (history 렌더 호환) 가 있어 유지.
+// 컨셉시트 직교 뷰 — 정면 + 조건부 측/후/상.
+// v1.10.105 — 인체 실루엣/그리드 제거. 3D 모델링 참조용 정통 직교 뷰.
 const SHEET_VIEWS = [
-  { id: "front", label: "정면", prompt: "straight-on front view, orthographic perspective" },
-  { id: "side",  label: "측면", prompt: "straight-on left side view, orthographic perspective" },
-  { id: "back",  label: "후면", prompt: "straight-on back view, orthographic perspective" },
-  { id: "top",   label: "상단", prompt: "top-down view, orthographic perspective" },
+  { id: "front", label: "정면", prompt: "straight-on front orthographic view (camera perpendicular to the front face)" },
+  { id: "side",  label: "측면", prompt: "straight-on left side orthographic view (camera perpendicular to the left side face)" },
+  { id: "back",  label: "후면", prompt: "straight-on back orthographic view (camera perpendicular to the back face)" },
+  { id: "top",   label: "상단", prompt: "top-down orthographic view (camera looking straight down)" },
 ];
 
-// v1.10.103 — Claude 가 카테고리/사이즈 기반으로 인체 실루엣 배치를 결정해 시트 프롬프트 생성.
-async function enhanceSheetPromptWithClaude({ userPrompt, catInfo, styleInfo, pf, si }) {
+// v1.10.105 — Claude 가 형태 복잡도/대칭성을 보고 어떤 추가 직교 뷰가 필요한지 결정.
+// 정면(front) 은 항상 생성, 측/후/상은 단순한 형태면 생략.
+async function decideExtraViewsWithClaude({ userPrompt, catInfo, styleInfo, pf, si }) {
   const personalClaudeKey = (() => { try { return localStorage.getItem("claude_api_key") || ""; } catch { return ""; } })();
   const headers = {
     "Content-Type": "application/json",
@@ -3142,42 +3140,32 @@ async function enhanceSheetPromptWithClaude({ userPrompt, catInfo, styleInfo, pf
   if (pf.materials?.length) ctxLines.push(`Materials: ${pf.materials.join(", ")}`);
   if (pf.colors?.length) ctxLines.push(`Colors: ${pf.colors.join(", ")}`);
   if (pf.shape?.length) ctxLines.push(`Shape: ${pf.shape.join(", ")}`);
-  if (pf.size) ctxLines.push(`Size class (small/medium/large): ${pf.size}`);
+  if (pf.size) ctxLines.push(`Size class: ${pf.size}`);
   if (si.width_cm || si.depth_cm || si.height_cm) {
     ctxLines.push(`Dimensions: ${si.width_cm || "?"}cm wide × ${si.depth_cm || "?"}cm deep × ${si.height_cm || "?"}cm tall`);
   }
 
-  const systemPrompt = `You are a concept-sheet prompt engineer for inZOI 3D asset production.
-Output ONE rich English prompt that generates a single comprehensive concept-sheet image showing the asset together with a stylized human silhouette for scale reference.
+  const systemPrompt = `You are a 3D modeling reference planner.
+A 3D modeler will receive a multi-view orthographic concept sheet (front view always included). Decide which ADDITIONAL views — side / back / top — are necessary because the form is too complex or non-obvious to predict from the front view alone.
 
-Silhouette placement rules (decide based on category, room, dimensions):
-- Large floor furniture (sofa, bed, wardrobe, dining table; height ≥ ~80cm OR footprint ≥ ~1m²): full standing or seated human silhouette next to or interacting with the asset.
-- Small floor accessories (stool, side table, basket, low decor; height < ~80cm): silhouette bending / kneeling beside it; emphasize scale at the legs/feet area.
-- Tabletop / desk accessories (lamp, vase, book, plate, mug, decor): place asset on top of a desk or table at standing height (~75cm), with the human silhouette seated or standing at that desk; scale visible at desktop level.
-- Wall-mounted (artwork, wall lamp, mirror): silhouette standing in front of a wall, asset mounted at typical viewing height (~150cm center).
-- Ceiling-mounted (pendant lamp, ceiling fan): silhouette standing on the floor below; asset at ceiling height (~240cm).
-- Outdoor / vehicle / architectural (car, bike, gate, fence): silhouette beside the asset at full body scale, ground line clearly visible.
+Default: NO extra views (all false). Only request a view when the modeler genuinely cannot infer that side of the asset from the front view + a single reference image of the asset.
 
-Composition rules:
-- Asset is the main subject, rendered in a clean 3/4 perspective view (slightly left of center), photoreal stylized inZOI aesthetic.
-- Silhouette is semi-transparent monochrome gray, simplified neutral pose, must NOT visually compete with the asset.
-- Background: light gray gradient studio with a subtle metric grid on the floor (every 10cm) for measurement reference.
-- Aspect ratio: 16:9 wide.
-- Match the chosen style aesthetic.
+Decide each view independently:
+- "side": needed if the asset is asymmetric front/side, has distinctive side details (asymmetric handles, ear-shaped armrests of different shapes, side panels with cutouts), or the depth profile differs significantly from the front silhouette.
+- "back": needed if the back has distinctive features not predictable from the front (cable management, decorative back panels, vehicle rear, mirror/frame back, control panels). Symmetric simple objects (basic chair, plain box, lamp) do NOT need back view.
+- "top": needed for assets with significant top-surface details (control panels, intricate carving on top, vehicle roof, complex cooktop, board game, plate decoration, table-top arrangement). Wall-mounted or vertical-only objects rarely need top view.
 
-Always append these tokens to the prompt:
-"high resolution, ultra-detailed, sharp focus, professional product design concept sheet, scale reference with human silhouette, neutral gray studio background, game asset reference for inZOI"
+Simple symmetric forms → all false (front-only is enough). Complex/asymmetric forms → include only the views the modeler actually needs.
 
-Output ONLY the final image-generation prompt — no quotes, no explanations.`;
+Respond with STRICT JSON only:
+{"side": <bool>, "back": <bool>, "top": <bool>, "reasoning": "<one short Korean sentence>"}`;
 
   const userMsg = `User description: ${userPrompt || "(none)"}
 
 Asset context:
 ${ctxLines.join("\n") || "(no extra context)"}
 
-The reference image (provided to the image model) defines the asset's materials, colors, proportions — keep those consistent in the new image.
-
-Generate the concept sheet prompt now.`;
+Decide which extra orthographic views are necessary.`;
 
   try {
     const r = await fetch("/api/ai/claude/v1/messages", {
@@ -3185,92 +3173,90 @@ Generate the concept sheet prompt now.`;
       headers,
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 1200,
+        max_tokens: 400,
         system: systemPrompt,
         messages: [{ role: "user", content: userMsg }],
       }),
     });
     if (!r.ok) {
-      console.warn(`[Sheet Claude] HTTP ${r.status} — fallback`);
-      return null;
+      console.warn(`[Sheet ExtraViews] HTTP ${r.status} — 추가 뷰 없이 진행`);
+      return { side: false, back: false, top: false, reasoning: null };
     }
     const data = await r.json();
-    const text = data?.content?.[0]?.text;
-    return typeof text === "string" && text.trim() ? text.trim() : null;
+    const text = data?.content?.[0]?.text || "";
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return { side: false, back: false, top: false, reasoning: null };
+    const obj = JSON.parse(m[0]);
+    return {
+      side: !!obj.side,
+      back: !!obj.back,
+      top: !!obj.top,
+      reasoning: typeof obj.reasoning === "string" ? obj.reasoning.slice(0, 200) : null,
+    };
   } catch (e) {
-    console.warn("[Sheet Claude] 호출 실패:", e.message);
-    return null;
+    console.warn("[Sheet ExtraViews] 결정 실패:", e.message);
+    return { side: false, back: false, top: false, reasoning: null };
   }
 }
 
-// v1.10.103 — 단일 이미지 시트 생성. Claude 가 프롬프트 다듬고 Gemini 가 생성.
-async function generateConceptSheetSingle({ apiKey, sourceImageUrl, model, card, onProgress }) {
+// v1.10.105 — 다중 직교 뷰 시트. 정면 항상 + Claude 판단으로 측/후/상 조건부.
+// 원본 이미지를 multimodal 참조로 주고 각 뷰별 프롬프트로 병렬 호출.
+// 인체 실루엣/그리드 없음 — 순수 3D 모델링 참조용.
+async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, card, onProgress }) {
   const catInfo = card.data?.category ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category) : null;
   const styleInfo = card.data?.style_preset ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset) : null;
   const pf = card.data?.posmap_features || {};
   const si = card.data?.size_info || {};
   const userPrompt = card.data?.prompt || card.description || card.title || "";
+  const contextLabel = catInfo?.label || "furniture asset";
 
-  // 1) Claude 프롬프트 최적화
-  let imagePrompt = null;
+  // 1) Claude 가 추가 뷰 필요성 판단
+  let viewDecision = { side: false, back: false, top: false, reasoning: null };
   try {
-    imagePrompt = await enhanceSheetPromptWithClaude({ userPrompt, catInfo, styleInfo, pf, si });
-    if (imagePrompt) console.log("[Sheet] Claude 프롬프트 적용 (" + imagePrompt.length + "자)");
+    viewDecision = await decideExtraViewsWithClaude({ userPrompt, catInfo, styleInfo, pf, si });
+    const need = ["side", "back", "top"].filter((k) => viewDecision[k]);
+    console.log(`[Sheet] 추가 뷰 판단: ${need.length ? need.join(", ") : "(없음 — 정면만)"} — ${viewDecision.reasoning || ""}`);
   } catch (e) {
     console.warn("[Sheet] Claude 예외:", e.message);
   }
 
-  // 2) Fallback — Claude 실패 시 카테고리/사이즈 기반 자동 빌드
-  if (!imagePrompt) {
-    const toEnglish = (id) => typeof id === "string" ? id.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().trim() : "";
-    const englishCat = catInfo ? toEnglish(catInfo.id) : "furniture asset";
-    const englishStyle = styleInfo ? toEnglish(styleInfo.id) : "modern";
-    const dims = [
-      si.width_cm ? `${si.width_cm}cm wide` : null,
-      si.depth_cm ? `${si.depth_cm}cm deep` : null,
-      si.height_cm ? `${si.height_cm}cm tall` : null,
-    ].filter(Boolean);
-    const heightCm = Number(si.height_cm) || 0;
-    const placement = heightCm >= 80
-      ? "stylized human silhouette standing next to the asset at full body scale"
-      : heightCm > 0 && heightCm < 80
-        ? "stylized human silhouette bending or sitting beside it; scale visible at the legs/feet area"
-        : "stylized human silhouette in a context-appropriate pose for the object";
-    imagePrompt = `Single comprehensive concept-sheet image of a ${englishCat}, ${englishStyle} style.${dims.length ? " Approximate dimensions: " + dims.join(", ") + "." : ""}
-Composition: asset shown in clean 3/4 perspective view at center-left, ${placement}.
-Background: light gray gradient studio with a subtle 10cm metric grid on the floor.
-Style: photoreal stylized inZOI aesthetic. ${userPrompt}
-high resolution, ultra-detailed, sharp focus, professional product design concept sheet, scale reference with human silhouette, neutral gray studio background, game asset reference for inZOI`;
-    console.log("[Sheet] fallback 프롬프트 사용");
-  }
+  // 2) 생성할 뷰 결정 — front 는 항상, 나머지는 Claude 판단
+  const viewsToGenerate = SHEET_VIEWS.filter((v) => v.id === "front" || viewDecision[v.id]);
+  const total = viewsToGenerate.length;
+  let done = 0;
+  const report = () => onProgress?.(done, total);
+  report();
 
-  // 3) Gemini 생성
-  onProgress?.(0, 1);
-  try {
-    const raw = await generateImageWithGemini(apiKey, imagePrompt, model, [sourceImageUrl]);
-    const uploaded = await uploadDataUrl(raw);
-    onProgress?.(1, 1);
-    return { imageUrl: uploaded, prompt: imagePrompt };
-  } catch (err) {
-    onProgress?.(1, 1);
-    return { imageUrl: null, error: err.message, prompt: imagePrompt };
-  }
-}
-
-async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, contextLabel, onProgress }) {
-  const tasks = SHEET_VIEWS.map((v) => async () => {
-    const prompt = `Render a ${v.prompt} of this ${contextLabel || "furniture asset"}. `
-      + `Keep the exact proportions, materials, colors, and design details from the source image. `
-      + `Neutral gray background, even studio lighting, high detail, 3D product render, game asset reference.`;
+  // 3) 각 뷰 병렬 생성 — 원본 형태/색 보존을 강조하는 프롬프트
+  const tasks = viewsToGenerate.map((v) => (async () => {
+    const prompt = `Render a ${v.prompt} of this ${contextLabel}. `
+      + (userPrompt ? `Asset description: ${userPrompt}. ` : "")
+      + `CRITICAL: faithfully preserve the EXACT form, silhouette, proportions, materials, colors, textures, and design details from the source reference image — do not redesign, restyle, or interpret. Reproduce the same object accurately from the requested angle. `
+      + `Plain neutral gray background, even soft studio lighting, no cast shadows, no human figures, no extra props, no scale grid. `
+      + `3D modeling reference, sharp focus, ultra-detailed, isolated subject centered in frame.`;
     try {
       const raw = await generateImageWithGemini(apiKey, prompt, model, [sourceImageUrl]);
       const uploaded = await uploadDataUrl(raw);
+      done += 1; report();
       return { view: v.id, label: v.label, imageUrl: uploaded };
     } catch (err) {
+      done += 1; report();
       return { view: v.id, label: v.label, imageUrl: null, error: err.message };
     }
-  });
-  return await runWithConcurrencyLimit(tasks, 2, onProgress);
+  }));
+
+  const results = await Promise.all(tasks.map((t) => t()));
+
+  const views = {};
+  for (const r of results) {
+    if (r.imageUrl) views[r.view] = r.imageUrl;
+  }
+  return {
+    views,                            // { front, side?, back?, top? }
+    viewDecision,
+    failed: results.filter((r) => !r.imageUrl).length,
+    totalRequested: results.length,
+  };
 }
 
 // 이미지에서 대략적 실제 크기(cm)를 추정. 카테고리 라벨을 context 로 준다.
@@ -3779,7 +3765,14 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),
   });
-  return { added: valid.length, failed: results.length - valid.length };
+  // v1.10.104 — 생성 후 자동분류용으로 첫 이미지 URL 도 반환.
+  // v1.10.107 — 사후 자동분류 PATCH 가 stale card.data 가 아니라 방금 저장된 nextData 를 base 로 쓰도록 반환.
+  return {
+    added: valid.length,
+    failed: results.length - valid.length,
+    firstImageUrl: valid[0]?.imageUrl || null,
+    updatedData: nextData,
+  };
 }
 
 // dataURL 을 서버에 업로드하고 /data/images/... URL 을 반환.
@@ -4489,11 +4482,11 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
   if (statusKey === "sheet") {
     const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
-    const views = card.data?.concept_sheet_views || null; // { front, side, back, top }
-    // v1.10.103 — 단일 이미지(views.single) 또는 legacy 4뷰(front/side/back/top) 모두 인식.
+    const views = card.data?.concept_sheet_views || null; // { front, side?, back?, top? } 또는 legacy { single }
+    // v1.10.103 — 단일 이미지(views.single) 는 legacy. v1.10.105 부터는 직교 뷰로 복귀.
     const hasSingle = !!views?.single;
-    const hasLegacy = !!views && (views.front || views.side || views.back || views.top);
-    const hasViews = hasSingle || hasLegacy;
+    const hasOrtho = !!views && (views.front || views.side || views.back || views.top);
+    const hasViews = hasSingle || hasOrtho;
     // 소스 이미지 우선순위: 선정된 시안 → 첫 이미지 있는 시안 → 카드 썸네일.
     const fallbackDesign = !selectedDesign?.imageUrl
       ? designs.find((d) => d?.imageUrl) || null
@@ -4511,28 +4504,30 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
       if (!geminiApiKey) { onOpenApiSettings?.(); return; }
       if (!sourceImageUrl) { alert("컨셉시트에 사용할 이미지가 없습니다."); return; }
       setBusy(true);
-      // v1.10.103 — 단일 이미지 시트. Claude 가 카테고리/사이즈 기반으로 인체 실루엣 배치 결정.
-      setProgress({ done: 0, total: 1, label: "🤖 Claude 시트 프롬프트 최적화 중..." });
+      // v1.10.105 — 다중 직교 뷰. Claude 가 형태 복잡도 보고 추가 뷰 필요성 판단, 정면은 항상 생성.
+      setProgress({ done: 0, total: 1, label: "🤖 Claude 추가 뷰 필요성 판단 중..." });
       onGenerateProgress?.(card, 0, 1);
       try {
-        const result = await generateConceptSheetSingle({
+        const result = await generateConceptSheetViews({
           apiKey: geminiApiKey,
           sourceImageUrl,
           model: selectedModel,
           card,
           onProgress: (done, total) => {
-            setProgress({ done, total, label: done === 0 ? "🎨 Gemini 시트 이미지 생성 중..." : null });
+            setProgress({ done, total, label: done < total ? "🎨 Gemini 직교 뷰 생성 중..." : null });
             onGenerateProgress?.(card, done, total);
           },
         });
-        if (!result.imageUrl) {
-          alert(`시트 생성 실패: ${result.error || "알 수 없는 오류"}\n\nF12 콘솔 [Sheet] 로그에서 자세히 확인 가능`);
+        const generatedViewIds = Object.keys(result.views || {});
+        if (generatedViewIds.length === 0) {
+          alert(`시트 생성 실패: 모든 뷰가 실패했습니다.\n\nF12 콘솔 [Sheet] 로그에서 자세히 확인 가능`);
           return;
         }
         // 재생성 시 기존 시트를 history 에 보존.
         const existingViews = card.data?.concept_sheet_views || null;
         const prevHistory = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
         const nextHistory = existingViews ? [existingViews, ...prevHistory] : prevHistory;
+        const frontUrl = result.views.front || null;
         await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -4540,20 +4535,23 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
             data: {
               ...(card.data || {}),
               concept_sheet_views: {
-                single: result.imageUrl,         // v1.10.103 — 단일 이미지 형식
+                ...result.views,                  // { front, side?, back?, top? }
+                view_decision: result.viewDecision || null,
                 model: selectedModel,
                 generated_at: new Date().toISOString(),
                 source_image_url: sourceImageUrl,
                 source_seed: sourceSeed,
-                sheet_prompt: result.prompt,     // 어떤 프롬프트로 생성됐는지 보관
               },
               concept_sheet_history: nextHistory,
-              concept_sheet_url: result.imageUrl,
+              concept_sheet_url: frontUrl,
             },
-            thumbnail_url: result.imageUrl || card.thumbnail_url,
+            // v1.10.106 — 시트 생성으로 기존 대표 이미지(thumbnail) 를 덮어쓰지 않음.
             actor,
           }),
         });
+        if (result.failed > 0) {
+          alert(`✓ 시트 생성됨 (${generatedViewIds.length}/${result.totalRequested} 뷰)\n⚠ ${result.failed}개 뷰 실패 — F12 콘솔 확인`);
+        }
         await onRefresh();
       } catch (e) {
         alert("컨셉시트 생성 실패: " + e.message);
@@ -4565,7 +4563,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
 
     return (
       <div style={sectionStyle}>
-        <div style={titleStyle}>시트 (4뷰 · Gemini)</div>
+        <div style={titleStyle}>시트 (직교 뷰 · Gemini)</div>
         {sourceImageUrl && (
           <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "rgba(0,0,0,0.03)" }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
@@ -4580,11 +4578,65 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           </div>
         )}
 
-        {hasSingle ? (
-          // v1.10.103 — 단일 이미지 풀폭 렌더링
+        {hasOrtho ? (
+          // v1.10.105 — 다중 직교 뷰 동적 렌더링. 정면 항상, 측/후/상 은 있을 때만.
+          (() => {
+            const presentViews = SHEET_VIEWS.filter((v) => views[v.id]);
+            const cols = Math.min(presentViews.length, 2);
+            return (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
+                  ✓ 시트 생성됨 ({presentViews.length}뷰){views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {views.model}</span>}
+                </div>
+                {views.view_decision?.reasoning && (
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6, fontStyle: "italic" }}>
+                    💭 {views.view_decision.reasoning}
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 6 }}>
+                  {presentViews.map((v) => {
+                    const url = views[v.id];
+                    return (
+                      <div key={v.id} style={{
+                        position: "relative", borderRadius: 8, overflow: "hidden",
+                        border: "1px solid var(--surface-border)", background: "#000",
+                      }}>
+                        <img
+                          src={url}
+                          alt={v.label}
+                          onClick={() => onOpenImage?.(url)}
+                          style={{ width: "100%", height: presentViews.length === 1 ? "auto" : 200, objectFit: "contain", display: "block", background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
+                        />
+                        <div style={{
+                          position: "absolute", top: 4, left: 4,
+                          padding: "2px 6px", borderRadius: 4,
+                          background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
+                          pointerEvents: "none",
+                        }}>{v.label}</div>
+                        <a
+                          href={url}
+                          download={`inzoi_${card.id}_${v.id}.png`}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: "absolute", bottom: 4, right: 4,
+                            padding: "2px 6px", borderRadius: 4,
+                            background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10,
+                            textDecoration: "none", fontWeight: 600,
+                          }}
+                          title="PNG 저장"
+                        >📥</a>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()
+        ) : hasSingle ? (
+          // legacy v1.10.103~104 단일 이미지 (인체 실루엣 포함). 새 생성에서는 만들지 않음.
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
-              ✓ 시트 생성됨 (인체 실루엣 스케일 참조 포함){views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {views.model}</span>}
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 700 }}>
+              📦 단일 시트 (legacy){views.model && <span style={{ fontWeight: 400 }}> · {views.model}</span>}
             </div>
             <div style={{
               position: "relative", borderRadius: 8, overflow: "hidden",
@@ -4609,67 +4661,13 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                 title="PNG 저장"
               >📥 저장</a>
             </div>
-            {views.sheet_prompt && (
-              <details style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
-                <summary style={{ cursor: "pointer" }}>📝 사용된 프롬프트 보기</summary>
-                <div style={{ marginTop: 4, padding: 8, borderRadius: 6, background: "rgba(0,0,0,0.03)", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "monospace", fontSize: 10, lineHeight: 1.5, maxHeight: 200, overflowY: "auto" }}>
-                  {views.sheet_prompt}
-                </div>
-              </details>
-            )}
-          </div>
-        ) : hasLegacy ? (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
-              ✓ 4뷰 생성됨 (legacy) {views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {views.model}</span>}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
-              {SHEET_VIEWS.map((v) => {
-                const url = views[v.id];
-                return (
-                  <div key={v.id} style={{
-                    position: "relative", borderRadius: 8, overflow: "hidden",
-                    border: "1px solid var(--surface-border)",
-                    background: url ? "#000" : "rgba(0,0,0,0.05)",
-                  }}>
-                    {url ? (
-                      <img
-                        src={url}
-                        alt={v.label}
-                        onClick={() => onOpenImage?.(url)}
-                        style={{ width: "100%", height: 160, objectFit: "cover", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
-                      />
-                    ) : (
-                      <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
-                    )}
-                    <div style={{
-                      position: "absolute", top: 4, left: 4,
-                      padding: "2px 6px", borderRadius: 4,
-                      background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
-                      pointerEvents: "none",
-                    }}>{v.label}</div>
-                    {url && (
-                      <a
-                        href={url}
-                        download={`inzoi_${card.id}_${v.id}.png`}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          position: "absolute", bottom: 4, right: 4,
-                          padding: "2px 6px", borderRadius: 4,
-                          background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10,
-                          textDecoration: "none", fontWeight: 600,
-                        }}
-                        title="PNG 저장"
-                      >📥</a>
-                    )}
-                  </div>
-                );
-              })}
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
+              재생성하면 새 다중 직교 뷰 형식으로 변환됩니다.
             </div>
           </div>
         ) : (
           <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
-            인체 실루엣 스케일 참조 포함 단일 시트 이미지를 생성합니다.
+            정면 직교 뷰 + 형태가 복잡하면 측/후/상 추가 뷰를 자동 생성합니다.
           </div>
         )}
 
@@ -4686,7 +4684,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                   <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
                     {h.generated_at ? formatLocalTime(h.generated_at, "full") : "시점 불명"}
                     {h.model && ` · ${h.model}`}
-                    {h.single ? " · 단일 시트" : " · 4뷰 (legacy)"}
+                    {h.single ? " · 단일 시트 (legacy)" : ` · ${SHEET_VIEWS.filter((v) => h[v.id]).length}뷰`}
                   </div>
                   {h.single ? (
                     <img
@@ -4730,11 +4728,11 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
               border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
               cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
             }}
-            title={!geminiApiKey ? "Gemini API 키 필요" : canMakeSheet ? `${sourceLabel} 으로 시트 생성 (스케일 참조 포함)` : "시안 또는 카드 이미지 필요"}
+            title={!geminiApiKey ? "Gemini API 키 필요" : canMakeSheet ? `${sourceLabel} 으로 직교 뷰 시트 생성` : "시안 또는 카드 이미지 필요"}
           >
             {busy
               ? (progress?.label ? progress.label : `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
-              : hasViews ? "🔄 시트 재생성" : "🎨 시트 생성 (스케일 참조 포함)"}
+              : hasViews ? "🔄 시트 재생성" : "🎨 시트 생성 (직교 뷰)"}
           </button>
         </div>
 
@@ -8988,33 +8986,41 @@ function DesignsPanel({
     setBusy(true);
     onGenerateProgress?.(card, 0, count);
 
-    // 1) 자동 분류 선행 — prompt/description 모두 없고 이미지가 있으면.
+    // 1) 자동 분류 선행 — 이미지가 있고 비어있는 필드가 하나라도 있으면 그 필드만 채움.
+    // v1.10.108 — 필드별 게이트. 사용자가 미리 입력한 값은 절대 덮어쓰지 않음.
     let workingCard = card;
     let basePrompt = card.data?.prompt || card.description || card.title;
-    let autoNotice = null;  // 생성 후 사용자에게 알릴 부분 실패 메시지
+    let autoNotice = null;
     const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
     const imgSrc = refs[0] || card.thumbnail_url;
-    const needsAutoClassify = !card.data?.prompt && !card.description && imgSrc;
+    const missingPromptOrig = !card.data?.prompt && !card.description;
+    const missingCategory = !card.data?.category;
+    const missingStyle    = !card.data?.style_preset;
+    const missingSize     = !card.data?.size_info;
+    const missingPosmap   = !card.data?.posmap_features;
+    const missingMeta     = missingCategory || missingStyle || missingSize || missingPosmap;
+    const needsAutoClassify = !!imgSrc && (missingPromptOrig || missingMeta);
     if (needsAutoClassify) {
-      setProgress({ done: 0, total: count, label: "🤖 어셋 정보 자동 분류 중..." });
+      setProgress({ done: 0, total: count, label: "🤖 빈 어셋 정보 자동 채우는 중..." });
       try {
+        // 필요한 호출만 — meta 빠지면 classify, prompt 빠지면 generatePrompt.
         const [clsResult, promptResult] = await Promise.allSettled([
-          classifyCategoryWithGemini(geminiApiKey, imgSrc),
-          generatePromptFromImage(geminiApiKey, imgSrc, card.title),
+          missingMeta       ? classifyCategoryWithGemini(geminiApiKey, imgSrc)            : Promise.resolve(null),
+          missingPromptOrig ? generatePromptFromImage(geminiApiKey, imgSrc, card.title)   : Promise.resolve(null),
         ]);
         const clsR = clsResult.status === "fulfilled" ? clsResult.value : null;
-        const p = promptResult.status === "fulfilled" ? promptResult.value : null;
-        // v1.10.99 — 진단 로그.
+        const p    = promptResult.status === "fulfilled" ? promptResult.value : null;
         console.log("[자동 분류 + 시안 생성]", {
           classify: clsResult.status, classifyResult: clsR,
           prompt: promptResult.status, promptValue: p ? p.slice(0, 80) + "..." : null,
         });
         const patch = {};
         const savedFields = [];
-        if (clsR?.category_id) { patch.category = clsR.category_id; savedFields.push("카테고리"); }
-        if (clsR?.style_id) { patch.style_preset = clsR.style_id; savedFields.push("스타일"); }
-        if (clsR?.posmap_features) { patch.posmap_features = clsR.posmap_features; savedFields.push("posmap"); }
-        if (clsR?.size_info) {
+        // 빈 필드만 채움.
+        if (missingCategory && clsR?.category_id)        { patch.category = clsR.category_id;       savedFields.push("카테고리"); }
+        if (missingStyle    && clsR?.style_id)           { patch.style_preset = clsR.style_id;      savedFields.push("스타일"); }
+        if (missingPosmap   && clsR?.posmap_features)    { patch.posmap_features = clsR.posmap_features; savedFields.push("posmap"); }
+        if (missingSize     && clsR?.size_info) {
           patch.size_info = {
             width_cm: clsR.size_info.width_cm,
             depth_cm: clsR.size_info.depth_cm,
@@ -9026,18 +9032,18 @@ function DesignsPanel({
           };
           savedFields.push("크기");
         }
-        if (p) {
+        if (missingPromptOrig && p) {
           patch.prompt = p;
           basePrompt = p;
           savedFields.push("프롬프트");
         }
-        // posmap features 가 있으면 카탈로그 매칭도 같이 계산 (runCategorySuggest 와 동일).
-        if (clsR?.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
-          const catId = clsR.category_id || card.data?.category;
-          const matches = findSimilarCatalogAssets(clsR.posmap_features, catId, 12);
+        // 카탈로그 매칭은 posmap_features 가 새로 채워졌을 때만 계산.
+        if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+          const catId = patch.category || card.data?.category;
+          const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 12);
           if (matches.length > 0) {
             patch.catalog_matches = {
-              features: clsR.posmap_features,
+              features: patch.posmap_features,
               items: matches.map((m) => ({
                 id: m.id, score: m.score, normalized: m.normalized,
                 filter: m.filter, lv1: m.lv1, lv2: m.lv2,
@@ -9050,14 +9056,8 @@ function DesignsPanel({
           await save(patch);
           workingCard = { ...card, data: { ...(card.data || {}), ...patch } };
           console.log("[자동 분류 + 시안 생성] 저장됨:", savedFields.join(", "));
-          // 부분 실패 안내 (분류만 또는 프롬프트만 성공)
-          if (!clsR && p) autoNotice = "프롬프트만 자동 생성됨. 카테고리·스타일은 수동 입력 필요.";
-          else if (clsR && !p) autoNotice = "분류 정보만 저장됨. 프롬프트는 description/title 사용.";
         } else {
-          autoNotice = "자동 분류 실패 — 카테고리·프롬프트 둘 다 인식 안 됨. F12 콘솔 확인.";
-          console.warn("[자동 분류 + 시안 생성] 모두 실패:",
-            clsResult.status === "rejected" ? clsResult.reason : "classify=null",
-            promptResult.status === "rejected" ? promptResult.reason : "prompt=null");
+          console.log("[자동 분류 + 시안 생성] 채울 필드 없음 또는 응답 부족 — 스킵");
         }
       } catch (e) {
         console.warn("[자동 분류 + 시안 생성] 예외 발생:", e);
@@ -9088,8 +9088,82 @@ function DesignsPanel({
           onGenerateProgress?.(card, done, total);
         },
       });
-      if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
-      else if (autoNotice) alert(`✓ 시안 ${r.added}개 생성됨\n\n⚠ ${autoNotice}`);
+      if (r.added === 0) {
+        alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
+      } else {
+        // v1.10.108 — 사전 분류가 실행되지 못한 경우 (이미지 없었음), 첫 시안 이미지로 빈 필드만 채움.
+        // 사용자가 미리 입력한 필드는 덮어쓰지 않음.
+        const origMissingPrompt   = !card.data?.prompt && !card.description;
+        const origMissingCategory = !card.data?.category;
+        const origMissingStyle    = !card.data?.style_preset;
+        const origMissingSize     = !card.data?.size_info;
+        const origMissingPosmap   = !card.data?.posmap_features;
+        const origMissingMeta     = origMissingCategory || origMissingStyle || origMissingSize || origMissingPosmap;
+        const anyMissing = origMissingPrompt || origMissingMeta;
+        if (!needsAutoClassify && anyMissing && r.firstImageUrl) {
+          setProgress({ done: count, total: count, label: "🤖 생성 결과로 빈 어셋 정보 자동 채우는 중..." });
+          try {
+            const [clsResult, promptResult] = await Promise.allSettled([
+              origMissingMeta   ? classifyCategoryWithGemini(geminiApiKey, r.firstImageUrl)         : Promise.resolve(null),
+              origMissingPrompt ? generatePromptFromImage(geminiApiKey, r.firstImageUrl, card.title): Promise.resolve(null),
+            ]);
+            const clsR = clsResult.status === "fulfilled" ? clsResult.value : null;
+            const p    = promptResult.status === "fulfilled" ? promptResult.value : null;
+            console.log("[사후 자동분류]", { clsR, p: p ? p.slice(0, 80) + "..." : null });
+            const patch = {};
+            const savedFields = [];
+            if (origMissingCategory && clsR?.category_id)     { patch.category = clsR.category_id;       savedFields.push("카테고리"); }
+            if (origMissingStyle    && clsR?.style_id)        { patch.style_preset = clsR.style_id;      savedFields.push("스타일"); }
+            if (origMissingPosmap   && clsR?.posmap_features) { patch.posmap_features = clsR.posmap_features; savedFields.push("posmap"); }
+            if (origMissingSize     && clsR?.size_info) {
+              patch.size_info = {
+                width_cm: clsR.size_info.width_cm,
+                depth_cm: clsR.size_info.depth_cm,
+                height_cm: clsR.size_info.height_cm,
+                source: "ai",
+                confidence: clsR.size_info.confidence,
+                reason: clsR.size_info.reason,
+                updated_at: new Date().toISOString(),
+              };
+              savedFields.push("크기");
+            }
+            if (origMissingPrompt && p) { patch.prompt = p; savedFields.push("프롬프트"); }
+            // 카탈로그 매칭은 posmap_features 가 새로 채워졌을 때만 계산.
+            if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+              const catId = patch.category || card.data?.category;
+              const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 12);
+              if (matches.length > 0) {
+                patch.catalog_matches = {
+                  features: patch.posmap_features,
+                  items: matches.map((m) => ({
+                    id: m.id, score: m.score, normalized: m.normalized,
+                    filter: m.filter, lv1: m.lv1, lv2: m.lv2,
+                  })),
+                  generated_at: new Date().toISOString(),
+                };
+              }
+            }
+            if (Object.keys(patch).length > 0) {
+              // v1.10.107 — save() 대신 직접 PATCH. base 는 generateCardVariants 가 반환한 updatedData (designs 포함).
+              await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  data: { ...(r.updatedData || {}), ...patch },
+                  actor,
+                }),
+              });
+              console.log("[사후 자동분류] 저장됨:", savedFields.join(", "));
+              autoNotice = `생성 후 자동 분류로 ${savedFields.join(", ")} 추가됨.`;
+            } else {
+              console.log("[사후 자동분류] 채울 필드 없음 또는 응답 부족 — 스킵");
+            }
+          } catch (e) {
+            console.warn("[사후 자동분류] 예외:", e);
+          }
+        }
+        if (autoNotice) alert(`✓ 시안 ${r.added}개 생성됨\n\n⚠ ${autoNotice}`);
+      }
       await onRefresh?.();
     } catch (e) { alert("생성 실패: " + e.message); }
     finally {
