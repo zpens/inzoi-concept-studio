@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.63";
+const APP_VERSION = "1.10.64";
 const CHANGELOG = [
+  {
+    version: "1.10.64",
+    date: "2026-04-26",
+    changes: [
+      "갤러리 캔버스(F) 상단에 그룹별 표시 토글 chip — 🖼 참조 / 🎨 시안 / 📑 현재 시트 / 🗂 이전 시트 N. 클릭으로 해당 그룹 숨기기·표시. 시트 history 가 많을 때 시안만 보기 등 시각 정리 가능",
+      "비활성 그룹 키는 카드별 localStorage 저장 (gallery_disabled_groups_<cardId>). 재방문 시 상태 유지",
+      "그룹 토글 시 자동으로 fit-to-viewport 재실행 — 줄어든 콘텐츠가 화면에 가득",
+    ],
+  },
   {
     version: "1.10.63",
     date: "2026-04-26",
@@ -5488,6 +5497,24 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   const [aspects, setAspects] = React.useState({});
   // v1.10.63 — 타일 클릭 시 lightbox (줌/패닝/그리기 전체 기능) 열기.
   const [lightboxSrc, setLightboxSrc] = React.useState(null);
+  // v1.10.64 — 그룹별 표시 토글 (refs / designs / sheet-current / sheet-history-N).
+  // localStorage 에 카드별 비활성 그룹 키 저장. 기본은 모두 활성.
+  const groupStateKey = `gallery_disabled_groups_${card?.id || "_"}`;
+  const [disabledGroups, setDisabledGroups] = React.useState(() => {
+    try {
+      const raw = localStorage.getItem(groupStateKey);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+  const toggleGroup = (key) => {
+    setDisabledGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try { localStorage.setItem(groupStateKey, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
   const wrapRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const panStart = React.useRef(null);
@@ -5541,6 +5568,11 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     return () => { clearTimeout(t1); clearTimeout(t2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // v1.10.64 — 그룹 토글 시 자동 refit (콘텐츠 크기 변경 반영).
+  React.useEffect(() => {
+    const t = setTimeout(fitToViewport, 50);
+    return () => clearTimeout(t);
+  }, [disabledGroups, fitToViewport]);
   const onImageLoad = React.useCallback((e, url) => {
     // v1.10.61 — aspect 와 자연 해상도(w, h) 모두 저장. 자연 해상도로 IMG 렌더해야
     // 줌인 시 원본 픽셀이 보임 (이전엔 셀 크기로 다운샘플 → GPU 업스케일 → 흐림).
@@ -5788,7 +5820,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     const TARGET_H = 460;      // 기본 행 높이 (큼)
     const CONTAINER_W = 2800;  // 한 행 폭. 화면보다 크게 잡고 fit-to-viewport 가 축소해서 화면에 맞춤
     const GAP = 2;             // 이미지 간 간격 (거의 붙게)
-    const flat = groups.flatMap((g) => g.items);
+    // v1.10.64 — 비활성 그룹 제외 후 펴기.
+    const flat = groups.filter((g) => !disabledGroups.has(g.key)).flatMap((g) => g.items);
     const rows = [];
     let cur = [];
     let curW = 0;
@@ -5827,7 +5860,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       };
     });
     return { rows: laid, gap: GAP, containerWidth: CONTAINER_W };
-  }, [groups, aspects]);
+  }, [groups, aspects, disabledGroups]);
 
 
   return (
@@ -5840,7 +5873,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0,
         padding: "10px 16px", zIndex: 10,
-        display: "flex", alignItems: "center", gap: 14,
+        display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
         background: "linear-gradient(to bottom, rgba(0,0,0,0.5), transparent)",
         pointerEvents: "none",
       }}>
@@ -5848,6 +5881,37 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           🖼 <span style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{card.title || "(제목 없음)"}</span>
           <span style={{ fontWeight: 400, color: "rgba(255,255,255,0.55)", fontSize: 12 }}>— 갤러리 · {totalImages}개</span>
         </div>
+        {/* v1.10.64 — 그룹별 표시 토글 chip */}
+        {groups.length > 1 && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+            pointerEvents: "auto",
+          }}>
+            {groups.map((g) => {
+              const enabled = !disabledGroups.has(g.key);
+              const label = g.key === "refs" ? "🖼 참조"
+                : g.key === "designs" ? "🎨 시안"
+                : g.key === "sheet-current" ? "📑 현재 시트"
+                : g.key.startsWith("sheet-history-") ? `🗂 이전 시트 ${Number(g.key.replace("sheet-history-", "")) + 1}`
+                : g.title.split(" ").slice(0, 2).join(" ");
+              return (
+                <button
+                  key={g.key}
+                  onClick={() => toggleGroup(g.key)}
+                  title={enabled ? "이 그룹 숨기기" : "이 그룹 표시"}
+                  style={{
+                    padding: "4px 10px", borderRadius: 12,
+                    background: enabled ? "rgba(7,110,232,0.25)" : "rgba(255,255,255,0.05)",
+                    border: `1px solid ${enabled ? "rgba(7,110,232,0.55)" : "rgba(255,255,255,0.18)"}`,
+                    color: enabled ? "#fff" : "rgba(255,255,255,0.45)",
+                    fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    textDecoration: enabled ? "none" : "line-through",
+                  }}
+                >{label} ({g.items.length})</button>
+              );
+            })}
+          </div>
+        )}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, pointerEvents: "auto" }}>
           <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
             휠 줌 · 가운데/우클릭 드래그 팬 · 0 전체 보기 · ±/화살표 · Esc/F 닫기
