@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.70";
+const APP_VERSION = "1.10.71";
 const CHANGELOG = [
+  {
+    version: "1.10.71",
+    date: "2026-04-26",
+    changes: [
+      "[보안] API 키 서버 프록시화 — 키 자체가 클라이언트로 더 이상 전달되지 않음. /api/config 는 boolean(설정 유무) 만 응답. 모든 Gemini / Claude 호출은 /api/ai/gemini/* 와 /api/ai/claude/* 프록시를 거쳐 서버에서 키 부착",
+      "프록시는 Google/Anthropic API 의 path/body 를 그대로 forward — 클라이언트 코드는 URL 만 변경, 응답 형식 동일",
+      "개인 키 override 는 X-Personal-Gemini-Key / X-Personal-Claude-Key 헤더로 서버에 전달 (서버가 받아 그 키로 호출)",
+      "변경: generateImageWithGemini / generatePromptFromImage / classifyCategoryWithGemini / estimateSizeWithGemini / listGeminiImageModels / Claude 메시지 호출 모두 프록시 경유",
+      "이제 사내망 사용자가 /api/config 또는 devtools 에서 키를 직접 볼 수 없음",
+    ],
+  },
   {
     version: "1.10.70",
     date: "2026-04-26",
@@ -2454,6 +2465,12 @@ async function fetchImagePart(url) {
   }
 }
 
+// v1.10.71 — apiKey 인자는 personal override 만. "[server]" placeholder 면 서버 팀 키 사용.
+function geminiProxyHeaders(apiKey) {
+  const headers = { "Content-Type": "application/json" };
+  if (apiKey && apiKey !== "[server]") headers["X-Personal-Gemini-Key"] = apiKey;
+  return headers;
+}
 async function generateImageWithGemini(apiKey, prompt, model, refImages = []) {
   console.log(`Generating image with model: ${model}, refImages=${refImages.length}`);
 
@@ -2467,10 +2484,10 @@ async function generateImageWithGemini(apiKey, prompt, model, refImages = []) {
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    `/api/ai/gemini/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: geminiProxyHeaders(apiKey),
       body: JSON.stringify({
         contents: [{ parts }],
         generationConfig: {
@@ -2532,10 +2549,10 @@ async function generatePromptFromImage(apiKey, imageUrl, titleHint) {
 반드시 JSON 만 응답:
 { "prompt": "..." }`;
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `/api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: geminiProxyHeaders(apiKey),
       body: JSON.stringify({
         contents: [{
           parts: [
@@ -2612,10 +2629,10 @@ ${categoryList}
 ${styleList}`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `/api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: geminiProxyHeaders(apiKey),
       body: JSON.stringify({
         contents: [{
           parts: [
@@ -2815,10 +2832,10 @@ async function estimateSizeWithGemini(apiKey, imageUrl, categoryLabel) {
 - 이미지에서 판단 어려우면 confidence 0.5 미만`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `/api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: geminiProxyHeaders(apiKey),
       body: JSON.stringify({
         contents: [{
           parts: [
@@ -2854,7 +2871,8 @@ async function estimateSizeWithGemini(apiKey, imageUrl, categoryLabel) {
 // ─── List available Gemini image models ───
 async function listGeminiImageModels(apiKey) {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+    `/api/ai/gemini/v1beta/models`,
+    { headers: geminiProxyHeaders(apiKey) }
   );
   if (!response.ok) throw new Error(`ListModels failed: ${response.status}`);
   const data = await response.json();
@@ -9478,24 +9496,25 @@ export default function InZOIConceptTool() {
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
 
-  // API key state — v1.10.70: 개인 키(localStorage) override + 서버 팀 기본값(/api/config) fallback.
+  // API key state — v1.10.71: 키 자체는 클라이언트에 노출 안됨. /api/config 가 boolean 만 응답.
+  // - personalKey 가 있으면 헤더로 서버에 전달 (개인 override)
+  // - 서버 키만 있으면 placeholder "[server]" 를 effective 로 사용 (truthy check 호환).
+  // - 모든 외부 API 호출은 /api/ai/gemini/* 또는 /api/ai/claude/* 프록시 경유, 키는 서버에서만 부착.
   const [personalGeminiKey, setPersonalGeminiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
   const [personalClaudeKey, setPersonalClaudeKey] = useState(() => localStorage.getItem("claude_api_key") || "");
-  const [serverConfig, setServerConfig] = useState({ gemini: null, claude: null, loaded: false });
+  const [serverConfig, setServerConfig] = useState({ gemini: false, claude: false, loaded: false });
   const [showApiSettings, setShowApiSettings] = useState(false);
-  // 부팅 시 서버 config 한 번 fetch.
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.ok ? r.json() : null)
-      .then((cfg) => { if (cfg) setServerConfig({ gemini: cfg.gemini || null, claude: cfg.claude || null, loaded: true }); })
+      .then((cfg) => { if (cfg) setServerConfig({ gemini: !!cfg.gemini, claude: !!cfg.claude, loaded: true }); })
       .catch(() => setServerConfig((p) => ({ ...p, loaded: true })));
   }, []);
-  // 우선순위: 개인 키 > 서버 기본값.
-  const geminiApiKey = personalGeminiKey || serverConfig.gemini || "";
-  const claudeApiKey = personalClaudeKey || serverConfig.claude || "";
+  // 우선순위: 개인 키 > 서버 placeholder. 빈 값이면 unavailable.
+  const geminiApiKey = personalGeminiKey || (serverConfig.gemini ? "[server]" : "");
+  const claudeApiKey = personalClaudeKey || (serverConfig.claude ? "[server]" : "");
   const geminiSource = personalGeminiKey ? "personal" : (serverConfig.gemini ? "server" : null);
   const claudeSource = personalClaudeKey ? "personal" : (serverConfig.claude ? "server" : null);
-  // 기존 호환: setGeminiApiKey/setClaudeApiKey 가 personal 만 변경.
   const setGeminiApiKey = setPersonalGeminiKey;
   const setClaudeApiKey = setPersonalClaudeKey;
 
@@ -10082,14 +10101,15 @@ Style: ${styleInfo?.label || "modern"}
 User description: ${snap.prompt}${spec.hint ? `\nDimension & scale reference: ${spec.hint}` : ""}
 Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
-        const claudeResp = await fetch("https://api.anthropic.com/v1/messages", {
+        // v1.10.71 — 서버 프록시. claudeApiKey 가 "[server]" 가 아니면 personal override 헤더로 전달.
+        const claudeHeaders = {
+          "Content-Type": "application/json",
+          "anthropic-version": "2023-06-01",
+        };
+        if (claudeApiKey && claudeApiKey !== "[server]") claudeHeaders["X-Personal-Claude-Key"] = claudeApiKey;
+        const claudeResp = await fetch("/api/ai/claude/v1/messages", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": claudeApiKey,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
+          headers: claudeHeaders,
           body: JSON.stringify({
             model: "claude-sonnet-4-20250514",
             max_tokens: 1000,
@@ -12519,7 +12539,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </button>
             </div>
             <div style={{ padding: "24px 28px 28px" }}>
-              {/* v1.10.70 — 팀 / 개인 키 source 안내 */}
+              {/* v1.10.71 — 팀 / 개인 키 source 안내. 키는 절대 클라이언트에 노출 안됨. */}
               <div style={{
                 marginBottom: 20, padding: "10px 14px", borderRadius: 10,
                 background: serverConfig.gemini || serverConfig.claude
@@ -12530,14 +12550,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               }}>
                 {serverConfig.gemini || serverConfig.claude ? (
                   <>
-                    🏢 <strong>팀 기본 키</strong> 가 서버 환경변수에 설정되어 있습니다 ·
+                    🔒 <strong>팀 키가 서버에서 관리</strong>됩니다 — 모든 AI 호출은 서버 프록시 경유, 키는 클라이언트에 노출되지 않습니다 ·
                     Gemini {serverConfig.gemini ? "✓" : "—"} / Claude {serverConfig.claude ? "✓" : "—"}
                     <div style={{ color: "var(--text-muted)", marginTop: 4, fontSize: 11 }}>
-                      아래에 입력한 개인 키가 있으면 그것을 우선 사용합니다. 빈 칸으로 저장 = 팀 기본값 사용.
+                      개인 키 입력 = 서버에 헤더로 전달해 그 키로 호출. 빈 칸 = 팀 키 사용.
                     </div>
                   </>
                 ) : (
-                  <>⚠️ 팀 기본 키가 서버에 설정되지 않았습니다. 개인 키를 직접 입력해주세요.</>
+                  <>⚠️ 서버 .env 에 키가 설정되지 않았습니다. 운영자가 GEMINI_API_KEY 를 .env 에 등록해야 사용 가능합니다.</>
                 )}
               </div>
               {/* Gemini API Key */}

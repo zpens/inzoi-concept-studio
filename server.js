@@ -313,14 +313,71 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
 
-// v1.10.70 — 팀 공용 API 키 배포용. 운영 PC 의 .env (또는 환경변수) 에서 읽어 클라이언트에 응답.
-// 사내망에서만 접근 가능한 환경 전제. 클라이언트는 개인 localStorage 키가 있으면 그것 우선,
-// 없을 때 이 응답을 fallback 으로 사용.
+// v1.10.71 — 팀 공용 API 키. 키 자체는 절대 클라이언트에 노출하지 않고 boolean 만 응답.
+// 모든 외부 AI 호출은 /api/ai/gemini/* 또는 /api/ai/claude/* 프록시를 거쳐 서버에서 키를 부착.
 app.get("/api/config", (c) => c.json({
-  gemini: process.env.GEMINI_API_KEY || null,
-  claude: process.env.CLAUDE_API_KEY || null,
+  gemini: !!process.env.GEMINI_API_KEY,
+  claude: !!process.env.CLAUDE_API_KEY,
   source: "server",
 }));
+
+// Gemini 프록시 — 클라이언트가 보낸 path/body 를 그대로 Google 에 forward, ?key=... 만 서버가 부착.
+// 헤더 X-Personal-Gemini-Key 가 있으면 그 값으로 override (사용자 개인 키).
+app.all("/api/ai/gemini/*", async (c) => {
+  const subPath = c.req.path.replace(/^\/api\/ai\/gemini\//, "");
+  const personalKey = c.req.header("x-personal-gemini-key");
+  const apiKey = personalKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) return c.json({ error: { message: "Gemini API key not configured on server" } }, 503);
+  const sep = subPath.includes("?") ? "&" : "?";
+  const upstream = `https://generativelanguage.googleapis.com/${subPath}${sep}key=${encodeURIComponent(apiKey)}`;
+  const init = {
+    method: c.req.method,
+    headers: { "content-type": "application/json" },
+  };
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+    init.body = await c.req.text();
+  }
+  try {
+    const r = await fetch(upstream, init);
+    const body = await r.text();
+    return new Response(body, {
+      status: r.status,
+      headers: { "content-type": r.headers.get("content-type") || "application/json" },
+    });
+  } catch (e) {
+    return c.json({ error: { message: `Gemini proxy failed: ${e.message}` } }, 502);
+  }
+});
+
+// Claude 프록시 — Anthropic API 호출에 x-api-key 부착.
+app.all("/api/ai/claude/*", async (c) => {
+  const subPath = c.req.path.replace(/^\/api\/ai\/claude\//, "");
+  const personalKey = c.req.header("x-personal-claude-key");
+  const apiKey = personalKey || process.env.CLAUDE_API_KEY;
+  if (!apiKey) return c.json({ error: { message: "Claude API key not configured on server" } }, 503);
+  const upstream = `https://api.anthropic.com/${subPath}`;
+  const init = {
+    method: c.req.method,
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": c.req.header("anthropic-version") || "2023-06-01",
+    },
+  };
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+    init.body = await c.req.text();
+  }
+  try {
+    const r = await fetch(upstream, init);
+    const body = await r.text();
+    return new Response(body, {
+      status: r.status,
+      headers: { "content-type": r.headers.get("content-type") || "application/json" },
+    });
+  } catch (e) {
+    return c.json({ error: { message: `Claude proxy failed: ${e.message}` } }, 502);
+  }
+});
 
 // upstream fetch 에 5초 타임아웃 — :8080 이 꺼져있거나 느릴 때 요청이 무한 대기하지 않게.
 async function timedFetch(url, ms = 5000) {
