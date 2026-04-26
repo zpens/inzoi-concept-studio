@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.87";
+const APP_VERSION = "1.10.88";
 const CHANGELOG = [
+  {
+    version: "1.10.88",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] HTTP 환경에서 🔗 링크 복사 / 카드 🔗 공유 안 되던 문제 — navigator.clipboard 가 secure context (HTTPS / localhost) 에서만 동작. 사내망 http://10.99.4.115:8081 에서 차단됨. copyToClipboard 헬퍼로 통일: 1) navigator.clipboard 시도 2) 실패 시 hidden textarea + document.execCommand('copy') legacy 방식 fallback. 둘 다 실패하면 prompt 표시",
+      "UpdateChipBar 의 태그 공유 + CardShareLink 의 카드 공유 모두 같은 헬퍼로 동작",
+    ],
+  },
   {
     version: "1.10.87",
     date: "2026-04-26",
@@ -2131,6 +2139,29 @@ function categoryToDefaultSize(categoryId) {
 // ─── Utility Functions ───
 function generateSeed() {
   return Math.floor(Math.random() * 2147483647);
+}
+
+// v1.10.88 — HTTP (non-secure context) 에서도 동작하는 클립보드 복사.
+// navigator.clipboard 는 HTTPS/localhost 외에서 undefined 또는 차단되므로 legacy execCommand fallback.
+async function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch { return false; }
 }
 
 // SQLite datetime('now') 는 UTC 'YYYY-MM-DD HH:MM:SS' (Z 없음).
@@ -5099,17 +5130,19 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename }) {
     fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
   };
   // v1.10.87 — 현재 필터 상태 그대로 URL 복사 (외부 동료에게 공유).
+  // v1.10.88 — HTTP 환경 호환을 위해 copyToClipboard 헬퍼 사용 (legacy execCommand fallback).
   const [copied, setCopied] = React.useState(false);
   const copyShare = async () => {
     const url = new URL(window.location.href);
     if (selected.length > 0) url.searchParams.set("tag", selected.join(","));
     else url.searchParams.delete("tag");
-    try {
-      await navigator.clipboard.writeText(url.toString());
+    const text = url.toString();
+    const ok = await copyToClipboard(text);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      window.prompt("이 링크를 복사하세요:", url.toString());
+    } else {
+      window.prompt("이 링크를 복사하세요:", text);
     }
   };
   return (
@@ -7814,12 +7847,12 @@ function CardShareLink({ slug, cardId }) {
   if (!slug || !cardId) return null;
   const copy = async () => {
     const url = `${location.origin}/p/${slug}/cards/${encodeURIComponent(cardId)}`;
-    try {
-      await navigator.clipboard.writeText(url);
+    // v1.10.88 — HTTP 환경 호환 헬퍼 사용
+    const ok = await copyToClipboard(url);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // 브라우저가 clipboard API 차단 시 prompt 로 fallback
+    } else {
       window.prompt("이 링크를 복사하세요:", url);
     }
   };
