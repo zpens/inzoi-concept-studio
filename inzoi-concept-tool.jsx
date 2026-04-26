@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.78";
+const APP_VERSION = "1.10.79";
 const CHANGELOG = [
+  {
+    version: "1.10.79",
+    date: "2026-04-26",
+    changes: [
+      "카드 상세 모달 활동 이력 — 기본값을 접힘으로 변경 (이전엔 펼침). 헤더 클릭으로 펼치기 가능",
+    ],
+  },
   {
     version: "1.10.78",
     date: "2026-04-26",
@@ -9400,7 +9407,7 @@ export default function InZOIConceptTool() {
   const [archiveOpen, setArchiveOpen] = useState(false);   // 아카이브 뷰 토글
   const [archivedCards, setArchivedCards] = useState([]);  // 서버에서 가져온 아카이브 카드
   const [activityFilter, setActivityFilter] = useState("all"); // 카드 활동 이력 필터
-  const [activitiesExpanded, setActivitiesExpanded] = useState(true); // 상세 모달 활동 이력 펼침 (v1.10.17)
+  const [activitiesExpanded, setActivitiesExpanded] = useState(false); // v1.10.79 — 기본 접힘으로 변경 (이전 v1.10.17 기본 펼침)
   const [galleryOpen, setGalleryOpen] = useState(false); // 상세 갤러리 캔버스 (F, v1.10.26)
   const [shortcutsOpen, setShortcutsOpen] = useState(false); // ? 키 단축키 치트시트 (v1.10.37)
   const [newItemId, setNewItemId] = useState(null);
