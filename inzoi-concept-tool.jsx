@@ -1,8 +1,60 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.108";
+const APP_VERSION = "1.10.109";
 const CHANGELOG = [
+  {
+    version: "1.10.109",
+    date: "2026-04-27",
+    changes: [
+      "시트에 스케일 참조 이미지 1장 항상 추가 — 직교 뷰(원본 보존, 실루엣/그리드 없음) 외에 인체 실루엣 + 10cm 그리드 포함된 스케일 참조 이미지를 별도로 1장 더 생성. Claude Sonnet 이 카테고리/사이즈/posmap 기반으로 실루엣 배치 결정 (큰 가구 옆 서있는 사람, 작은 가구 무릎 굽힘, 탁상 액세서리 + 책상 사용자, 벽걸이/천장/차량 등 카테고리별 자동 매핑)",
+      "data.concept_sheet_views.scale + scale_prompt 보존. 렌더링 — 직교 뷰 그리드 아래 '📏 스케일 참조' 섹션으로 풀폭 표시, 프롬프트 펼침/PNG 저장 지원",
+      "Claude 스케일 호출 실패 시 카테고리/높이 기반 fallback 프롬프트 자동 동작",
+    ],
+  },
+  {
+    version: "1.10.108",
+    date: "2026-04-27",
+    changes: [
+      "자동 분류 필드별 게이트 — 트리거를 '무엇 하나라도 비어있으면 실행' 으로 넓히고, 빈 필드만 채우도록 변경. 사용자가 미리 입력한 카테고리·스타일·크기·프롬프트는 어떤 경우에도 덮어쓰지 않음",
+      "사전/사후 분류 모두 missingCategory/missingStyle/missingSize/missingPosmap/missingPromptOrig 각각 독립 게이트. 필요한 호출만 (classify / generatePrompt) 병렬 실행해 API 비용 최적화",
+      "예: 카테고리만 입력해두고 시안 생성 → 카테고리는 유지, 스타일/크기/posmap/프롬프트만 자동 채움",
+      "catalog_matches 도 posmap_features 가 새로 채워질 때만 재계산 (불필요한 덮어쓰기 방지)",
+    ],
+  },
+  {
+    version: "1.10.107",
+    date: "2026-04-27",
+    changes: [
+      "[버그 수정] 사후 자동분류가 방금 생성된 시안 designs 를 덮어쓰던 race — generateCardVariants 가 designs/prompt 를 PATCH 한 직후, 사후 분류의 save(patch) 가 stale card.data prop 을 base 로 다시 PATCH 해 새 designs 를 잃거나 분류 결과가 반영 안 되던 문제",
+      "수정: generateCardVariants 가 updatedData (방금 저장된 nextData) 도 함께 반환. 사후 분류 PATCH 가 save() 대신 직접 fetch 로 그 위에 분류 결과만 머지",
+    ],
+  },
+  {
+    version: "1.10.106",
+    date: "2026-04-27",
+    changes: [
+      "시트 생성이 더 이상 카드 대표 이미지(thumbnail) 를 덮어쓰지 않음 — 시트 결과는 concept_sheet_views.front + concept_sheet_url 에만 저장하고 thumbnail_url 은 기존 값 그대로 보존",
+    ],
+  },
+  {
+    version: "1.10.105",
+    date: "2026-04-27",
+    changes: [
+      "시트 단일 이미지 → 다중 직교 뷰로 회귀 (3D 모델링 참조 목적) — 정면(front) 항상 + Claude 가 형태 복잡도/대칭성 보고 측/후/상 조건부 추가. 단순 대칭 형태(평범한 의자, 박스, 램프)는 정면 1뷰만, 비대칭/디테일 많은 형태는 필요한 뷰만 추가해 비용 최소",
+      "원본 보존 강화 프롬프트 — 'CRITICAL: faithfully preserve the EXACT form, silhouette, proportions, materials, colors, textures, and design details from the source reference image — do not redesign, restyle, or interpret' 로 원본 형태/색 1:1 유지 강조",
+      "인체 실루엣/스케일 그리드/배경 props 모두 제거. 깨끗한 회색 스튜디오, 그림자 없음, 고립된 피사체",
+      "concept_sheet_views = { front, side?, back?, top?, view_decision, model } 신 형식. 정면 이미지가 자동 카드 썸네일로 적용. legacy single 시트도 그대로 표시되며 재생성 시 새 형식으로 자동 변환",
+    ],
+  },
+  {
+    version: "1.10.104",
+    date: "2026-04-27",
+    changes: [
+      "시트 단일 이미지 + Claude 가 추가 직교 뷰 필요성 판단 — decideExtraViewsWithClaude 가 형태 복잡도/대칭성을 JSON 으로 답변하면 필요한 측/후/상 만 병렬 생성. (이후 v1.10.105 에서 다중 직교 뷰로 전면 전환)",
+      "이미지 없는 카드(제목만)에서 시안 생성 시 사후 자동분류 도입 — 사전 분류가 못 돈 경우(이미지 없음) 첫 생성 이미지로 classifyCategoryWithGemini + generatePromptFromImage 사후 실행해 카테고리·스타일·크기·posmap·프롬프트 자동 채움",
+    ],
+  },
   {
     version: "1.10.103",
     date: "2026-04-27",
@@ -3120,6 +3172,86 @@ const SHEET_VIEWS = [
   { id: "top",   label: "상단", prompt: "top-down orthographic view (camera looking straight down)" },
 ];
 
+// v1.10.109 — Claude 가 카테고리/사이즈 기반으로 인체 실루엣 배치를 결정해 스케일 참조 이미지 프롬프트 생성.
+// 직교 뷰와 별도로 항상 1장 추가 생성됨.
+async function buildScalePromptWithClaude({ userPrompt, catInfo, styleInfo, pf, si }) {
+  const personalClaudeKey = (() => { try { return localStorage.getItem("claude_api_key") || ""; } catch { return ""; } })();
+  const headers = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (personalClaudeKey) headers["X-Personal-Claude-Key"] = personalClaudeKey;
+  try {
+    const actor = localStorage.getItem("inzoi_actor_name");
+    if (actor) headers["X-Actor-Name"] = encodeURIComponent(actor);
+  } catch { /* ignore */ }
+
+  const ctxLines = [];
+  if (catInfo) ctxLines.push(`Category: ${catInfo.label} / preset: ${catInfo.preset || ""} / group: ${catInfo.group || "?"} / room: ${catInfo.room || "?"}`);
+  if (styleInfo) ctxLines.push(`Style: ${styleInfo.label} (${styleInfo.id})`);
+  if (pf.materials?.length) ctxLines.push(`Materials: ${pf.materials.join(", ")}`);
+  if (pf.colors?.length) ctxLines.push(`Colors: ${pf.colors.join(", ")}`);
+  if (pf.shape?.length) ctxLines.push(`Shape: ${pf.shape.join(", ")}`);
+  if (pf.size) ctxLines.push(`Size class: ${pf.size}`);
+  if (si.width_cm || si.depth_cm || si.height_cm) {
+    ctxLines.push(`Dimensions: ${si.width_cm || "?"}cm wide × ${si.depth_cm || "?"}cm deep × ${si.height_cm || "?"}cm tall`);
+  }
+
+  const systemPrompt = `You are a scale reference prompt engineer for inZOI 3D asset production.
+Output ONE rich English image-generation prompt that produces a SCALE REFERENCE image: the asset together with a stylized human silhouette so a 3D modeler can verify real-world size at a glance.
+
+Silhouette placement rules (decide based on category, room, dimensions):
+- Large floor furniture (sofa, bed, wardrobe, dining table; height ≥ ~80cm OR footprint ≥ ~1m²): full standing or seated human silhouette next to or interacting with the asset.
+- Small floor accessories (stool, side table, basket, low decor; height < ~80cm): silhouette bending / kneeling beside it; emphasize scale at the legs/feet area.
+- Tabletop / desk accessories (lamp, vase, book, plate, mug, decor): place the asset on a desk/table at standing height (~75cm), with a seated or standing human silhouette at that desk so the asset's size at desktop level is clear.
+- Wall-mounted (artwork, wall lamp, mirror): silhouette standing in front of the wall, asset mounted at typical viewing height (~150cm center).
+- Ceiling-mounted (pendant lamp, ceiling fan): silhouette standing on the floor below; asset at ceiling height (~240cm).
+- Outdoor / vehicle / architectural (car, bike, gate, fence): silhouette beside the asset at full body scale, ground line clearly visible.
+
+Composition rules:
+- Asset is the main subject, rendered in a clean 3/4 perspective view (slightly left of center). Faithfully preserve the EXACT form, materials, colors, and design details from the source reference image — do not redesign.
+- Silhouette is semi-transparent monochrome gray, simplified neutral pose, must NOT visually compete with the asset.
+- Background: light gray gradient studio with a subtle metric grid on the floor (every 10cm) for measurement reference.
+- Aspect ratio: 16:9 wide.
+
+Always append these tokens to the prompt:
+"high resolution, ultra-detailed, sharp focus, scale reference image, human silhouette for size verification, neutral gray studio background with 10cm metric grid, faithful to source reference, game asset reference for inZOI"
+
+Output ONLY the final image-generation prompt — no quotes, no explanations.`;
+
+  const userMsg = `User description: ${userPrompt || "(none)"}
+
+Asset context:
+${ctxLines.join("\n") || "(no extra context)"}
+
+The reference image (provided to the image model) defines the asset's exact appearance — keep it identical.
+
+Generate the scale reference image prompt now.`;
+
+  try {
+    const r = await fetch("/api/ai/claude/v1/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1200,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+      }),
+    });
+    if (!r.ok) {
+      console.warn(`[Scale Claude] HTTP ${r.status} — fallback`);
+      return null;
+    }
+    const data = await r.json();
+    const text = data?.content?.[0]?.text;
+    return typeof text === "string" && text.trim() ? text.trim() : null;
+  } catch (e) {
+    console.warn("[Scale Claude] 호출 실패:", e.message);
+    return null;
+  }
+}
+
 // v1.10.105 — Claude 가 형태 복잡도/대칭성을 보고 어떤 추가 직교 뷰가 필요한지 결정.
 // 정면(front) 은 항상 생성, 측/후/상은 단순한 형태면 생략.
 async function decideExtraViewsWithClaude({ userPrompt, catInfo, styleInfo, pf, si }) {
@@ -3200,8 +3332,8 @@ Decide which extra orthographic views are necessary.`;
 }
 
 // v1.10.105 — 다중 직교 뷰 시트. 정면 항상 + Claude 판단으로 측/후/상 조건부.
-// 원본 이미지를 multimodal 참조로 주고 각 뷰별 프롬프트로 병렬 호출.
-// 인체 실루엣/그리드 없음 — 순수 3D 모델링 참조용.
+// v1.10.109 — 스케일 참조 이미지 (인체 실루엣 + 그리드) 1장 항상 추가.
+// 직교 뷰는 원본 보존, 스케일 참조 뷰는 별도 프롬프트 (실루엣/그리드 포함).
 async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, card, onProgress }) {
   const catInfo = card.data?.category ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category) : null;
   const styleInfo = card.data?.style_preset ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset) : null;
@@ -3210,25 +3342,54 @@ async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, card, 
   const userPrompt = card.data?.prompt || card.description || card.title || "";
   const contextLabel = catInfo?.label || "furniture asset";
 
-  // 1) Claude 가 추가 뷰 필요성 판단
+  // 1) Claude 호출 2개 병렬 — (a) 추가 뷰 필요성 (b) 스케일 참조 프롬프트
   let viewDecision = { side: false, back: false, top: false, reasoning: null };
+  let scalePrompt = null;
   try {
-    viewDecision = await decideExtraViewsWithClaude({ userPrompt, catInfo, styleInfo, pf, si });
-    const need = ["side", "back", "top"].filter((k) => viewDecision[k]);
-    console.log(`[Sheet] 추가 뷰 판단: ${need.length ? need.join(", ") : "(없음 — 정면만)"} — ${viewDecision.reasoning || ""}`);
+    const [vRes, sRes] = await Promise.allSettled([
+      decideExtraViewsWithClaude({ userPrompt, catInfo, styleInfo, pf, si }),
+      buildScalePromptWithClaude({ userPrompt, catInfo, styleInfo, pf, si }),
+    ]);
+    if (vRes.status === "fulfilled" && vRes.value) {
+      viewDecision = vRes.value;
+      const need = ["side", "back", "top"].filter((k) => viewDecision[k]);
+      console.log(`[Sheet] 추가 뷰 판단: ${need.length ? need.join(", ") : "(없음 — 정면만)"} — ${viewDecision.reasoning || ""}`);
+    }
+    if (sRes.status === "fulfilled" && sRes.value) {
+      scalePrompt = sRes.value;
+      console.log(`[Sheet] Claude 스케일 프롬프트 (${scalePrompt.length}자)`);
+    }
   } catch (e) {
     console.warn("[Sheet] Claude 예외:", e.message);
   }
 
-  // 2) 생성할 뷰 결정 — front 는 항상, 나머지는 Claude 판단
-  const viewsToGenerate = SHEET_VIEWS.filter((v) => v.id === "front" || viewDecision[v.id]);
-  const total = viewsToGenerate.length;
+  // 2) 스케일 프롬프트 fallback — Claude 실패 시 카테고리/사이즈 기반 자동 빌드
+  if (!scalePrompt) {
+    const toEnglish = (id) => typeof id === "string" ? id.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().trim() : "";
+    const englishCat = catInfo ? toEnglish(catInfo.id) : "furniture asset";
+    const heightCm = Number(si.height_cm) || 0;
+    const placement = heightCm >= 80
+      ? "stylized human silhouette standing next to the asset at full body scale"
+      : heightCm > 0 && heightCm < 80
+        ? "stylized human silhouette bending or sitting beside it; scale visible at the legs/feet area"
+        : "stylized human silhouette in a context-appropriate pose for the object";
+    scalePrompt = `Scale reference image of a ${englishCat} faithfully reproduced from the source reference. `
+      + `Composition: asset shown in clean 3/4 perspective at center-left, ${placement}. `
+      + `Background: light gray gradient studio with a subtle 10cm metric grid on the floor. `
+      + `${userPrompt} `
+      + `high resolution, ultra-detailed, sharp focus, scale reference image, human silhouette for size verification, neutral gray studio background with 10cm metric grid, faithful to source reference, game asset reference for inZOI`;
+    console.log("[Sheet] 스케일 fallback 프롬프트 사용");
+  }
+
+  // 3) 생성 작업 빌드 — 직교 뷰 (조건부) + 스케일 참조 (항상 1장)
+  const orthoToGenerate = SHEET_VIEWS.filter((v) => v.id === "front" || viewDecision[v.id]);
+  const total = orthoToGenerate.length + 1; // +1 for scale
   let done = 0;
   const report = () => onProgress?.(done, total);
   report();
 
-  // 3) 각 뷰 병렬 생성 — 원본 형태/색 보존을 강조하는 프롬프트
-  const tasks = viewsToGenerate.map((v) => (async () => {
+  // 직교 뷰 — 원본 형태/색 보존 강조 (실루엣/그리드 없음)
+  const orthoTasks = orthoToGenerate.map((v) => (async () => {
     const prompt = `Render a ${v.prompt} of this ${contextLabel}. `
       + (userPrompt ? `Asset description: ${userPrompt}. ` : "")
       + `CRITICAL: faithfully preserve the EXACT form, silhouette, proportions, materials, colors, textures, and design details from the source reference image — do not redesign, restyle, or interpret. Reproduce the same object accurately from the requested angle. `
@@ -3245,15 +3406,29 @@ async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, card, 
     }
   }));
 
-  const results = await Promise.all(tasks.map((t) => t()));
+  // 스케일 참조 뷰 — 인체 실루엣 + 10cm 그리드 포함
+  const scaleTask = (async () => {
+    try {
+      const raw = await generateImageWithGemini(apiKey, scalePrompt, model, [sourceImageUrl]);
+      const uploaded = await uploadDataUrl(raw);
+      done += 1; report();
+      return { view: "scale", label: "스케일", imageUrl: uploaded };
+    } catch (err) {
+      done += 1; report();
+      return { view: "scale", label: "스케일", imageUrl: null, error: err.message };
+    }
+  })();
+
+  const results = await Promise.all([...orthoTasks.map((t) => t()), scaleTask]);
 
   const views = {};
   for (const r of results) {
     if (r.imageUrl) views[r.view] = r.imageUrl;
   }
   return {
-    views,                            // { front, side?, back?, top? }
+    views,                            // { front, side?, back?, top?, scale }
     viewDecision,
+    scalePrompt,
     failed: results.filter((r) => !r.imageUrl).length,
     totalRequested: results.length,
   };
@@ -4486,7 +4661,8 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
     // v1.10.103 — 단일 이미지(views.single) 는 legacy. v1.10.105 부터는 직교 뷰로 복귀.
     const hasSingle = !!views?.single;
     const hasOrtho = !!views && (views.front || views.side || views.back || views.top);
-    const hasViews = hasSingle || hasOrtho;
+    const hasScale = !!views?.scale;
+    const hasViews = hasSingle || hasOrtho || hasScale;
     // 소스 이미지 우선순위: 선정된 시안 → 첫 이미지 있는 시안 → 카드 썸네일.
     const fallbackDesign = !selectedDesign?.imageUrl
       ? designs.find((d) => d?.imageUrl) || null
@@ -4535,8 +4711,9 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
             data: {
               ...(card.data || {}),
               concept_sheet_views: {
-                ...result.views,                  // { front, side?, back?, top? }
+                ...result.views,                  // { front, side?, back?, top?, scale }
                 view_decision: result.viewDecision || null,
+                scale_prompt: result.scalePrompt || null,  // v1.10.109 — 스케일 참조 프롬프트 보관
                 model: selectedModel,
                 generated_at: new Date().toISOString(),
                 source_image_url: sourceImageUrl,
@@ -4578,57 +4755,107 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           </div>
         )}
 
-        {hasOrtho ? (
+        {hasOrtho || hasScale ? (
           // v1.10.105 — 다중 직교 뷰 동적 렌더링. 정면 항상, 측/후/상 은 있을 때만.
+          // v1.10.109 — 스케일 참조 이미지 (인체 실루엣 포함) 1장 항상 추가 표시.
           (() => {
-            const presentViews = SHEET_VIEWS.filter((v) => views[v.id]);
-            const cols = Math.min(presentViews.length, 2);
+            const presentOrtho = SHEET_VIEWS.filter((v) => views[v.id]);
+            const cols = Math.max(1, Math.min(presentOrtho.length, 2));
+            const totalViews = presentOrtho.length + (hasScale ? 1 : 0);
             return (
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
-                  ✓ 시트 생성됨 ({presentViews.length}뷰){views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {views.model}</span>}
+                  ✓ 시트 생성됨 ({totalViews}뷰{hasScale ? " · 스케일 참조 포함" : ""}){views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {views.model}</span>}
                 </div>
                 {views.view_decision?.reasoning && (
                   <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6, fontStyle: "italic" }}>
                     💭 {views.view_decision.reasoning}
                   </div>
                 )}
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 6 }}>
-                  {presentViews.map((v) => {
-                    const url = views[v.id];
-                    return (
-                      <div key={v.id} style={{
-                        position: "relative", borderRadius: 8, overflow: "hidden",
-                        border: "1px solid var(--surface-border)", background: "#000",
-                      }}>
-                        <img
-                          src={url}
-                          alt={v.label}
-                          onClick={() => onOpenImage?.(url)}
-                          style={{ width: "100%", height: presentViews.length === 1 ? "auto" : 200, objectFit: "contain", display: "block", background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
-                        />
-                        <div style={{
-                          position: "absolute", top: 4, left: 4,
-                          padding: "2px 6px", borderRadius: 4,
-                          background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
-                          pointerEvents: "none",
-                        }}>{v.label}</div>
-                        <a
-                          href={url}
-                          download={`inzoi_${card.id}_${v.id}.png`}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            position: "absolute", bottom: 4, right: 4,
+
+                {presentOrtho.length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 6, marginBottom: hasScale ? 10 : 0 }}>
+                    {presentOrtho.map((v) => {
+                      const url = views[v.id];
+                      return (
+                        <div key={v.id} style={{
+                          position: "relative", borderRadius: 8, overflow: "hidden",
+                          border: "1px solid var(--surface-border)", background: "#000",
+                        }}>
+                          <img
+                            src={url}
+                            alt={v.label}
+                            onClick={() => onOpenImage?.(url)}
+                            style={{ width: "100%", height: presentOrtho.length === 1 ? "auto" : 200, objectFit: "contain", display: "block", background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
+                          />
+                          <div style={{
+                            position: "absolute", top: 4, left: 4,
                             padding: "2px 6px", borderRadius: 4,
-                            background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10,
-                            textDecoration: "none", fontWeight: 600,
-                          }}
-                          title="PNG 저장"
-                        >📥</a>
-                      </div>
-                    );
-                  })}
-                </div>
+                            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
+                            pointerEvents: "none",
+                          }}>{v.label}</div>
+                          <a
+                            href={url}
+                            download={`inzoi_${card.id}_${v.id}.png`}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              position: "absolute", bottom: 4, right: 4,
+                              padding: "2px 6px", borderRadius: 4,
+                              background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10,
+                              textDecoration: "none", fontWeight: 600,
+                            }}
+                            title="PNG 저장"
+                          >📥</a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {hasScale && (
+                  <div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4, fontWeight: 700 }}>
+                      📏 스케일 참조 (인체 실루엣 + 10cm 그리드)
+                    </div>
+                    <div style={{
+                      position: "relative", borderRadius: 8, overflow: "hidden",
+                      border: "1px solid var(--surface-border)", background: "#000",
+                    }}>
+                      <img
+                        src={views.scale}
+                        alt="스케일 참조"
+                        onClick={() => onOpenImage?.(views.scale)}
+                        style={{ width: "100%", display: "block", cursor: onOpenImage ? "zoom-in" : "default", background: "#fff" }}
+                      />
+                      <div style={{
+                        position: "absolute", top: 4, left: 4,
+                        padding: "2px 6px", borderRadius: 4,
+                        background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
+                        pointerEvents: "none",
+                      }}>스케일</div>
+                      <a
+                        href={views.scale}
+                        download={`inzoi_${card.id}_scale.png`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: "absolute", bottom: 6, right: 6,
+                          padding: "4px 10px", borderRadius: 6,
+                          background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 11,
+                          textDecoration: "none", fontWeight: 700,
+                        }}
+                        title="PNG 저장"
+                      >📥 저장</a>
+                    </div>
+                    {views.scale_prompt && (
+                      <details style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+                        <summary style={{ cursor: "pointer" }}>📝 스케일 프롬프트 보기</summary>
+                        <div style={{ marginTop: 4, padding: 8, borderRadius: 6, background: "rgba(0,0,0,0.03)", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "monospace", fontSize: 10, lineHeight: 1.5, maxHeight: 200, overflowY: "auto" }}>
+                          {views.scale_prompt}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()
@@ -4667,7 +4894,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           </div>
         ) : (
           <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
-            정면 직교 뷰 + 형태가 복잡하면 측/후/상 추가 뷰를 자동 생성합니다.
+            정면 직교 뷰 + 형태가 복잡하면 측/후/상 추가 + 스케일 참조 (인체 실루엣) 1장.
           </div>
         )}
 
