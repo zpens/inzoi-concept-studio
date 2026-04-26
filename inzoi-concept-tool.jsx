@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.83";
+const APP_VERSION = "1.10.84";
 const CHANGELOG = [
+  {
+    version: "1.10.84",
+    date: "2026-04-26",
+    changes: [
+      "위시 단계에서도 시안 생성 가능 — DesignsPanel 의 생성 UI(추가 프롬프트 + N개 생성) 가 drafting 만이 아니라 위시 stage 에서도 노출. 카드를 시안 단계로 옮기지 않고도 바로 이미지 생성 시도 가능. 프롬프트는 card.data.prompt 또는 description/title fallback 사용",
+      "WishlistToDraftingAction (→ 시안 단계로 이동 버튼) 은 그대로 유지 — 사용자가 명시적으로 단계 이동 원할 때 사용",
+    ],
+  },
   {
     version: "1.10.83",
     date: "2026-04-26",
@@ -8377,8 +8385,9 @@ function DesignsPanel({
         </div>
       </div>
 
-      {/* 시안 생성 — drafting 단계에서만 노출 (v1.10.57: 구 CardActionPanel 흡수) */}
-      {statusKey === "drafting" && !disabled && (
+      {/* 시안 생성 — drafting / wishlist 단계 모두 노출 (v1.10.84: 위시 단계에서도 직접 생성 가능).
+          위시 카드도 description/title 만 있으면 doGenerate 가 그것을 prompt fallback 으로 사용. */}
+      {(statusKey === "drafting" || statusKey === "wishlist") && !disabled && (
         <div style={{
           marginBottom: 10, padding: 10, borderRadius: 10,
           background: "linear-gradient(135deg, rgba(7,110,232,0.05), rgba(139,92,246,0.03))",
