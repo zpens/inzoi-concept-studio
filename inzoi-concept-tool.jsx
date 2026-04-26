@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.95";
+const APP_VERSION = "1.10.96";
 const CHANGELOG = [
+  {
+    version: "1.10.96",
+    date: "2026-04-26",
+    changes: [
+      "어셋 정보 없을 때 시안 생성 자동 분류 선행 — DesignsPanel.doGenerate 가 prompt/description 모두 비어있고 이미지(ref 또는 thumbnail)만 있으면 classifyCategoryWithGemini + generatePromptFromImage 자동 실행 후 그 결과(category, style, posmap, size, prompt) 를 PATCH 저장하고 새 prompt 로 시안 생성. 사용자가 별도로 자동 분류 누를 필요 없음",
+      "버튼 라벨이 단계별로 변경: '🎨 N개 생성' → '🤖 어셋 정보 자동 분류 중...' → '생성 중… (1/4)'",
+      "이미지도 prompt 도 없으면 alert 메시지 갱신: '프롬프트, 설명, 또는 이미지가 필요합니다'",
+    ],
+  },
   {
     version: "1.10.95",
     date: "2026-04-26",
@@ -8614,20 +8623,74 @@ function DesignsPanel({
   };
 
   // v1.10.57 — 시안 생성 (구 CardActionPanel.doGenerate 흡수). drafting 단계에서만 노출.
+  // v1.10.96 — 어셋 정보(prompt) 가 비어있고 이미지가 있으면 자동 분류부터 실행 후 그 결과로 생성.
   const doGenerate = async () => {
     if (!geminiApiKey) { onOpenApiSettings?.(); return; }
-    const basePrompt = card.data?.prompt || card.description || card.title;
-    if (!basePrompt) { alert("시안 생성을 위해 카드 설명 또는 프롬프트가 필요합니다."); return; }
+    setBusy(true);
+    onGenerateProgress?.(card, 0, count);
+
+    // 1) 자동 분류 선행 — prompt/description 모두 없고 이미지가 있으면.
+    let workingCard = card;
+    let basePrompt = card.data?.prompt || card.description || card.title;
+    const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+    const imgSrc = refs[0] || card.thumbnail_url;
+    const needsAutoClassify = !card.data?.prompt && !card.description && imgSrc;
+    if (needsAutoClassify) {
+      setProgress({ done: 0, total: count, label: "🤖 어셋 정보 자동 분류 중..." });
+      try {
+        const [clsResult, promptResult] = await Promise.allSettled([
+          classifyCategoryWithGemini(geminiApiKey, imgSrc),
+          generatePromptFromImage(geminiApiKey, imgSrc, card.title),
+        ]);
+        const clsR = clsResult.status === "fulfilled" ? clsResult.value : null;
+        const p = promptResult.status === "fulfilled" ? promptResult.value : null;
+        const patch = {};
+        if (clsR?.category_id) patch.category = clsR.category_id;
+        if (clsR?.style_id) patch.style_preset = clsR.style_id;
+        if (clsR?.posmap_features) patch.posmap_features = clsR.posmap_features;
+        if (clsR?.size_info) {
+          patch.size_info = {
+            width_cm: clsR.size_info.width_cm,
+            depth_cm: clsR.size_info.depth_cm,
+            height_cm: clsR.size_info.height_cm,
+            source: "ai",
+            confidence: clsR.size_info.confidence,
+            reason: clsR.size_info.reason,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        if (p) {
+          patch.prompt = p;
+          basePrompt = p;
+        }
+        if (Object.keys(patch).length > 0) {
+          await save(patch);
+          // save 가 onRefresh 호출하지만 workingCard 는 로컬에서 만들어 사용 (prompt 즉시 반영).
+          workingCard = { ...card, data: { ...(card.data || {}), ...patch } };
+        }
+      } catch (e) {
+        console.warn("[자동 분류 + 시안 생성] 자동 분류 실패, 기존 fallback 으로 진행:", e.message);
+      }
+    }
+
+    // 2) prompt 검증
+    if (!basePrompt) {
+      setBusy(false);
+      setProgress(null);
+      onGenerateEnd?.(card);
+      alert("시안 생성을 위해 프롬프트, 설명, 또는 이미지가 필요합니다.");
+      return;
+    }
+
+    // 3) 시안 생성
     const extra = extraPrompt.trim();
     const prompt = extra ? `${basePrompt}. Additionally apply: ${extra}` : basePrompt;
-    setBusy(true);
     setProgress({ done: 0, total: count });
-    onGenerateProgress?.(card, 0, count);
     try {
       const r = await generateCardVariants({
-        card, count, prompt, geminiApiKey, selectedModel,
+        card: workingCard, count, prompt, geminiApiKey, selectedModel,
         slug: projectSlug, actor,
-        extraPromptToSave: extra, // v1.10.58 — 동일 PATCH 에 last_extra_prompt 함께 저장
+        extraPromptToSave: extra,
         onProgress: (done, total) => {
           setProgress({ done, total });
           onGenerateProgress?.(card, done, total);
@@ -8977,7 +9040,9 @@ function DesignsPanel({
               }}
             >
               {busy
-                ? `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`
+                ? (progress?.label
+                    ? progress.label
+                    : `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
                 : `🎨 ${count}개 생성`}
             </button>
           </div>
