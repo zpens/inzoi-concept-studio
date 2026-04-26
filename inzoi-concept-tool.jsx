@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.102";
+const APP_VERSION = "1.10.103";
 const CHANGELOG = [
+  {
+    version: "1.10.103",
+    date: "2026-04-27",
+    changes: [
+      "시트 4뷰 → 단일 이미지 + 인체 실루엣 스케일 참조 — Claude Sonnet 이 카드의 카테고리/사이즈/posmap 기반으로 인체 실루엣 배치를 자동 결정해 시트 프롬프트 생성. Gemini 가 단일 고해상도 시트 이미지 생성",
+      "스마트 실루엣 배치 규칙: 큰 가구(소파/침대) 옆에 서있는 사람 / 작은 가구(스툴) 무릎 굽힌 사람 / 탁상 액세서리(램프·꽃병) 책상 + 앉은 사람 / 벽걸이 앞에 서있는 사람 / 천장걸이 아래 서있는 사람 / 차량·아키텍처 옆 전신",
+      "Claude 호출 실패 시 카테고리/높이 기반 자동 fallback 프롬프트로 안전 동작",
+      "data.concept_sheet_views.single 신 형식 + sheet_prompt 기록. legacy 4뷰 (front/side/back/top) 도 history 에서 그대로 렌더 (호환)",
+      "GalleryCanvas(F) 도 single 인식해 시트 그룹에 노출. 버튼 라벨 '4뷰 생성' → '시트 생성 (스케일 참조 포함)'",
+      "사용된 프롬프트 보기 details — '📝 사용된 프롬프트 보기' 펼치면 실제 입력된 영문 프롬프트 확인 가능",
+    ],
+  },
   {
     version: "1.10.102",
     date: "2026-04-26",
@@ -3102,12 +3114,148 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
 // 컨셉시트 4뷰(front/side/back/top) 를 Gemini 3 Flash Image (나노바나나2) 로 생성.
 // 소스 이미지를 multimodal 참조로 주고 각 뷰별 프롬프트로 병렬 호출.
 // onProgress(done, total) 로 진행률 보고.
+// v1.10.103 — 시트 4뷰 → 단일 이미지 (인체 실루엣 스케일 참조 포함).
+// SHEET_VIEWS 는 legacy 4뷰 사용 위치 (history 렌더 호환) 가 있어 유지.
 const SHEET_VIEWS = [
   { id: "front", label: "정면", prompt: "straight-on front view, orthographic perspective" },
   { id: "side",  label: "측면", prompt: "straight-on left side view, orthographic perspective" },
   { id: "back",  label: "후면", prompt: "straight-on back view, orthographic perspective" },
   { id: "top",   label: "상단", prompt: "top-down view, orthographic perspective" },
 ];
+
+// v1.10.103 — Claude 가 카테고리/사이즈 기반으로 인체 실루엣 배치를 결정해 시트 프롬프트 생성.
+async function enhanceSheetPromptWithClaude({ userPrompt, catInfo, styleInfo, pf, si }) {
+  const personalClaudeKey = (() => { try { return localStorage.getItem("claude_api_key") || ""; } catch { return ""; } })();
+  const headers = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (personalClaudeKey) headers["X-Personal-Claude-Key"] = personalClaudeKey;
+  try {
+    const actor = localStorage.getItem("inzoi_actor_name");
+    if (actor) headers["X-Actor-Name"] = encodeURIComponent(actor);
+  } catch { /* ignore */ }
+
+  const ctxLines = [];
+  if (catInfo) ctxLines.push(`Category: ${catInfo.label} / preset: ${catInfo.preset || ""} / group: ${catInfo.group || "?"} / room: ${catInfo.room || "?"}`);
+  if (styleInfo) ctxLines.push(`Style: ${styleInfo.label} (${styleInfo.id})`);
+  if (pf.materials?.length) ctxLines.push(`Materials: ${pf.materials.join(", ")}`);
+  if (pf.colors?.length) ctxLines.push(`Colors: ${pf.colors.join(", ")}`);
+  if (pf.shape?.length) ctxLines.push(`Shape: ${pf.shape.join(", ")}`);
+  if (pf.size) ctxLines.push(`Size class (small/medium/large): ${pf.size}`);
+  if (si.width_cm || si.depth_cm || si.height_cm) {
+    ctxLines.push(`Dimensions: ${si.width_cm || "?"}cm wide × ${si.depth_cm || "?"}cm deep × ${si.height_cm || "?"}cm tall`);
+  }
+
+  const systemPrompt = `You are a concept-sheet prompt engineer for inZOI 3D asset production.
+Output ONE rich English prompt that generates a single comprehensive concept-sheet image showing the asset together with a stylized human silhouette for scale reference.
+
+Silhouette placement rules (decide based on category, room, dimensions):
+- Large floor furniture (sofa, bed, wardrobe, dining table; height ≥ ~80cm OR footprint ≥ ~1m²): full standing or seated human silhouette next to or interacting with the asset.
+- Small floor accessories (stool, side table, basket, low decor; height < ~80cm): silhouette bending / kneeling beside it; emphasize scale at the legs/feet area.
+- Tabletop / desk accessories (lamp, vase, book, plate, mug, decor): place asset on top of a desk or table at standing height (~75cm), with the human silhouette seated or standing at that desk; scale visible at desktop level.
+- Wall-mounted (artwork, wall lamp, mirror): silhouette standing in front of a wall, asset mounted at typical viewing height (~150cm center).
+- Ceiling-mounted (pendant lamp, ceiling fan): silhouette standing on the floor below; asset at ceiling height (~240cm).
+- Outdoor / vehicle / architectural (car, bike, gate, fence): silhouette beside the asset at full body scale, ground line clearly visible.
+
+Composition rules:
+- Asset is the main subject, rendered in a clean 3/4 perspective view (slightly left of center), photoreal stylized inZOI aesthetic.
+- Silhouette is semi-transparent monochrome gray, simplified neutral pose, must NOT visually compete with the asset.
+- Background: light gray gradient studio with a subtle metric grid on the floor (every 10cm) for measurement reference.
+- Aspect ratio: 16:9 wide.
+- Match the chosen style aesthetic.
+
+Always append these tokens to the prompt:
+"high resolution, ultra-detailed, sharp focus, professional product design concept sheet, scale reference with human silhouette, neutral gray studio background, game asset reference for inZOI"
+
+Output ONLY the final image-generation prompt — no quotes, no explanations.`;
+
+  const userMsg = `User description: ${userPrompt || "(none)"}
+
+Asset context:
+${ctxLines.join("\n") || "(no extra context)"}
+
+The reference image (provided to the image model) defines the asset's materials, colors, proportions — keep those consistent in the new image.
+
+Generate the concept sheet prompt now.`;
+
+  try {
+    const r = await fetch("/api/ai/claude/v1/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1200,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+      }),
+    });
+    if (!r.ok) {
+      console.warn(`[Sheet Claude] HTTP ${r.status} — fallback`);
+      return null;
+    }
+    const data = await r.json();
+    const text = data?.content?.[0]?.text;
+    return typeof text === "string" && text.trim() ? text.trim() : null;
+  } catch (e) {
+    console.warn("[Sheet Claude] 호출 실패:", e.message);
+    return null;
+  }
+}
+
+// v1.10.103 — 단일 이미지 시트 생성. Claude 가 프롬프트 다듬고 Gemini 가 생성.
+async function generateConceptSheetSingle({ apiKey, sourceImageUrl, model, card, onProgress }) {
+  const catInfo = card.data?.category ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category) : null;
+  const styleInfo = card.data?.style_preset ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset) : null;
+  const pf = card.data?.posmap_features || {};
+  const si = card.data?.size_info || {};
+  const userPrompt = card.data?.prompt || card.description || card.title || "";
+
+  // 1) Claude 프롬프트 최적화
+  let imagePrompt = null;
+  try {
+    imagePrompt = await enhanceSheetPromptWithClaude({ userPrompt, catInfo, styleInfo, pf, si });
+    if (imagePrompt) console.log("[Sheet] Claude 프롬프트 적용 (" + imagePrompt.length + "자)");
+  } catch (e) {
+    console.warn("[Sheet] Claude 예외:", e.message);
+  }
+
+  // 2) Fallback — Claude 실패 시 카테고리/사이즈 기반 자동 빌드
+  if (!imagePrompt) {
+    const toEnglish = (id) => typeof id === "string" ? id.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().trim() : "";
+    const englishCat = catInfo ? toEnglish(catInfo.id) : "furniture asset";
+    const englishStyle = styleInfo ? toEnglish(styleInfo.id) : "modern";
+    const dims = [
+      si.width_cm ? `${si.width_cm}cm wide` : null,
+      si.depth_cm ? `${si.depth_cm}cm deep` : null,
+      si.height_cm ? `${si.height_cm}cm tall` : null,
+    ].filter(Boolean);
+    const heightCm = Number(si.height_cm) || 0;
+    const placement = heightCm >= 80
+      ? "stylized human silhouette standing next to the asset at full body scale"
+      : heightCm > 0 && heightCm < 80
+        ? "stylized human silhouette bending or sitting beside it; scale visible at the legs/feet area"
+        : "stylized human silhouette in a context-appropriate pose for the object";
+    imagePrompt = `Single comprehensive concept-sheet image of a ${englishCat}, ${englishStyle} style.${dims.length ? " Approximate dimensions: " + dims.join(", ") + "." : ""}
+Composition: asset shown in clean 3/4 perspective view at center-left, ${placement}.
+Background: light gray gradient studio with a subtle 10cm metric grid on the floor.
+Style: photoreal stylized inZOI aesthetic. ${userPrompt}
+high resolution, ultra-detailed, sharp focus, professional product design concept sheet, scale reference with human silhouette, neutral gray studio background, game asset reference for inZOI`;
+    console.log("[Sheet] fallback 프롬프트 사용");
+  }
+
+  // 3) Gemini 생성
+  onProgress?.(0, 1);
+  try {
+    const raw = await generateImageWithGemini(apiKey, imagePrompt, model, [sourceImageUrl]);
+    const uploaded = await uploadDataUrl(raw);
+    onProgress?.(1, 1);
+    return { imageUrl: uploaded, prompt: imagePrompt };
+  } catch (err) {
+    onProgress?.(1, 1);
+    return { imageUrl: null, error: err.message, prompt: imagePrompt };
+  }
+}
 
 async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, contextLabel, onProgress }) {
   const tasks = SHEET_VIEWS.map((v) => async () => {
@@ -4342,7 +4490,10 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   if (statusKey === "sheet") {
     const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
     const views = card.data?.concept_sheet_views || null; // { front, side, back, top }
-    const hasViews = views && (views.front || views.side || views.back || views.top);
+    // v1.10.103 — 단일 이미지(views.single) 또는 legacy 4뷰(front/side/back/top) 모두 인식.
+    const hasSingle = !!views?.single;
+    const hasLegacy = !!views && (views.front || views.side || views.back || views.top);
+    const hasViews = hasSingle || hasLegacy;
     // 소스 이미지 우선순위: 선정된 시안 → 첫 이미지 있는 시안 → 카드 썸네일.
     const fallbackDesign = !selectedDesign?.imageUrl
       ? designs.find((d) => d?.imageUrl) || null
@@ -4360,38 +4511,28 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
       if (!geminiApiKey) { onOpenApiSettings?.(); return; }
       if (!sourceImageUrl) { alert("컨셉시트에 사용할 이미지가 없습니다."); return; }
       setBusy(true);
-      const totalViews = SHEET_VIEWS.length;
-      setProgress({ done: 0, total: totalViews });
-      // 작업큐에도 등록 — 시안 생성과 동일하게 floating queue 에 노출 (v1.10.19 fix).
-      onGenerateProgress?.(card, 0, totalViews);
+      // v1.10.103 — 단일 이미지 시트. Claude 가 카테고리/사이즈 기반으로 인체 실루엣 배치 결정.
+      setProgress({ done: 0, total: 1, label: "🤖 Claude 시트 프롬프트 최적화 중..." });
+      onGenerateProgress?.(card, 0, 1);
       try {
-        const contextLabel = card.data?.category_label || card.title || "furniture asset";
-        const results = await generateConceptSheetViews({
+        const result = await generateConceptSheetSingle({
           apiKey: geminiApiKey,
           sourceImageUrl,
           model: selectedModel,
-          contextLabel,
+          card,
           onProgress: (done, total) => {
-            setProgress({ done, total });
+            setProgress({ done, total, label: done === 0 ? "🎨 Gemini 시트 이미지 생성 중..." : null });
             onGenerateProgress?.(card, done, total);
           },
         });
-        const viewsObj = {};
-        for (const r of results) {
-          if (r?.imageUrl) viewsObj[r.view] = r.imageUrl;
-        }
-        const failed = SHEET_VIEWS.length - Object.keys(viewsObj).length;
-        if (Object.keys(viewsObj).length === 0) {
-          alert("컨셉시트 4뷰 생성 전부 실패. 다시 시도해주세요.");
+        if (!result.imageUrl) {
+          alert(`시트 생성 실패: ${result.error || "알 수 없는 오류"}\n\nF12 콘솔 [Sheet] 로그에서 자세히 확인 가능`);
           return;
         }
-        const front = viewsObj.front || viewsObj.side || viewsObj.back || viewsObj.top || null;
-        // 재생성 시 기존 시트를 삭제하지 않고 concept_sheet_history 에 보존 (v1.10.20).
+        // 재생성 시 기존 시트를 history 에 보존.
         const existingViews = card.data?.concept_sheet_views || null;
         const prevHistory = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
-        const nextHistory = existingViews
-          ? [existingViews, ...prevHistory] // 최신이 앞, 이전 기록 뒤로
-          : prevHistory;
+        const nextHistory = existingViews ? [existingViews, ...prevHistory] : prevHistory;
         await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -4399,26 +4540,26 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
             data: {
               ...(card.data || {}),
               concept_sheet_views: {
-                ...viewsObj,
+                single: result.imageUrl,         // v1.10.103 — 단일 이미지 형식
                 model: selectedModel,
                 generated_at: new Date().toISOString(),
                 source_image_url: sourceImageUrl,
                 source_seed: sourceSeed,
+                sheet_prompt: result.prompt,     // 어떤 프롬프트로 생성됐는지 보관
               },
               concept_sheet_history: nextHistory,
-              concept_sheet_url: front, // 정면뷰(또는 가용 첫 뷰) 를 기존 필드에도 저장
+              concept_sheet_url: result.imageUrl,
             },
-            thumbnail_url: front || card.thumbnail_url,
+            thumbnail_url: result.imageUrl || card.thumbnail_url,
             actor,
           }),
         });
         await onRefresh();
-        if (failed > 0) alert(`${failed}개 뷰 생성 실패 — 재생성으로 다시 시도할 수 있습니다.`);
       } catch (e) {
         alert("컨셉시트 생성 실패: " + e.message);
       } finally {
         setBusy(false); setProgress(null);
-        onGenerateEnd?.(card); // 작업큐에서 제거
+        onGenerateEnd?.(card);
       }
     };
 
@@ -4439,10 +4580,48 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           </div>
         )}
 
-        {hasViews ? (
+        {hasSingle ? (
+          // v1.10.103 — 단일 이미지 풀폭 렌더링
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
-              ✓ 4뷰 생성됨 {views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {views.model}</span>}
+              ✓ 시트 생성됨 (인체 실루엣 스케일 참조 포함){views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {views.model}</span>}
+            </div>
+            <div style={{
+              position: "relative", borderRadius: 8, overflow: "hidden",
+              border: "1px solid var(--surface-border)", background: "#000",
+            }}>
+              <img
+                src={views.single}
+                alt="시트"
+                onClick={() => onOpenImage?.(views.single)}
+                style={{ width: "100%", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
+              />
+              <a
+                href={views.single}
+                download={`inzoi_${card.id}_sheet.png`}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: "absolute", bottom: 6, right: 6,
+                  padding: "4px 10px", borderRadius: 6,
+                  background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 11,
+                  textDecoration: "none", fontWeight: 700,
+                }}
+                title="PNG 저장"
+              >📥 저장</a>
+            </div>
+            {views.sheet_prompt && (
+              <details style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+                <summary style={{ cursor: "pointer" }}>📝 사용된 프롬프트 보기</summary>
+                <div style={{ marginTop: 4, padding: 8, borderRadius: 6, background: "rgba(0,0,0,0.03)", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "monospace", fontSize: 10, lineHeight: 1.5, maxHeight: 200, overflowY: "auto" }}>
+                  {views.sheet_prompt}
+                </div>
+              </details>
+            )}
+          </div>
+        ) : hasLegacy ? (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
+              ✓ 4뷰 생성됨 (legacy) {views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {views.model}</span>}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
               {SHEET_VIEWS.map((v) => {
@@ -4490,7 +4669,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
           </div>
         ) : (
           <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
-            정면 · 측면 · 후면 · 상단 4장을 Gemini 로 생성합니다.
+            인체 실루엣 스케일 참조 포함 단일 시트 이미지를 생성합니다.
           </div>
         )}
 
@@ -4507,7 +4686,16 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                   <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
                     {h.generated_at ? formatLocalTime(h.generated_at, "full") : "시점 불명"}
                     {h.model && ` · ${h.model}`}
+                    {h.single ? " · 단일 시트" : " · 4뷰 (legacy)"}
                   </div>
+                  {h.single ? (
+                    <img
+                      src={h.single}
+                      alt="이전 시트"
+                      onClick={() => onOpenImage?.(h.single)}
+                      style={{ width: "100%", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
+                    />
+                  ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
                     {SHEET_VIEWS.map((v) => {
                       const url = h[v.id];
@@ -4525,6 +4713,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                       );
                     })}
                   </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -4541,11 +4730,11 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
               border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
               cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
             }}
-            title={!geminiApiKey ? "Gemini API 키 필요" : canMakeSheet ? `${sourceLabel} 으로 4뷰 생성` : "시안 또는 카드 이미지 필요"}
+            title={!geminiApiKey ? "Gemini API 키 필요" : canMakeSheet ? `${sourceLabel} 으로 시트 생성 (스케일 참조 포함)` : "시안 또는 카드 이미지 필요"}
           >
             {busy
-              ? `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`
-              : hasViews ? "🔄 재생성" : "🎨 4뷰 생성 (Gemini)"}
+              ? (progress?.label ? progress.label : `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
+              : hasViews ? "🔄 시트 재생성" : "🎨 시트 생성 (스케일 참조 포함)"}
           </button>
         </div>
 
@@ -6245,18 +6434,25 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       if (items.length) out.push({ key: "designs", title: `🎨 시안 (${items.length})`, items });
     }
     const v = card.data?.concept_sheet_views;
-    if (v && (v.front || v.side || v.back || v.top)) {
-      const items = dedup(["front", "side", "back", "top"].filter((k) => v[k]).map((k) => ({
-        url: v[k], type: "sheet",
-        label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
-        isCover: v[k] === hero,
-        meta: {
-          kind: "현재 시트",
-          view: k,
-          model: v.model || null,
-          createdAt: v.generated_at || null,
-        },
-      })));
+    // v1.10.103 — single 또는 legacy 4뷰 모두 인식
+    if (v && (v.single || v.front || v.side || v.back || v.top)) {
+      const sheetItems = [];
+      if (v.single) {
+        sheetItems.push({
+          url: v.single, type: "sheet",
+          label: "시트", isCover: v.single === hero,
+          meta: { kind: "현재 시트", model: v.model || null, createdAt: v.generated_at || null },
+        });
+      }
+      ["front", "side", "back", "top"].forEach((k) => {
+        if (v[k]) sheetItems.push({
+          url: v[k], type: "sheet",
+          label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
+          isCover: v[k] === hero,
+          meta: { kind: "현재 시트", view: k, model: v.model || null, createdAt: v.generated_at || null },
+        });
+      });
+      const items = dedup(sheetItems);
       if (items.length) {
         out.push({
           key: "sheet-current",
@@ -6267,17 +6463,28 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     }
     const history = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
     history.forEach((h, hi) => {
-      const items = dedup(["front", "side", "back", "top"].filter((k) => h[k]).map((k) => ({
-        url: h[k], type: "sheet-history",
-        label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
-        isCover: h[k] === hero,
-        meta: {
-          kind: `이전 시트 ${hi + 1}`,
-          view: k,
-          model: h.model || null,
-          createdAt: h.generated_at || null,
-        },
-      })));
+      const histItems = [];
+      if (h.single) {
+        histItems.push({
+          url: h.single, type: "sheet-history",
+          label: "시트", isCover: h.single === hero,
+          meta: { kind: `이전 시트 ${hi + 1}`, model: h.model || null, createdAt: h.generated_at || null },
+        });
+      }
+      ["front", "side", "back", "top"].forEach((k) => {
+        if (h[k]) histItems.push({
+          url: h[k], type: "sheet-history",
+          label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
+          isCover: h[k] === hero,
+          meta: {
+            kind: `이전 시트 ${hi + 1}`,
+            view: k,
+            model: h.model || null,
+            createdAt: h.generated_at || null,
+          },
+        });
+      });
+      const items = dedup(histItems);
       if (items.length) {
         out.push({
           key: `sheet-history-${hi}`,
