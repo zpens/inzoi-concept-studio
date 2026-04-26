@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.76";
+const APP_VERSION = "1.10.77";
 const CHANGELOG = [
+  {
+    version: "1.10.77",
+    date: "2026-04-26",
+    changes: [
+      "메인 콘텐츠 폭 1400 → 1600 (모든 main wrapper / sticky 헤더 / API 안내 동시 적용) — 와이드 모니터에서 카드 한 줄에 더 많이 노출",
+      "헤더 좌측 tagline 'AI-Powered Furniture Asset Concept Generator' 제거 — 좌측 브랜딩 슬림화",
+      "헤더 레이아웃 flex space-between → 3-column grid (1fr auto 1fr) — [위시][진행 중][완료] 탭이 좌/우 그룹 폭과 무관하게 화면 정중앙 고정",
+      "헤더 좌우 padding 40 → 24 (탭 가운데 정렬과 균형 맞춤)",
+    ],
+  },
   {
     version: "1.10.76",
     date: "2026-04-26",
@@ -10358,9 +10368,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* Header */}
       <header className="glass-panel" style={{
-        padding: "12px 40px",
+        padding: "12px 24px",
         borderBottom: "1px solid var(--surface-border)",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
+        // v1.10.77 — 3 컬럼 grid 로 좌/중/우 배치. 가운데 탭이 화면 중앙에 정확히 위치.
+        display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12,
         position: "sticky", top: 0, zIndex: 100,
         boxShadow: "0 4px 30px rgba(0, 0, 0, 0.5)",
       }}>
@@ -10384,9 +10395,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   v{APP_VERSION}
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em", fontWeight: 500 }}>
-                AI-Powered Furniture Asset Concept Generator
-              </div>
+              {/* v1.10.77 — tagline 제거로 좌측 브랜딩 폭 축소 */}
             </div>
           </div>
           {/* 헤더 전체 카드 검색 — 제목/설명/업데이트 태그/카테고리/스타일 라벨 매칭 */}
@@ -10570,7 +10579,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         })()}
 
         {/* Right: Settings + New Start button */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 160, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
           {/* 저장 상태 작은 인디케이터 (프로젝트는 전체 공유 하나라 URL 공유 UI 는 제거). */}
           {syncStatus !== "idle" && (
             <span style={{
@@ -10658,7 +10667,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         };
 
         return (
-          <main style={{ padding: "32px 40px 0", maxWidth: 1400, margin: "0 auto" }}>
+          <main style={{ padding: "32px 40px 0", maxWidth: 1600, margin: "0 auto" }}>
             {/* 제목 ~ 업데이트 chip 까지는 sticky 로 고정, 아래 카드만 스크롤.
                 v1.10.54 — 좌/우 끝을 카드와 통일 (음수 margin 제거). */}
             <div style={{
@@ -10855,7 +10864,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         return (
           <>
             <div style={{
-              margin: "8px 40px 0", maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
+              margin: "8px 40px 0", maxWidth: 1600, marginLeft: "auto", marginRight: "auto",
               borderTop: "1px solid var(--surface-border)", paddingTop: 20,
               display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
@@ -10881,7 +10890,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* Content — 상세 모드일 때만 렌더 */}
       <main style={{
-        padding: "0 40px 60px", maxWidth: 1400, margin: "0 auto",
+        padding: "0 40px 60px", maxWidth: 1600, margin: "0 auto",
         display: showWorkflowDetail ? "block" : "none",
       }}>
 
@@ -12053,7 +12062,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           margin: "0 40px 40px", padding: 20, borderRadius: 12,
           background: geminiApiKey ? "rgba(16,185,129,0.05)" : "rgba(239,68,68,0.05)",
           border: `1px solid ${geminiApiKey ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
-          maxWidth: 1400, marginLeft: "auto", marginRight: "auto",
+          maxWidth: 1600, marginLeft: "auto", marginRight: "auto",
         }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: geminiApiKey ? "#10b981" : "#ef4444", marginBottom: 8 }}>
             {geminiApiKey
@@ -12088,7 +12097,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* ═══ Completed Tab ═══ */}
       {activeTab === "completed" && (
-        <main style={{ padding: "40px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+        <main style={{ padding: "40px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
           {/* 제목 ~ 업데이트 chip 까지 sticky. v1.10.54 — 좌/우 끝 통일. */}
           <div style={{
             position: "sticky", top: 64, zIndex: 50,
@@ -12226,7 +12235,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* ═══ Wishlist Tab ═══ */}
       {activeTab === "wishlist" && (
-        <main style={{ padding: "32px 40px 60px", maxWidth: 1400, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+        <main style={{ padding: "32px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
           {/* 제목 ~ 업데이트 chip 까지 sticky. v1.10.54 — 좌/우 끝 통일. */}
           <div style={{
             position: "sticky", top: 64, zIndex: 50,
