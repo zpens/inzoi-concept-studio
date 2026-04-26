@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.96";
+const APP_VERSION = "1.10.97";
 const CHANGELOG = [
+  {
+    version: "1.10.97",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 참조 이미지를 ⭐ 대표로 지정해도 카드 썸네일이 안 바뀌던 문제 — CardHubCard / CardListRow / 상세 모달 좌측 대표이미지 모두 'designs.length === 1 이면 그 시안을 우선' 로직(v1.10.0) 때문에 사용자의 명시 설정이 무시됐음. 우선순위 뒤집어 card.thumbnail_url 이 최우선, 없을 때만 단일 시안 자동 fallback",
+      "결과: 시안 1장 + 참조 1장 카드에서 참조를 ⭐ 대표로 지정 → 카드 그리드/리스트/상세 좌측에 그 참조 이미지 즉시 반영",
+    ],
+  },
   {
     version: "1.10.96",
     date: "2026-04-26",
@@ -5426,12 +5434,13 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
   };
   const stopClick = (e) => e.stopPropagation();
 
-  // 썸네일 우선순위:
-  // 1) 시안 이미지가 단 한 개뿐이면 무조건 대표 (v1.10.0 — 하나일 땐 선택 여지 없음).
-  // 2) 그 외엔 사용자가 '대표' 버튼으로 명시 설정한 card.thumbnail_url.
+  // 썸네일 우선순위 (v1.10.97 변경):
+  // 1) 사용자가 ⭐ 대표 버튼으로 명시 설정한 card.thumbnail_url 이 최우선
+  //    (참조 이미지를 대표로 지정해도 카드에 반영되도록).
+  // 2) 명시 설정 없으면 시안 1개일 때 그 한 장을 자동으로.
   // 3) 없으면 탭별 fallback.
   const singleImage = designs.length === 1 && designs[0]?.imageUrl ? designs[0].imageUrl : null;
-  let thumb = singleImage || card.thumbnail_url;
+  let thumb = card.thumbnail_url || singleImage;
   if (!thumb) {
     if (tabId === "sheet" || tabId === "completed") {
       thumb = data.concept_sheet_url || selected?.imageUrl;
@@ -9381,12 +9390,13 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
   const selectedIdx = typeof data.selected_design === "number" ? data.selected_design : null;
   const selected = selectedIdx != null ? designs[selectedIdx] : null;
 
-  // 썸네일 우선순위:
-  // 1) 시안 이미지가 단 한 개뿐이면 무조건 대표 (v1.10.0 — 하나일 땐 선택 여지 없음).
-  // 2) 그 외엔 사용자가 '대표' 버튼으로 명시 설정한 card.thumbnail_url.
+  // 썸네일 우선순위 (v1.10.97 변경):
+  // 1) 사용자가 ⭐ 대표 버튼으로 명시 설정한 card.thumbnail_url 이 최우선
+  //    (참조 이미지를 대표로 지정해도 카드에 반영되도록).
+  // 2) 명시 설정 없으면 시안 1개일 때 그 한 장을 자동으로.
   // 3) 없으면 탭별 fallback.
   const singleImage = designs.length === 1 && designs[0]?.imageUrl ? designs[0].imageUrl : null;
-  let thumb = singleImage || card.thumbnail_url;
+  let thumb = card.thumbnail_url || singleImage;
   if (!thumb) {
     if (tabId === "sheet" || tabId === "completed") {
       thumb = data.concept_sheet_url || selected?.imageUrl;
@@ -13881,11 +13891,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   />
 
-                  {/* 3) 대표이미지 — 시안이 단 하나면 그 이미지로, 아니면 card.thumbnail_url */}
+                  {/* 3) 대표이미지 — v1.10.97: 명시 thumbnail_url 우선, 없으면 단일 시안. */}
                   {(() => {
                     const ds = Array.isArray(card.data?.designs) ? card.data.designs : [];
                     const single = ds.length === 1 && ds[0]?.imageUrl ? ds[0].imageUrl : null;
-                    const src = single || card.thumbnail_url;
+                    const src = card.thumbnail_url || single;
                     return src ? (
                       <div style={{
                         background: "rgba(0,0,0,0.04)", padding: 16, borderRadius: 12,
