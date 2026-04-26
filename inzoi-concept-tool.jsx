@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.101";
+const APP_VERSION = "1.10.102";
 const CHANGELOG = [
+  {
+    version: "1.10.102",
+    date: "2026-04-26",
+    changes: [
+      "DesignsPanel 시안 타일의 '☆ 선정' / '⭐ 선정' 라벨을 '☆ 대표' / '⭐ 대표' 로 변경 — 사용자가 카드 대표 이미지(썸네일) 지정 방법을 직관적으로 인식. tooltip 도 '이 시안을 카드 대표 이미지(썸네일)로 지정' 으로 갱신",
+    ],
+  },
   {
     version: "1.10.101",
     date: "2026-04-26",
@@ -9009,23 +9016,24 @@ function DesignsPanel({
           background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
           pointerEvents: "none",
         }}>{renderBadge(d, i)}</div>
+        {/* v1.10.102 — 라벨 '선정' → '대표' 로 변경. 카드 썸네일(thumbnail_url) 지정 의미 명확화. */}
         {isSelected ? (
           <div style={{
             position: "absolute", top: 4, right: 4,
             padding: "1px 6px", borderRadius: 4,
             background: "#fbbf24", color: "#000", fontSize: 10, fontWeight: 800,
-          }}>⭐ 선정</div>
+          }}>⭐ 대표</div>
         ) : !disabled && d?.imageUrl && (
           <button
             onClick={() => selectDesign(i)}
-            title="이 시안을 대표로 선정 (카드 썸네일도 함께 갱신)"
+            title="이 시안을 카드 대표 이미지(썸네일)로 지정"
             style={{
               position: "absolute", top: 4, right: 4,
               padding: "2px 8px", borderRadius: 4,
               background: "rgba(255,255,255,0.92)", border: "1px solid rgba(0,0,0,0.12)",
               color: "var(--text-main)", fontSize: 10, fontWeight: 700, cursor: "pointer",
             }}
-          >☆ 선정</button>
+          >☆ 대표</button>
         )}
         {/* 👍 투표 버튼 + 카운트 — 좌측 하단 (v1.10.41) */}
         {d?.imageUrl && !disabled && (
