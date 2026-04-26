@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.79";
+const APP_VERSION = "1.10.80";
 const CHANGELOG = [
+  {
+    version: "1.10.80",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 진행 중 탭에서 삭제 안 되던 '새 작업' placeholder 제거 — invariant useEffect 가 jobs.length>=1 유지하려 빈 legacy job 을 자동 생성하던 부작용. 데이터 없는 빈 job 은 그리드에서 숨김 (isBlankJob 필터). 데이터가 있는 legacy job 은 계속 표시",
+      "+ 새 시안 버튼은 그대로 동작 (실제 카드를 drafting 으로 직접 생성)",
+    ],
+  },
   {
     version: "1.10.79",
     date: "2026-04-26",
@@ -10668,7 +10676,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {/* v1.10.72 — 카드 허브 (통합 진행 중 탭). 시안 생성·투표·시트 단계 카드를 한 화면에. */}
       {(() => {
         // 통합: drafting + sheet 모든 카드. jobs 는 step 0~6 전 범위.
-        const inRangeJobs = jobs.filter((j) => j.step >= 0 && j.step <= 6);
+        // v1.10.80 — 빈 legacy job(placeholder "새 작업") 은 그리드에서 숨김.
+        // 데이터(카테고리/시안/프롬프트) 가 있는 legacy job 만 노출. invariant useEffect 가 빈 job 1개를
+        // 항상 유지하지만 사용자에게 보일 필요는 없음 (카드 생성은 + 새 시안 버튼으로 직접 처리).
+        const isBlankJob = (j) => !j.category && (!j.designs || j.designs.length === 0) && !j.prompt;
+        const inRangeJobs = jobs.filter((j) => j.step >= 0 && j.step <= 6 && !isBlankJob(j));
         const draftingLid = lists.find((l) => l.status_key === "drafting")?.id;
         const sheetLid    = lists.find((l) => l.status_key === "sheet")?.id;
         const inRangeCards = cards.filter((c) =>
