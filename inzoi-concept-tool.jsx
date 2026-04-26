@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.81";
+const APP_VERSION = "1.10.82";
 const CHANGELOG = [
+  {
+    version: "1.10.82",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] 카드 상세 모달의 시안 이미지가 5초마다 깜박이던 문제 — DesignsPanel 함수 안에 정의된 const Tile = (...) => {} 가 부모 폴링 setCards/setLists 시 새 reference 로 만들어져 React 가 컴포넌트 type 변경으로 인식 → Tile 인스턴스 unmount/remount → IMG element 도 함께 재생성 → 매 폴링마다 짧은 깜박임",
+      "Tile → renderTile 함수로 변경하고 호출도 JSX 컴포넌트(<Tile ... />) 대신 직접 함수 호출(renderTile(d,i,h))로 전환. JSX 결과가 부모 트리에 그대로 mount 되어 IMG element 재사용",
+      "outer div 에 key={i} 추가 (배열 매핑 호환)",
+    ],
+  },
   {
     version: "1.10.81",
     date: "2026-04-26",
@@ -8181,14 +8190,17 @@ function DesignsPanel({
   }, [displayDesigns, sortMode, cardVotes]);
 
   // 하나의 시안 타일 — 선정 + 투표 UI (v1.10.41).
-  const Tile = ({ d, i, height }) => {
+  // v1.10.82: 일반 함수로 사용 (JSX 컴포넌트 X). 부모 폴링(5초) 시 컴포넌트 reference 가
+  // 새로 만들어져 React 가 unmount→remount 하면서 IMG 가 깜박이던 문제 해결. 이제 직접 호출
+  // 결과 JSX 가 부모 트리에 그대로 mount → IMG element 재사용 → 깜박임 없음.
+  const renderTile = (d, i, height) => {
     const isSelected = selectedIdx === i;
     const n = voteCount(i);
     const mine = iVoted(i);
     const isLeader = voteLeaderIdx === i && voteLeaderCount > 0;
     const voters = votersOf(i);
     return (
-      <div style={{
+      <div key={i} style={{
         position: "relative", borderRadius: 8, overflow: "hidden",
         border: isSelected ? "2px solid #fbbf24"
           : isLeader ? "2px solid #22c55e"
@@ -8441,11 +8453,11 @@ function DesignsPanel({
           gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
           gap: 8,
         }}>
-          {sortedRenderOrder.map(({ d, i }) => <Tile key={i} d={d} i={i} height={150} />)}
+          {sortedRenderOrder.map(({ d, i }) => renderTile(d, i, 150))}
         </div>
       ) : viewMode === "compare" ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {sortedRenderOrder.map(({ d, i }) => <Tile key={i} d={d} i={i} height={280} />)}
+          {sortedRenderOrder.map(({ d, i }) => renderTile(d, i, 280))}
         </div>
       ) : (
         // single — carousel
@@ -8456,7 +8468,7 @@ function DesignsPanel({
             return (
               <>
                 <div style={{ position: "relative" }}>
-                  <Tile d={d} i={idx} height={420} />
+                  {renderTile(d, idx, 420)}
                   {displayDesigns.length > 1 && (
                     <>
                       <button
