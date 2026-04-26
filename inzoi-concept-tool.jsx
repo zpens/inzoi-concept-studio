@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.85";
+const APP_VERSION = "1.10.86";
 const CHANGELOG = [
+  {
+    version: "1.10.86",
+    date: "2026-04-26",
+    changes: [
+      "메인페이지 헤더 컴팩트화 — 위시 / 진행 중 / 완료 탭 모두 동일 패턴으로 정리. 제목 fontSize 28→22, 카운트 텍스트(예: '52개') 가 제목 아래 별도 줄 → 제목 옆 인라인. 상단 padding 32→20, sticky 헤더 padding 4→2, 제목 영역 marginBottom 24→10. 전체 헤더 높이 약 60px 절약 → 카드 그리드가 더 위로 노출",
+    ],
+  },
   {
     version: "1.10.85",
     date: "2026-04-26",
@@ -10764,23 +10771,20 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         };
 
         return (
-          <main style={{ padding: "32px 40px 0", maxWidth: 1600, margin: "0 auto" }}>
-            {/* 제목 ~ 업데이트 chip 까지는 sticky 로 고정, 아래 카드만 스크롤.
-                v1.10.54 — 좌/우 끝을 카드와 통일 (음수 margin 제거). */}
+          <main style={{ padding: "20px 40px 0", maxWidth: 1600, margin: "0 auto" }}>
+            {/* v1.10.86 — 헤더 상하 폭 축소 + 카운트 제목 옆으로 인라인. */}
             <div style={{
               position: "sticky", top: 64, zIndex: 50,
-              background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
+              background: "var(--bg-color)", paddingTop: 2, paddingBottom: 2,
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
-                <div>
-                  <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                  <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>
                     {tabMeta.icon} {tabMeta.title}
                   </h2>
-                  <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                    {totalCount > 0
-                      ? `이 단계에 ${totalCount}개의 작업이 있습니다. 카드를 선택해 진행하세요.`
-                      : tabMeta.desc}
-                  </p>
+                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                    {totalCount > 0 ? `${totalCount}개` : tabMeta.desc}
+                  </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <ViewModeToggle value={viewMode} onChange={setViewMode} />
@@ -12194,16 +12198,18 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* ═══ Completed Tab ═══ */}
       {activeTab === "completed" && (
-        <main style={{ padding: "40px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
-          {/* 제목 ~ 업데이트 chip 까지 sticky. v1.10.54 — 좌/우 끝 통일. */}
+        <main style={{ padding: "20px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+          {/* v1.10.86 — 헤더 상하 폭 축소 + 카운트 제목 옆으로 인라인. */}
           <div style={{
             position: "sticky", top: 64, zIndex: 50,
-            background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
+            background: "var(--bg-color)", paddingTop: 2, paddingBottom: 2,
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: completedList.length === 0 ? 36 : 20 }}>
-              <div>
-                <h2 className="text-gradient" style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>완료</h2>
-                <p style={{ color: "var(--text-muted)", fontSize: 16 }}>총 {completedList.length}개의 시트가 완성됐습니다.</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>✅ 완료</h2>
+                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                  {completedList.length > 0 ? `${completedList.length}개` : "완료된 시트가 없습니다"}
+                </span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <ViewModeToggle value={viewMode} onChange={setViewMode} />
@@ -12332,18 +12338,18 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* ═══ Wishlist Tab ═══ */}
       {activeTab === "wishlist" && (
-        <main style={{ padding: "32px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
-          {/* 제목 ~ 업데이트 chip 까지 sticky. v1.10.54 — 좌/우 끝 통일. */}
+        <main style={{ padding: "20px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+          {/* 제목 ~ 업데이트 chip 까지 sticky. v1.10.54 — 좌/우 끝 통일. v1.10.86 — 상하 폭 축소 + 카운트 인라인. */}
           <div style={{
             position: "sticky", top: 64, zIndex: 50,
-            background: "var(--bg-color)", paddingTop: 4, paddingBottom: 4,
+            background: "var(--bg-color)", paddingTop: 2, paddingBottom: 2,
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: wishlist.length === 0 ? 24 : 16 }}>
-              <div>
-                <h2 className="text-gradient" style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>⭐ 위시</h2>
-                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                  {wishlist.length > 0 ? `${wishlist.length}개의 아이디어` : "만들고 싶은 가구 아이디어를 기록하세요."}
-                </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>⭐ 위시</h2>
+                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                  {wishlist.length > 0 ? `${wishlist.length}개` : "만들고 싶은 가구 아이디어를 기록하세요."}
+                </span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <ViewModeToggle value={viewMode} onChange={setViewMode} />
