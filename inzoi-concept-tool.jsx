@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.110";
+const APP_VERSION = "1.10.111";
 const CHANGELOG = [
+  {
+    version: "1.10.111",
+    date: "2026-04-27",
+    changes: [
+      "스케일 참조 인체 실루엣 키 180cm 명시 — Claude buildScalePromptWithClaude 시스템 프롬프트와 fallback 프롬프트 양쪽에 '180cm 성인 비율' 자연스럽게 명시 (이미지 내부 텍스트 라벨/룰러 강제 어구는 사용 안 함). 좌석/무릎/굽힘 자세에서도 180cm 성인 비율 유지 지시. UI 라벨 '인체 실루엣 + 10cm 그리드' → '인체 실루엣 180cm + 10cm 그리드'",
+    ],
+  },
   {
     version: "1.10.110",
     date: "2026-04-27",
@@ -3207,18 +3214,20 @@ async function buildScalePromptWithClaude({ userPrompt, catInfo, styleInfo, pf, 
   const systemPrompt = `You are a scale reference prompt engineer for inZOI 3D asset production.
 Output ONE rich English image-generation prompt that produces a SCALE REFERENCE image: the asset together with a stylized human silhouette so a 3D modeler can verify real-world size at a glance.
 
-Silhouette placement rules (decide based on category, room, dimensions):
-- Large floor furniture (sofa, bed, wardrobe, dining table; height ≥ ~80cm OR footprint ≥ ~1m²): full standing or seated human silhouette next to or interacting with the asset.
-- Small floor accessories (stool, side table, basket, low decor; height < ~80cm): silhouette bending / kneeling beside it; emphasize scale at the legs/feet area.
-- Tabletop / desk accessories (lamp, vase, book, plate, mug, decor): place the asset on a desk/table at standing height (~75cm), with a seated or standing human silhouette at that desk so the asset's size at desktop level is clear.
+The human silhouette represents an adult that is 180cm tall when standing upright. When the pose is seated, kneeling, or bending, keep the limb proportions consistent with a 180cm adult so the relative scale stays correct.
+
+Silhouette placement rules (decide pose based on category, room, dimensions):
+- Large floor furniture (sofa, bed, wardrobe, dining table; height ≥ ~80cm OR footprint ≥ ~1m²): full standing silhouette next to or interacting with the asset.
+- Small floor accessories (stool, side table, basket, low decor; height < ~80cm): silhouette bending or kneeling beside it; emphasize scale at the legs/feet area.
+- Tabletop / desk accessories (lamp, vase, book, plate, mug, decor): place the asset on a desk/table at standing height (~75cm), with a seated or standing silhouette at that desk so the asset's size at desktop level is clear.
 - Wall-mounted (artwork, wall lamp, mirror): silhouette standing in front of the wall, asset mounted at typical viewing height (~150cm center).
 - Ceiling-mounted (pendant lamp, ceiling fan): silhouette standing on the floor below; asset at ceiling height (~240cm).
 - Outdoor / vehicle / architectural (car, bike, gate, fence): silhouette beside the asset at full body scale, ground line clearly visible.
 
 Composition rules:
 - Asset is the main subject, rendered in a clean 3/4 perspective view (slightly left of center). Faithfully preserve the EXACT form, materials, colors, and design details from the source reference image — do not redesign.
-- Silhouette is semi-transparent monochrome gray, simplified neutral pose, must NOT visually compete with the asset.
-- Background: light gray gradient studio with a subtle metric grid on the floor (every 10cm) for measurement reference.
+- Silhouette is semi-transparent monochrome gray, simplified neutral pose, must NOT visually compete with the asset. No text labels, no rulers, no annotations on the silhouette itself.
+- Background: light gray gradient studio with a subtle metric grid on the floor (every 10cm) for measurement reference. The grid plus the adult silhouette together let the viewer cross-check object dimensions.
 - Aspect ratio: 16:9 wide.
 
 Always append these tokens to the prompt:
@@ -3381,6 +3390,7 @@ async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, card, 
         ? "stylized human silhouette bending or sitting beside it; scale visible at the legs/feet area"
         : "stylized human silhouette in a context-appropriate pose for the object";
     scalePrompt = `Scale reference image of a ${englishCat} faithfully reproduced from the source reference. `
+      + `The human silhouette represents an adult 180cm tall (proportions consistent with a 180cm adult even when seated or kneeling). `
       + `Composition: asset shown in clean 3/4 perspective at center-left, ${placement}. `
       + `Background: light gray gradient studio with a subtle 10cm metric grid on the floor. `
       + `${userPrompt} `
@@ -4822,7 +4832,7 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
                 {hasScale && (
                   <div>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4, fontWeight: 700 }}>
-                      📏 스케일 참조 (인체 실루엣 + 10cm 그리드)
+                      📏 스케일 참조 (인체 실루엣 180cm + 10cm 그리드)
                     </div>
                     <div style={{
                       position: "relative", borderRadius: 8, overflow: "hidden",
