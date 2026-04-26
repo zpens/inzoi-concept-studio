@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.109";
+const APP_VERSION = "1.10.110";
 const CHANGELOG = [
+  {
+    version: "1.10.110",
+    date: "2026-04-27",
+    changes: [
+      "[버그 수정] 갤러리 (F) 에 스케일 참조 이미지가 안 보이던 문제 — GalleryCanvas 의 시트 인식 배열이 ['front','side','back','top'] 만 순회해 scale 키를 누락. SHEET_KEYS 에 'scale' 추가 + 라벨 '📏 스케일' 매핑. 현재 시트 / 이전 시트 history 둘 다 적용",
+    ],
+  },
   {
     version: "1.10.109",
     date: "2026-04-27",
@@ -6660,7 +6667,15 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     }
     const v = card.data?.concept_sheet_views;
     // v1.10.103 — single 또는 legacy 4뷰 모두 인식
-    if (v && (v.single || v.front || v.side || v.back || v.top)) {
+    // v1.10.110 — scale 참조 뷰도 인식
+    const SHEET_KEYS = ["front", "side", "back", "top", "scale"];
+    const labelOf = (k) => k === "front" ? "정면"
+      : k === "side" ? "측면"
+      : k === "back" ? "후면"
+      : k === "top"  ? "상단"
+      : k === "scale" ? "📏 스케일"
+      : k;
+    if (v && (v.single || SHEET_KEYS.some((k) => v[k]))) {
       const sheetItems = [];
       if (v.single) {
         sheetItems.push({
@@ -6669,10 +6684,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           meta: { kind: "현재 시트", model: v.model || null, createdAt: v.generated_at || null },
         });
       }
-      ["front", "side", "back", "top"].forEach((k) => {
+      SHEET_KEYS.forEach((k) => {
         if (v[k]) sheetItems.push({
           url: v[k], type: "sheet",
-          label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
+          label: labelOf(k),
           isCover: v[k] === hero,
           meta: { kind: "현재 시트", view: k, model: v.model || null, createdAt: v.generated_at || null },
         });
@@ -6696,10 +6711,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           meta: { kind: `이전 시트 ${hi + 1}`, model: h.model || null, createdAt: h.generated_at || null },
         });
       }
-      ["front", "side", "back", "top"].forEach((k) => {
+      SHEET_KEYS.forEach((k) => {
         if (h[k]) histItems.push({
           url: h[k], type: "sheet-history",
-          label: k === "front" ? "정면" : k === "side" ? "측면" : k === "back" ? "후면" : "상단",
+          label: labelOf(k),
           isCover: h[k] === hero,
           meta: {
             kind: `이전 시트 ${hi + 1}`,
