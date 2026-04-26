@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.67";
+const APP_VERSION = "1.10.68";
 const CHANGELOG = [
+  {
+    version: "1.10.68",
+    date: "2026-04-26",
+    changes: [
+      "포인트 코멘트 — lightbox 좌하단 🗨 코멘트 버튼 클릭 시 코멘트 모드 진입, 이미지 위 원하는 위치 클릭 → 입력 popover → 저장 시 마커가 그 위치에 고정",
+      "마커는 이미지와 같은 transform 으로 줌·패닝에 따라 이동, counter-scale 로 시각 크기 일정 유지",
+      "마커 hover 시 본문 / 작성자 / 시각 popover 표시. 본인 코멘트는 🗑 삭제 버튼",
+      "스키마: card.data.point_comments[image_url] = [{ id, x, y, body, actor, createdAt }]. x/y 는 0~1 정규화 좌표라 해상도와 무관",
+      "갤러리 타일 좌하단에 🗨 N 코멘트 수 badge 표시 (≥1 일 때만)",
+      "Ctrl/⌘+Enter 로 빠른 저장, Esc 취소",
+    ],
+  },
   {
     version: "1.10.67",
     date: "2026-04-26",
@@ -6116,23 +6128,28 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               display: "flex", gap: LAYOUT.gap,
               height: row.height,
             }}>
-              {row.items.map(({ item, width, naturalImgW, naturalImgH }, ii) => (
-                <GalleryTile
-                  key={`${ri}-${ii}`}
-                  item={item}
-                  width={width}
-                  height={row.height}
-                  naturalImgW={naturalImgW}
-                  naturalImgH={naturalImgH}
-                  scale={scale}
-                  onSetCover={setCover}
-                  onCopyToRef={copyToRef}
-                  onOpenLightbox={(url) => setLightboxSrc(url)}
-                  selected={selectedUrls.has(item.url)}
-                  onToggleSelect={toggleSelect}
-                  onImageLoad={onImageLoad}
-                />
-              ))}
+              {row.items.map(({ item, width, naturalImgW, naturalImgH }, ii) => {
+                const cmts = card?.data?.point_comments?.[item.url];
+                const commentCount = Array.isArray(cmts) ? cmts.length : 0;
+                return (
+                  <GalleryTile
+                    key={`${ri}-${ii}`}
+                    item={item}
+                    width={width}
+                    height={row.height}
+                    naturalImgW={naturalImgW}
+                    naturalImgH={naturalImgH}
+                    scale={scale}
+                    onSetCover={setCover}
+                    onCopyToRef={copyToRef}
+                    onOpenLightbox={(url) => setLightboxSrc(url)}
+                    selected={selectedUrls.has(item.url)}
+                    onToggleSelect={toggleSelect}
+                    commentCount={commentCount}
+                    onImageLoad={onImageLoad}
+                  />
+                );
+              })}
             </div>
           ))}
         </div>
@@ -6203,7 +6220,8 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
   const imgRef = React.useRef(null);
   const panStart = React.useRef(null);
   // v1.10.60 — 그리기 모드 state.
-  const [mode, setMode] = React.useState("view");        // "view" | "draw"
+  // v1.10.68 — 모드 확장: "view" | "draw" | "comment".
+  const [mode, setMode] = React.useState("view");
   const [tool, setTool] = React.useState("pen");          // "pen" | "eraser"
   const [color, setColor] = React.useState("#ef4444");
   const [saving, setSaving] = React.useState(false);
@@ -6212,6 +6230,11 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
   const drawingRef = React.useRef(false);
   const lastPtRef = React.useRef(null);
   const historyRef = React.useRef([]);
+  // v1.10.68 — 포인트 코멘트 state. card.data.point_comments[url] 에 저장.
+  const allPointComments = (card?.data?.point_comments && typeof card.data.point_comments === "object") ? card.data.point_comments : {};
+  const pointComments = Array.isArray(allPointComments[src]) ? allPointComments[src] : [];
+  const [pending, setPending] = React.useState(null);    // {x, y, body}
+  const [hoverCommentId, setHoverCommentId] = React.useState(null);
   const COLORS = [
     { id: "#ef4444", label: "빨강" },
     { id: "#facc15", label: "노랑" },
@@ -6220,11 +6243,13 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
   ];
   const PEN_W = 6, ERASER_W = 14;
 
+  const markersRef = React.useRef(null);
   const apply = React.useCallback(() => {
     const v = viewRef.current;
     const t = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.scale})`;
     if (imgRef.current) imgRef.current.style.transform = t;
     if (canvasRef.current) canvasRef.current.style.transform = t;
+    if (markersRef.current) markersRef.current.style.transform = t;
   }, []);
 
   const fitToViewport = React.useCallback(() => {
@@ -6383,6 +6408,61 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
     setHasStrokes(false);
   };
 
+  // v1.10.68 — 포인트 코멘트 PATCH 헬퍼.
+  const patchComments = async (nextForUrl) => {
+    if (!canSaveRef) return;
+    const nextAll = { ...allPointComments, [src]: nextForUrl };
+    if (nextForUrl.length === 0) delete nextAll[src];
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), point_comments: nextAll },
+          actor: actor || null,
+        }),
+      });
+      if (!r.ok) throw new Error(`PATCH ${r.status}`);
+      await onSavedRef?.();
+    } catch (e) { alert("코멘트 저장 실패: " + e.message); }
+  };
+  const addComment = async (x, y, body) => {
+    const trimmed = (body || "").trim();
+    if (!trimmed) return;
+    const newC = {
+      id: `pc-${Date.now()}`,
+      x, y, body: trimmed,
+      actor: actor || null,
+      createdAt: new Date().toISOString(),
+    };
+    await patchComments([...pointComments, newC]);
+  };
+  const deleteComment = async (id) => {
+    if (!confirm("이 코멘트를 삭제하시겠어요?")) return;
+    await patchComments(pointComments.filter((c) => c.id !== id));
+  };
+
+  // 코멘트 모드에서 이미지 클릭 → 좌표 계산 → pending input 표시.
+  const onCommentDown = (e) => {
+    if (mode !== "comment") return;
+    e.stopPropagation();
+    e.preventDefault();
+    const img = imgRef.current;
+    if (!img) return;
+    const rect = img.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    setPending({ x, y, body: "" });
+  };
+  const cancelPending = () => setPending(null);
+  const submitPending = async () => {
+    if (!pending) return;
+    await addComment(pending.x, pending.y, pending.body);
+    setPending(null);
+    setMode("view");
+  };
+
   const saveAsRef = async () => {
     if (!canSaveRef) { alert("이 컨텍스트에서는 참조 저장이 불가합니다."); return; }
     const img = imgRef.current;
@@ -6454,6 +6534,11 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
     if (e.target.closest("[data-lightbox-ui]")) return;
     // v1.10.60 — 그리기 모드에서는 캔버스가 자체 처리, wrap 패닝 차단.
     if (mode === "draw") return;
+    // v1.10.68 — 코멘트 모드: 좌클릭 = 코멘트 위치 지정, 다른 버튼은 패닝 가능.
+    if (mode === "comment" && e.button === 0) {
+      onCommentDown(e);
+      return;
+    }
     e.preventDefault();
     setDragging(true);
     panStart.current = { x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y };
@@ -6543,6 +6628,147 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
           // width/height attribute 는 initCanvas 에서 동적 설정 (style 은 자연 크기에 맞게 강제 안함).
         }}
       />
+      {/* v1.10.68 — 코멘트 마커 레이어 (이미지와 같은 transform).
+          인보크는 0~1 정규화 좌표를 IMG 픽셀 좌표로 변환해 표시. */}
+      <div
+        ref={markersRef}
+        style={{
+          position: "absolute", left: 0, top: 0,
+          width: imgRef.current?.naturalWidth || 0,
+          height: imgRef.current?.naturalHeight || 0,
+          transformOrigin: "0 0",
+          willChange: "transform",
+          pointerEvents: "none",
+        }}
+      >
+        {pointComments.map((c, idx) => {
+          const iw = imgRef.current?.naturalWidth || 1024;
+          const ih = imgRef.current?.naturalHeight || 1024;
+          const px = c.x * iw;
+          const py = c.y * ih;
+          const counterScale = 1 / Math.max(scale, 0.05);
+          const isMine = !!actor && c.actor === actor;
+          return (
+            <div key={c.id} style={{
+              position: "absolute", left: px, top: py,
+              transform: `translate(-50%, -50%) scale(${counterScale})`,
+              transformOrigin: "center",
+              pointerEvents: "auto",
+            }}>
+              <div
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseEnter={() => setHoverCommentId(c.id)}
+                onMouseLeave={() => setHoverCommentId(null)}
+                style={{
+                  width: 28, height: 28, borderRadius: 14,
+                  background: hoverCommentId === c.id ? "#f59e0b" : "rgba(245,158,11,0.92)",
+                  border: "2px solid #fff",
+                  color: "#fff", fontSize: 13, fontWeight: 800,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+                }}
+              >{idx + 1}</div>
+              {hoverCommentId === c.id && (
+                <div
+                  onPointerDown={(e) => e.stopPropagation()}
+                  style={{
+                    position: "absolute", top: 34, left: "50%",
+                    transform: "translateX(-50%)",
+                    minWidth: 220, maxWidth: 320,
+                    padding: 10, borderRadius: 10,
+                    background: "rgba(20,20,28,0.96)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    color: "#fff", fontSize: 12, lineHeight: 1.5,
+                    boxShadow: "0 8px 28px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 4 }}>
+                    {c.actor || "익명"} · {formatLocalTime(c.createdAt, "ymdhm")}
+                  </div>
+                  <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{c.body}</div>
+                  {isMine && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteComment(c.id); }}
+                      style={{
+                        marginTop: 6, padding: "3px 10px", borderRadius: 6,
+                        background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.4)",
+                        color: "#fca5a5", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                      }}
+                    >🗑 삭제</button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {/* v1.10.68 — 새 코멘트 입력 popover (pending 위치 기준 화면 좌표) */}
+      {pending && (() => {
+        const img = imgRef.current;
+        if (!img) return null;
+        const r = img.getBoundingClientRect();
+        const px = r.left + pending.x * r.width;
+        const py = r.top + pending.y * r.height;
+        return (
+          <div
+            data-lightbox-ui
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed", left: px, top: py + 18,
+              transform: "translateX(-50%)",
+              minWidth: 260, padding: 10, borderRadius: 12,
+              background: "rgba(20,20,28,0.97)",
+              border: "1px solid rgba(245,158,11,0.5)",
+              boxShadow: "0 12px 36px rgba(0,0,0,0.6)",
+              zIndex: 4,
+            }}
+          >
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 6 }}>
+              🗨 새 코멘트 — Ctrl/⌘+Enter 저장, Esc 취소
+            </div>
+            <textarea
+              autoFocus
+              value={pending.body}
+              onChange={(e) => setPending({ ...pending, body: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { e.preventDefault(); cancelPending(); }
+                else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitPending(); }
+              }}
+              placeholder="피드백을 입력하세요…"
+              style={{
+                width: "100%", minHeight: 60, padding: 6, borderRadius: 6,
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                color: "#fff", fontSize: 12, fontFamily: "inherit",
+                resize: "vertical", outline: "none", boxSizing: "border-box",
+              }}
+            />
+            <div style={{ display: "flex", gap: 6, marginTop: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={cancelPending}
+                style={{
+                  padding: "5px 10px", borderRadius: 6,
+                  background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.2)",
+                  color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                }}
+              >취소</button>
+              <button
+                onClick={submitPending}
+                disabled={!pending.body.trim()}
+                style={{
+                  padding: "5px 12px", borderRadius: 6,
+                  background: pending.body.trim() ? "linear-gradient(135deg, #f59e0b, #d97706)" : "rgba(255,255,255,0.1)",
+                  border: "none",
+                  color: "#fff", fontSize: 11, fontWeight: 700,
+                  cursor: pending.body.trim() ? "pointer" : "not-allowed",
+                }}
+              >💾 저장</button>
+            </div>
+          </div>
+        );
+      })()}
       {hasNav && (
         <>
           <button
@@ -6620,6 +6846,43 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
               }}
             >🖊 그리기</button>
           )}
+          {canSaveRef && (
+            <button
+              data-lightbox-ui
+              onClick={(e) => { e.stopPropagation(); setMode("comment"); }}
+              title="이미지 위 클릭 위치에 코멘트 남기기"
+              style={{
+                padding: "6px 12px", borderRadius: 14,
+                background: pointComments.length > 0 ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.15)",
+                border: `1px solid ${pointComments.length > 0 ? "rgba(245,158,11,0.7)" : "rgba(255,255,255,0.3)"}`,
+                color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+              }}
+            >🗨 코멘트{pointComments.length > 0 ? ` ${pointComments.length}` : ""}</button>
+          )}
+        </div>
+      )}
+      {/* v1.10.68 — 코멘트 모드 안내 바 */}
+      {mode === "comment" && (
+        <div
+          data-lightbox-ui
+          style={{
+            position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
+            display: "flex", gap: 8, alignItems: "center", zIndex: 3,
+            padding: "8px 14px", borderRadius: 16,
+            background: "rgba(245,158,11,0.92)", color: "#000",
+            fontSize: 12, fontWeight: 700,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+          }}
+        >
+          🗨 코멘트 모드 — 이미지 위 원하는 위치 클릭
+          <button
+            onClick={(e) => { e.stopPropagation(); setMode("view"); setPending(null); }}
+            style={{
+              padding: "4px 10px", borderRadius: 8,
+              background: "rgba(0,0,0,0.2)", border: "1px solid rgba(0,0,0,0.3)",
+              color: "#000", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            }}
+          >종료</button>
         </div>
       )}
       {/* v1.10.60 — draw 모드 도구바 */}
@@ -7004,7 +7267,7 @@ function CompareOverlay({ urls, onClose, onOpenLightbox }) {
   );
 }
 
-function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, onImageLoad }) {
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, onImageLoad }) {
   // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
   // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
@@ -7103,6 +7366,20 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
           pointerEvents: "none",
         }}>✓</div>
+      )}
+      {/* v1.10.68 — 코멘트 수 badge (좌하단). 클릭 시 lightbox 진입은 부모 onTileUp 처리. */}
+      {commentCount > 0 && (
+        <div style={{
+          position: "absolute", bottom: 6, left: 6,
+          padding: "3px 9px", borderRadius: 12,
+          background: "rgba(245,158,11,0.92)", color: "#fff",
+          fontSize: 11, fontWeight: 800,
+          display: "flex", alignItems: "center", gap: 3,
+          transform: `scale(${invScale})`, transformOrigin: "bottom left",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+          pointerEvents: "none",
+          whiteSpace: "nowrap",
+        }}>🗨 {commentCount}</div>
       )}
       {/* v1.10.62 — 메타 hover 패널 (좌하단). 줌이 변해도 일정 크기 유지하기 위해 counter-scale. */}
       {showMeta && (
