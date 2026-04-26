@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.84";
+const APP_VERSION = "1.10.85";
 const CHANGELOG = [
+  {
+    version: "1.10.85",
+    date: "2026-04-26",
+    changes: [
+      "단일 이미지 자동 대표 등록 — 카드에 이미지(시안 + 참조 합산)가 1개만 있고 thumbnail_url 미설정이면 자동으로 그것을 대표로 PATCH. 위시에서 시안 1개 생성 시 / 시안 삭제로 1개만 남았을 때도 자동 적용",
+      "카테고리 계층 표시 — 리스트뷰에서 '게이트 · 외관' → '건축 / 외관 / 게이트' 처럼 상위 group / room / label 모두. inzoiObjectList catHier 의 lv1/lv2 구조 활용",
+      "카테고리 정렬 키도 같은 계층 문자열 사용 → 같은 group(예: 건축) 끼리 자연스럽게 묶임",
+    ],
+  },
   {
     version: "1.10.84",
     date: "2026-04-26",
@@ -4365,15 +4374,19 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title", 
     });
   } else if (sortBy === "category_asc" || sortBy === "category_desc") {
     const dir = sortBy === "category_asc" ? 1 : -1;
+    // v1.10.85 — group / room / label 계층 키로 정렬해 같은 상위 분류끼리 묶임.
+    const catKey = (id) => {
+      const ci = id ? FURNITURE_CATEGORIES.find((c) => c.id === id) : null;
+      if (!ci) return "";
+      return [ci.group || "", ci.room || "", ci.label || id || ""].join(" / ");
+    };
     cpy.sort((a, b) => {
-      const aId = card(a)?.data?.category;
-      const bId = card(b)?.data?.category;
-      const aLabel = aId ? (FURNITURE_CATEGORIES.find((c) => c.id === aId)?.label || aId) : "";
-      const bLabel = bId ? (FURNITURE_CATEGORIES.find((c) => c.id === bId)?.label || bId) : "";
-      if (!aLabel && !bLabel) return 0;
-      if (!aLabel) return 1;
-      if (!bLabel) return -1;
-      return dir * cmpStr(aLabel, bLabel);
+      const aKey = catKey(card(a)?.data?.category);
+      const bKey = catKey(card(b)?.data?.category);
+      if (!aKey && !bKey) return 0;
+      if (!aKey) return 1;
+      if (!bKey) return -1;
+      return dir * cmpStr(aKey, bKey);
     });
   } else if (sortBy === "style_asc" || sortBy === "style_desc") {
     const dir = sortBy === "style_asc" ? 1 : -1;
@@ -5464,7 +5477,9 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         )}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {catInfo ? `${catInfo.label} · ${catInfo.room}` : "—"}
+        {catInfo
+          ? `${catInfo.group ? catInfo.group + " / " : ""}${catInfo.room ? catInfo.room + " / " : ""}${catInfo.label}`
+          : "—"}
       </div>
       <div style={{ fontSize: 11 }}>
         {styleInfo ? (
@@ -7950,6 +7965,24 @@ function DesignsPanel({
     setExtraPrompt(card.data?.last_extra_prompt || "");
     setSortMode("created");
   }, [card.id]);
+
+  // v1.10.85 — 카드에 이미지가 1개만 있고 대표 미설정이면 자동 대표 등록.
+  // designs (image url) + ref_images 합쳐 1개일 때만. 무한 루프 방지: thumbnail_url 변경 후 effect 재실행 시 조건 false.
+  React.useEffect(() => {
+    if (disabled || !projectSlug || !card?.id) return;
+    if (card.thumbnail_url) return;
+    const designUrls = Array.isArray(card.data?.designs)
+      ? card.data.designs.map((d) => d?.imageUrl).filter(Boolean) : [];
+    const refUrls = Array.isArray(card.data?.ref_images) ? card.data.ref_images.filter(Boolean) : [];
+    const all = [...designUrls, ...refUrls];
+    if (all.length !== 1) return;
+    const url = all[0];
+    fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ thumbnail_url: url, actor: actor || null }),
+    }).then((r) => { if (r.ok) onRefresh?.(); }).catch(() => { /* ignore */ });
+  }, [card?.id, card?.thumbnail_url, card?.data?.designs?.length, card?.data?.ref_images?.length, projectSlug, disabled]);
 
   const raw = Array.isArray(card.data?.designs) ? card.data.designs : [];
   const extras = [];
