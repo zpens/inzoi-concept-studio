@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.91";
+const APP_VERSION = "1.10.92";
 const CHANGELOG = [
+  {
+    version: "1.10.92",
+    date: "2026-04-26",
+    changes: [
+      "자동 분류 실패 진단 강화 — classifyCategoryWithGemini 의 모든 실패 경로(JSON 없음 / category_id 누락 / FURNITURE_CATEGORIES 미일치 / JSON 파싱 실패)에 console.warn 출력. 사용자 alert 도 사유별로 구분 (HTTP 에러 vs 응답 인식 실패). F12 콘솔 보면 정확한 원인 파악 가능",
+    ],
+  },
   {
     version: "1.10.91",
     date: "2026-04-26",
@@ -2852,12 +2859,24 @@ ${styleList}`;
   }
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  // v1.10.92 — 실패 진단을 위한 console 로그.
   const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return null;
+  if (!m) {
+    console.warn("[자동 분류] Gemini 응답에 JSON 없음:", { text: text.slice(0, 500), finishReason: data.candidates?.[0]?.finishReason });
+    return null;
+  }
   try {
     const obj = JSON.parse(m[0]);
     const catId = obj.category_id || obj.category || null;
-    if (!catId || !FURNITURE_CATEGORIES.find((c) => c.id === catId)) return null;
+    if (!catId) {
+      console.warn("[자동 분류] category_id 누락:", obj);
+      return null;
+    }
+    if (!FURNITURE_CATEGORIES.find((c) => c.id === catId)) {
+      console.warn(`[자동 분류] category_id="${catId}" 가 FURNITURE_CATEGORIES 에 없음. 카테고리 목록은 inzoiObjectList catHier 에서 fetch:`,
+        FURNITURE_CATEGORIES.length === 0 ? "(아직 로드 전)" : `${FURNITURE_CATEGORIES.length}개`);
+      return null;
+    }
     // 카테고리는 필수, 스타일은 선택 (검증 실패 시 null)
     const styleId = obj.style_id || obj.style || null;
     const validStyle = styleId && STYLE_PRESETS.find((s) => s.id === styleId) ? styleId : null;
@@ -2901,7 +2920,10 @@ ${styleList}`;
       size_info: sizeInfo,
       posmap_features: posmapFeatures,
     };
-  } catch { return null; }
+  } catch (e) {
+    console.warn("[자동 분류] JSON 파싱 실패:", e.message, m[0].slice(0, 300));
+    return null;
+  }
 }
 
 // posmap 유사도 계산 (v1.10.4 재조정).
@@ -3698,7 +3720,16 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       ]);
       const r = clsResult.status === "fulfilled" ? clsResult.value : null;
       const p = promptResult.status === "fulfilled" ? promptResult.value : null;
-      if (!r && !p) { alert("자동 분류 실패 — 수동으로 선택해주세요"); return; }
+      // v1.10.92 — 실패 사유를 구분해 표시. console 에 더 자세한 정보.
+      if (clsResult.status === "rejected") console.warn("[자동 분류] classify 거부:", clsResult.reason);
+      if (promptResult.status === "rejected") console.warn("[자동 분류] prompt 거부:", promptResult.reason);
+      if (!r && !p) {
+        const errMsg = clsResult.status === "rejected"
+          ? `자동 분류 실패: ${clsResult.reason?.message || clsResult.reason}\n\n(F12 콘솔에서 상세 확인 가능)`
+          : "자동 분류 실패 — Gemini 응답에서 카테고리를 인식하지 못했습니다.\n\n원인 후보:\n• 이미지가 가구/오브젝트가 아님\n• 카테고리 목록이 아직 로드되지 않음 (새로고침 후 재시도)\n• Gemini 응답이 예상 JSON 포맷이 아님\n\n(F12 콘솔에서 [자동 분류] 로그 확인)";
+        alert(errMsg);
+        return;
+      }
 
       const patch = {};
       // 카테고리 / 스타일은 버튼 클릭 = 재분석 의도 → 덮어씀 (v1.10.50).
