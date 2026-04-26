@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.86";
+const APP_VERSION = "1.10.87";
 const CHANGELOG = [
+  {
+    version: "1.10.87",
+    date: "2026-04-26",
+    changes: [
+      "[A 옵션] 태그별 공유 URL — UpdateChipBar 우측에 '🔗 링크 복사' 버튼 추가. 현재 URL + ?tag=... 쿼리로 선택된 업데이트 태그가 인코딩되어 클립보드에 복사. 외부 동료가 링크 클릭 → 같은 탭의 같은 태그 필터로 자동 진입",
+      "selectedUpdates 변경 시 URL ?tag= 자동 갱신 (replaceState — history 오염 없음). 부팅 시 ?tag=... 읽어 초기 필터 채움. 브라우저 뒤로/앞으로 popstate 도 동기",
+      "복수 태그는 콤마 구분: ?tag=0.7.0,0.8.0",
+    ],
+  },
   {
     version: "1.10.86",
     date: "2026-04-26",
@@ -5089,6 +5098,20 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename }) {
     color: selected.length === 0 ? "#fff" : "var(--primary)",
     fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
   };
+  // v1.10.87 — 현재 필터 상태 그대로 URL 복사 (외부 동료에게 공유).
+  const [copied, setCopied] = React.useState(false);
+  const copyShare = async () => {
+    const url = new URL(window.location.href);
+    if (selected.length > 0) url.searchParams.set("tag", selected.join(","));
+    else url.searchParams.delete("tag");
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("이 링크를 복사하세요:", url.toString());
+    }
+  };
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
       <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginRight: 4 }}>🗓️ 업데이트:</span>
@@ -5107,6 +5130,19 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename }) {
           />
         );
       })}
+      {/* v1.10.87 — 현재 탭 + 선택된 태그 필터 상태로 공유 URL 복사 */}
+      <button
+        onClick={copyShare}
+        title={selected.length > 0 ? `선택된 태그(${selected.length}) 필터 URL 복사` : "현재 탭 URL 복사"}
+        style={{
+          marginLeft: "auto",
+          padding: "4px 10px", borderRadius: 14,
+          background: copied ? "rgba(34,197,94,0.15)" : "rgba(0,0,0,0.04)",
+          border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : "var(--surface-border)"}`,
+          color: copied ? "#15803d" : "var(--text-muted)",
+          fontSize: 11, fontWeight: 700, cursor: "pointer",
+        }}
+      >{copied ? "✓ 복사됨" : "🔗 링크 복사"}</button>
     </div>
   );
 }
@@ -9448,7 +9484,14 @@ export default function InZOIConceptTool() {
   useEffect(() => { try { localStorage.setItem("inzoi_view_mode", viewMode); } catch {} }, [viewMode]);
 
   // 업데이트 일정 필터 상태 (availableUpdates 는 cards 선언 이후에 정의 — TDZ 방지).
-  const [selectedUpdates, setSelectedUpdates] = useState([]);
+  const [selectedUpdates, setSelectedUpdates] = useState(() => {
+    // v1.10.87 — 부팅 시 ?tag=... 쿼리 읽어 초기값 채움 (공유 URL 진입 지원).
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const t = sp.get("tag");
+      return t ? t.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    } catch { return []; }
+  });
   // 헤더 전체 카드 검색. 탭과 무관하게 모든 카드를 대상으로 제목/설명/태그/카테고리 라벨 매칭.
   const [globalSearch, setGlobalSearch] = useState("");
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
@@ -9812,6 +9855,36 @@ export default function InZOIConceptTool() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [projectSlug, detailCard?.id]);
+
+  // v1.10.87 — selectedUpdates 변경 시 URL 쿼리 ?tag=... 에 동기 (replaceState 로 history 오염 X).
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const cur = url.searchParams.get("tag") || "";
+      const next = selectedUpdates.length > 0 ? selectedUpdates.join(",") : "";
+      if (cur === next) return;
+      if (next) url.searchParams.set("tag", next);
+      else url.searchParams.delete("tag");
+      window.history.replaceState({}, "", url.toString());
+    } catch { /* ignore */ }
+  }, [selectedUpdates]);
+
+  // popstate 시 URL 의 tag 쿼리 ↔ state 동기 (브라우저 뒤로/앞으로 + 외부 공유 링크 진입 지원).
+  useEffect(() => {
+    const onPop = () => {
+      try {
+        const sp = new URLSearchParams(window.location.search);
+        const t = sp.get("tag");
+        const next = t ? t.split(",").map((s) => s.trim()).filter(Boolean) : [];
+        setSelectedUpdates((prev) => {
+          if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
+          return next;
+        });
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // 업데이트 태그 일괄 이름 변경 — chip 의 ✏️ 에서 호출. 해당 태그가 붙은
   // 모든 카드에 PATCH 를 병렬로 날리고, 응답으로 로컬 cards/detailCard 도 동기화.
