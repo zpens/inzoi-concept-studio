@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.72";
+const APP_VERSION = "1.10.73";
 const CHANGELOG = [
+  {
+    version: "1.10.73",
+    date: "2026-04-26",
+    changes: [
+      "[HOTFIX] v1.10.72 통합 후 화면 전체 blank 재발 — 두 번째 IIFE(상세 진행 UI 표시 조건)의 `ranges` 객체에 옛 키(create/vote/sheet)만 있어 activeTab='progress' 시 `const [min, max] = undefined` 로 TypeError 크래시. ranges 를 progress:[0,6] 로 갱신, 안전 가드 추가",
+      "활동 → 자동 전환 메시지 / 완료 탭 새 시안 버튼 도 setActiveTab(\"create\") → setActiveTab(\"progress\") 로 통일",
+    ],
+  },
   {
     version: "1.10.72",
     date: "2026-04-26",
@@ -10807,8 +10815,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
       {/* 상세 진행 UI 는 사용자가 카드를 직접 선택하거나 ＋ 새 시안을 눌렀을 때만 전개 */}
       {(() => {
-        const ranges = { create: [0, 1], vote: [2, 3], sheet: [4, 6] };
-        const [min, max] = ranges[activeTab];
+        // v1.10.72.1 — 통합 진행 탭은 step 0~6 전 범위.
+        const ranges = { progress: [0, 6] };
+        const r = ranges[activeTab];
+        if (!r) return null;
+        const [min, max] = r;
         if (step < min || step > max) return null;
         if (!showWorkflowDetail) return null;
         return (
@@ -12063,7 +12074,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <CardScaleSelect value={cardScale} onChange={setCardScale} />
                 <SortSelect value={sortBy} onChange={setSortBy} />
                 <button
-                  onClick={() => setActiveTab("create")}
+                  onClick={() => setActiveTab("progress")}
                   className="btn-primary hover-lift"
                   style={{
                     padding: "12px 24px", borderRadius: 14, border: "none",
@@ -12100,7 +12111,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             <div style={{ textAlign: "center", padding: "100px 20px", color: "var(--text-muted)" }}>
               <div style={{ fontSize: 64, marginBottom: 20 }}>📭</div>
               <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>완료된 컨셉시트가 없습니다</div>
-              <button onClick={() => setActiveTab("create")} className="btn-primary" style={{
+              <button onClick={() => setActiveTab("progress")} className="btn-primary" style={{
                 padding: "12px 28px", borderRadius: 14, border: "none",
                 color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
               }}>
