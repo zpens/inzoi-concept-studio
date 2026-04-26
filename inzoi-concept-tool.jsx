@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.100";
+const APP_VERSION = "1.10.101";
 const CHANGELOG = [
+  {
+    version: "1.10.101",
+    date: "2026-04-26",
+    changes: [
+      "카드 시안 생성에 Claude 프롬프트 최적화 적용 — generateCardVariants 가 Gemini 호출 전 Claude Sonnet 으로 프롬프트를 한 번 다듬음. 카테고리 / 스타일 / posmap 재질·색상·shape·mood / 사이즈 힌트 + 사용자 프롬프트를 결합해 풍부한 영문 프롬프트 생성",
+      "doGenerate 의 자동 분류 결과(카테고리·스타일·posmap·size) 가 같은 PATCH 에 저장된 후 Claude 가 그것을 컨텍스트로 받아 프롬프트 최적화 → '키워드 + 의도' 결합",
+      "Claude 키 없거나 호출 실패 시 기존 fallback 영문 프롬프트로 자동 복귀 (안전)",
+      "Claude 사용량이 API 사용량 패널에 누적되기 시작 (이전엔 0건이던 Claude 가 시안 생성마다 1회씩 카운트)",
+    ],
+  },
   {
     version: "1.10.100",
     date: "2026-04-26",
@@ -3454,6 +3464,78 @@ const STATUS_META = {
 // - card.data.category / style_preset 으로 enhanced prompt 자동 구성
 // - card.data.ref_images 가 있으면 Gemini multimodal 로 함께 전송
 // - 결과를 card.data.designs 에 append, PATCH 로 저장
+// v1.10.101 — Claude 프롬프트 최적화. 카드의 카테고리/스타일/posmap/사이즈 힌트와 사용자
+// 프롬프트를 결합해 Claude Sonnet 으로 풍부한 영문 프롬프트 생성. 실패하면 null 반환 → 호출자가 fallback.
+// 서버 .env CLAUDE_API_KEY 또는 localStorage 개인 키가 있을 때만 동작 (없으면 503).
+async function enhancePromptWithClaude(userPrompt, card, refImagesLength) {
+  const personalClaudeKey = (() => { try { return localStorage.getItem("claude_api_key") || ""; } catch { return ""; } })();
+  const headers = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (personalClaudeKey) headers["X-Personal-Claude-Key"] = personalClaudeKey;
+  try {
+    const actor = localStorage.getItem("inzoi_actor_name");
+    if (actor) headers["X-Actor-Name"] = encodeURIComponent(actor);
+  } catch { /* ignore */ }
+
+  const catInfo = card.data?.category ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category) : null;
+  const styleInfo = card.data?.style_preset ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset) : null;
+  const pf = card.data?.posmap_features || {};
+  const si = card.data?.size_info || {};
+
+  const ctxLines = [];
+  if (catInfo) ctxLines.push(`Furniture type: ${catInfo.label}${catInfo.preset ? ` (${catInfo.preset})` : ""}`);
+  if (styleInfo) ctxLines.push(`Style: ${styleInfo.label}`);
+  if (pf.materials?.length) ctxLines.push(`Material hints: ${pf.materials.join(", ")}`);
+  if (pf.colors?.length) ctxLines.push(`Color hints: ${pf.colors.join(", ")}`);
+  if (pf.shape?.length) ctxLines.push(`Shape hints: ${pf.shape.join(", ")}`);
+  if (pf.mood) ctxLines.push(`Mood: ${pf.mood}`);
+  if (si.width_cm || si.depth_cm || si.height_cm) {
+    ctxLines.push(`Approx size: ${si.width_cm || "?"}×${si.depth_cm || "?"}×${si.height_cm || "?"}cm`);
+  }
+  ctxLines.push(`Reference images provided: ${refImagesLength > 0 ? `yes (${refImagesLength})` : "no"}`);
+
+  const systemPrompt = `You are an expert prompt engineer for inZOI furniture and asset concept generation.
+Your job: take the user's Korean/English prompt + classification hints and rewrite it as one richly-detailed English prompt for the Gemini image model.
+Output ONLY the enhanced prompt (no quotes, no explanations, no JSON).
+Always include: "product design concept, white background, studio lighting, high detail, game asset reference".
+Match the inZOI aesthetic: stylized realism, slightly idealized proportions, warm and inviting feel.
+The output must describe a single piece of furniture in detail: materials, colors, proportions, style details, lighting.`;
+
+  const userMsg = `User prompt:
+${userPrompt}
+
+Context hints:
+${ctxLines.join("\n")}`;
+
+  try {
+    const r = await fetch("/api/ai/claude/v1/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 800,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+      }),
+    });
+    if (!r.ok) {
+      console.warn(`[Claude prompt 최적화] HTTP ${r.status} — fallback 사용`);
+      return null;
+    }
+    const data = await r.json();
+    const text = data?.content?.[0]?.text;
+    if (typeof text === "string" && text.trim()) {
+      return text.trim();
+    }
+    return null;
+  } catch (e) {
+    console.warn("[Claude prompt 최적화] 호출 실패:", e.message);
+    return null;
+  }
+}
+
 async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress, extraPromptToSave }) {
   const seeds = Array.from({ length: Math.max(1, Math.min(4, count)) }, () => generateSeed());
 
@@ -3482,7 +3564,8 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   ].filter(Boolean);
   const sizeHint = dims.length ? `, target size: ${dims.join(", ")}` : "";
 
-  const enhancedPrompt = catInfo
+  // 기본 enhancedPrompt — Claude 가 실패할 때 fallback.
+  const fallbackEnhanced = catInfo
     ? `${englishCategory} furniture asset, ${englishStyle} style, ${prompt}${sizeHint}, product design concept, white background, studio lighting, high detail, game asset reference`
     : prompt;
 
@@ -3495,6 +3578,19 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   if (card.thumbnail_url) {
     refImages = refImages.filter((u) => u !== card.thumbnail_url);
     refImages.unshift(card.thumbnail_url);
+  }
+
+  // v1.10.101 — Claude 로 프롬프트 최적화. Claude 키 없으면 fallback.
+  // Gemini 호출 전에 한 번만 수행 (병렬 N장 모두 같은 enhanced prompt 공유).
+  let enhancedPrompt = fallbackEnhanced;
+  try {
+    const claudeOutput = await enhancePromptWithClaude(prompt, card, refImages.length);
+    if (claudeOutput) {
+      enhancedPrompt = claudeOutput;
+      console.log(`[Claude prompt 최적화] 적용됨 (${claudeOutput.length}자)`);
+    }
+  } catch (e) {
+    console.warn("[Claude prompt 최적화] 예외 발생, fallback:", e.message);
   }
 
   const tasks = seeds.map((s) => async () => {
