@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.82";
+const APP_VERSION = "1.10.83";
 const CHANGELOG = [
+  {
+    version: "1.10.83",
+    date: "2026-04-26",
+    changes: [
+      "스타일 필터 누락 보완 — 서버 /api/object-meta 의 styleMap 에 Bohemian/Country/Hanok/Tropical 추가. inzoiObjectList objTags 에는 있지만 매핑이 없어 클라이언트 필터에 안 나타나던 4개 스타일이 이제 노출됨 (보헤미안 / 컨트리 / 한옥 / 트로피컬)",
+      "전체 스타일: 9개 → 13개. 자동 분류 / 카드 생성 / 카탈로그 매칭 모두 영향",
+    ],
+  },
   {
     version: "1.10.82",
     date: "2026-04-26",

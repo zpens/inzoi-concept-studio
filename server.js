@@ -448,10 +448,14 @@ app.get("/api/object-meta", async (c) => {
     const catHier = meta.catHier || {};
     const objTags = meta.objTags || {};
 
+    // v1.10.83 — inzoiObjectList objTags 의 모든 스타일 태그를 매핑해 클라이언트 필터에 노출.
+    // 누락이었던 Bohemian / Country / Hanok / Tropical 추가. 매핑 안 된 태그는
+    // styles 응답에서 자동 제외되어 비-스타일 태그(Halloween / Cook 등)는 안전.
     const styleMap = {
       Modern: "모던", Scandinavian: "스칸디나비안", Mid_Century_Modern: "미드센추리",
       Industrial: "인더스트리얼", Classic: "클래식", Natural: "내추럴",
       Vintage: "빈티지", Minimal: "미니멀", Luxury: "럭셔리",
+      Bohemian: "보헤미안", Country: "컨트리", Hanok: "한옥", Tropical: "트로피컬",
     };
     const iconFor = (room) => ({
       "침실": "🛏️", "거실": "🛋️", "주방": "🍳", "욕실": "🚿",
