@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.69";
+const APP_VERSION = "1.10.70";
 const CHANGELOG = [
+  {
+    version: "1.10.70",
+    date: "2026-04-26",
+    changes: [
+      "API 키 팀 공용 배포 — 운영 PC .env 의 GEMINI_API_KEY / CLAUDE_API_KEY 가 GET /api/config 로 클라이언트에 자동 전달. 새 사용자도 API 설정 입력 없이 바로 시작 가능",
+      "우선순위: 개인 localStorage 키 > 서버 팀 기본값. API 설정 모달에 source 라벨(👤 개인 키 / 🏢 팀 기본값) 표시",
+      "빈 입력 + 저장 = 개인 키 삭제 → 팀 기본값으로 복귀. placeholder 가 \"(비워두면 팀 기본값 사용)\"으로 동적 변경",
+      "서버에 .env 자동 로더 내장 (dotenv 의존성 없이) — KEY=VALUE 단순 파싱. .env.example 샘플 추가",
+      "사내망 한정 접근(10.99.4.115)을 전제로 한 1단계 보안 모델. 키 회전은 운영 PC .env 수정 + pm2 restart 만으로 즉시 반영",
+    ],
+  },
   {
     version: "1.10.69",
     date: "2026-04-26",
@@ -9467,10 +9478,26 @@ export default function InZOIConceptTool() {
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
 
-  // API key state
-  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
-  const [claudeApiKey, setClaudeApiKey] = useState(() => localStorage.getItem("claude_api_key") || "");
+  // API key state — v1.10.70: 개인 키(localStorage) override + 서버 팀 기본값(/api/config) fallback.
+  const [personalGeminiKey, setPersonalGeminiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
+  const [personalClaudeKey, setPersonalClaudeKey] = useState(() => localStorage.getItem("claude_api_key") || "");
+  const [serverConfig, setServerConfig] = useState({ gemini: null, claude: null, loaded: false });
   const [showApiSettings, setShowApiSettings] = useState(false);
+  // 부팅 시 서버 config 한 번 fetch.
+  useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.ok ? r.json() : null)
+      .then((cfg) => { if (cfg) setServerConfig({ gemini: cfg.gemini || null, claude: cfg.claude || null, loaded: true }); })
+      .catch(() => setServerConfig((p) => ({ ...p, loaded: true })));
+  }, []);
+  // 우선순위: 개인 키 > 서버 기본값.
+  const geminiApiKey = personalGeminiKey || serverConfig.gemini || "";
+  const claudeApiKey = personalClaudeKey || serverConfig.claude || "";
+  const geminiSource = personalGeminiKey ? "personal" : (serverConfig.gemini ? "server" : null);
+  const claudeSource = personalClaudeKey ? "personal" : (serverConfig.claude ? "server" : null);
+  // 기존 호환: setGeminiApiKey/setClaudeApiKey 가 personal 만 변경.
+  const setGeminiApiKey = setPersonalGeminiKey;
+  const setClaudeApiKey = setPersonalClaudeKey;
 
   // Invariant: always have ≥ 1 job and activeJobId points to one that exists.
   useEffect(() => {
@@ -11967,13 +11994,24 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   ? "✅ Gemini (나노바나나2) + Claude API 모두 연결됨 — 프롬프트 자동 최적화 활성"
                   : "✅ 나노바나나2 (Gemini 3.1 Flash Image) API 연결됨")
               : "⚠️ API 키를 설정해주세요"}
+            {/* v1.10.70 — source 라벨 */}
+            {geminiApiKey && (
+              <span style={{
+                marginLeft: 10, fontSize: 10, fontWeight: 700,
+                padding: "2px 8px", borderRadius: 8,
+                background: geminiSource === "personal" ? "rgba(7,110,232,0.12)" : "rgba(34,197,94,0.12)",
+                color: geminiSource === "personal" ? "var(--primary)" : "#15803d",
+              }}>
+                {geminiSource === "personal" ? "👤 개인 키" : "🏢 팀 기본값"}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
             {geminiApiKey
               ? (claudeApiKey
                   ? "Gemini 로 이미지 생성 + Claude 로 프롬프트 자동 최적화. 두 API 모두 정상 동작 중."
                   : "나노바나나2 (Gemini 3.1 Flash Image)로 실제 이미지를 생성합니다. Claude API 키를 추가하면 프롬프트 자동 최적화도 활성화됩니다.")
-              : <>상단 <strong>API 설정</strong> 버튼을 눌러 Gemini API 키를 입력하세요. Google AI Studio에서 무료로 발급받을 수 있습니다.</>
+              : <>상단 <strong>API 설정</strong> 버튼을 눌러 Gemini API 키를 입력하세요. 팀 운영자가 서버에 기본 키를 설정해두면 자동으로 적용됩니다.</>
             }
           </div>
         </div>
@@ -12481,6 +12519,27 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </button>
             </div>
             <div style={{ padding: "24px 28px 28px" }}>
+              {/* v1.10.70 — 팀 / 개인 키 source 안내 */}
+              <div style={{
+                marginBottom: 20, padding: "10px 14px", borderRadius: 10,
+                background: serverConfig.gemini || serverConfig.claude
+                  ? "rgba(7,110,232,0.06)" : "rgba(0,0,0,0.03)",
+                border: `1px solid ${serverConfig.gemini || serverConfig.claude
+                  ? "rgba(7,110,232,0.2)" : "var(--surface-border)"}`,
+                fontSize: 12, color: "var(--text-lighter)", lineHeight: 1.6,
+              }}>
+                {serverConfig.gemini || serverConfig.claude ? (
+                  <>
+                    🏢 <strong>팀 기본 키</strong> 가 서버 환경변수에 설정되어 있습니다 ·
+                    Gemini {serverConfig.gemini ? "✓" : "—"} / Claude {serverConfig.claude ? "✓" : "—"}
+                    <div style={{ color: "var(--text-muted)", marginTop: 4, fontSize: 11 }}>
+                      아래에 입력한 개인 키가 있으면 그것을 우선 사용합니다. 빈 칸으로 저장 = 팀 기본값 사용.
+                    </div>
+                  </>
+                ) : (
+                  <>⚠️ 팀 기본 키가 서버에 설정되지 않았습니다. 개인 키를 직접 입력해주세요.</>
+                )}
+              </div>
               {/* Gemini API Key */}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -12492,12 +12551,26 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <label style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)" }}>
                     Google Gemini API Key
                   </label>
+                  <span style={{
+                    marginLeft: "auto", fontSize: 10, fontWeight: 700,
+                    padding: "2px 8px", borderRadius: 8,
+                    background: geminiSource === "personal" ? "rgba(7,110,232,0.12)"
+                      : geminiSource === "server" ? "rgba(34,197,94,0.12)"
+                      : "rgba(239,68,68,0.12)",
+                    color: geminiSource === "personal" ? "var(--primary)"
+                      : geminiSource === "server" ? "#15803d"
+                      : "#ef4444",
+                  }}>
+                    {geminiSource === "personal" ? "👤 개인 키"
+                      : geminiSource === "server" ? "🏢 팀 기본값"
+                      : "❌ 미설정"}
+                  </span>
                 </div>
                 <input
                   type="password"
-                  value={geminiApiKey}
-                  onChange={(e) => setGeminiApiKey(e.target.value)}
-                  placeholder="AIza..."
+                  value={personalGeminiKey}
+                  onChange={(e) => setPersonalGeminiKey(e.target.value)}
+                  placeholder={serverConfig.gemini ? "(비워두면 팀 기본값 사용)" : "AIza..."}
                   style={{
                     width: "100%", padding: "14px 18px", borderRadius: 12,
                     border: "2px solid var(--surface-border)", background: "rgba(0,0,0,0.04)",
@@ -12582,12 +12655,26 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <label style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)" }}>
                     Anthropic Claude API Key
                   </label>
+                  <span style={{
+                    marginLeft: "auto", fontSize: 10, fontWeight: 700,
+                    padding: "2px 8px", borderRadius: 8,
+                    background: claudeSource === "personal" ? "rgba(7,110,232,0.12)"
+                      : claudeSource === "server" ? "rgba(34,197,94,0.12)"
+                      : "rgba(0,0,0,0.06)",
+                    color: claudeSource === "personal" ? "var(--primary)"
+                      : claudeSource === "server" ? "#15803d"
+                      : "var(--text-muted)",
+                  }}>
+                    {claudeSource === "personal" ? "👤 개인 키"
+                      : claudeSource === "server" ? "🏢 팀 기본값"
+                      : "— 미설정"}
+                  </span>
                 </div>
                 <input
                   type="password"
-                  value={claudeApiKey}
-                  onChange={(e) => setClaudeApiKey(e.target.value)}
-                  placeholder="sk-ant-..."
+                  value={personalClaudeKey}
+                  onChange={(e) => setPersonalClaudeKey(e.target.value)}
+                  placeholder={serverConfig.claude ? "(비워두면 팀 기본값 사용)" : "sk-ant-..."}
                   style={{
                     width: "100%", padding: "14px 18px", borderRadius: 12,
                     border: "2px solid var(--surface-border)", background: "rgba(0,0,0,0.04)",
@@ -12605,8 +12692,11 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               {/* Save Button */}
               <button
                 onClick={() => {
-                  localStorage.setItem("gemini_api_key", geminiApiKey);
-                  localStorage.setItem("claude_api_key", claudeApiKey);
+                  // v1.10.70 — 빈 값이면 localStorage 키 제거 (= 팀 기본값 사용).
+                  if (personalGeminiKey.trim()) localStorage.setItem("gemini_api_key", personalGeminiKey.trim());
+                  else localStorage.removeItem("gemini_api_key");
+                  if (personalClaudeKey.trim()) localStorage.setItem("claude_api_key", personalClaudeKey.trim());
+                  else localStorage.removeItem("claude_api_key");
                   localStorage.setItem("gemini_model", selectedModel);
                   setShowApiSettings(false);
                 }}
@@ -12621,7 +12711,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 저장
               </button>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
-                API 키는 브라우저 로컬 스토리지에만 저장되며 서버로 전송되지 않습니다.
+                개인 키는 브라우저 로컬 스토리지에만 저장됩니다 · 팀 기본값은 서버 환경변수에서 제공
               </div>
             </div>
           </div>

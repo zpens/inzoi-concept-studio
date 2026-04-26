@@ -22,6 +22,26 @@ const DB_PATH = path.join(DATA_DIR, "inzoi.db");
 const DIST_DIR = path.join(__dirname, "dist");
 const SCHEMA_PATH = path.join(__dirname, "schema.sqlite.sql");
 
+// v1.10.70 — .env 자동 로더 (dotenv 의존성 없이). KEY=VALUE 라인만 파싱.
+// 운영자가 .env 에 GEMINI_API_KEY / CLAUDE_API_KEY 적어두면 /api/config 가 읽어 클라이언트에 배포.
+try {
+  const envPath = path.join(__dirname, ".env");
+  if (fs.existsSync(envPath)) {
+    const txt = fs.readFileSync(envPath, "utf-8");
+    for (const line of txt.split(/\r?\n/)) {
+      if (!line || line.trim().startsWith("#")) continue;
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m && !process.env[m[1]]) {
+        let v = m[2];
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+          v = v.slice(1, -1);
+        }
+        process.env[m[1]] = v;
+      }
+    }
+  }
+} catch { /* ignore env load errors */ }
+
 // ─── 런타임 준비 ─────────────────────────────────────────
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
@@ -292,6 +312,15 @@ try {
 app.get("/api/health", (c) =>
   c.json({ ok: true, version: PKG_VERSION, time: new Date().toISOString() })
 );
+
+// v1.10.70 — 팀 공용 API 키 배포용. 운영 PC 의 .env (또는 환경변수) 에서 읽어 클라이언트에 응답.
+// 사내망에서만 접근 가능한 환경 전제. 클라이언트는 개인 localStorage 키가 있으면 그것 우선,
+// 없을 때 이 응답을 fallback 으로 사용.
+app.get("/api/config", (c) => c.json({
+  gemini: process.env.GEMINI_API_KEY || null,
+  claude: process.env.CLAUDE_API_KEY || null,
+  source: "server",
+}));
 
 // upstream fetch 에 5초 타임아웃 — :8080 이 꺼져있거나 느릴 때 요청이 무한 대기하지 않게.
 async function timedFetch(url, ms = 5000) {
