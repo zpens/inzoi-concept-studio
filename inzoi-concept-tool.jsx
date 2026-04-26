@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.66";
+const APP_VERSION = "1.10.67";
 const CHANGELOG = [
+  {
+    version: "1.10.67",
+    date: "2026-04-26",
+    changes: [
+      "갤러리 비교 모드(F → Ctrl-클릭 ≥ 2장 → 🔀 비교) 에 🪄 슬라이더 모드 추가 — Before/After 식 좌·우 이미지를 가운데 슬라이더로 swipe 비교. 같은 시드 다른 프롬프트 / 시안 vs 시트 변화 등 미세 차이 확인에 강력",
+      "슬라이더 모드: 좌·우 이미지 셀렉트로 자유 선택, 핸들 드래그로 분할선 이동 (touchAction: none 으로 모바일 호환)",
+      "기존 그리드 모드(📰)와 토글 — 2장 이상이면 토글 활성, 1장 비교는 그리드만",
+      "CompareOverlay 컴포넌트로 추출 — GalleryCanvas 안에서 인라인이던 비교 UI 분리",
+    ],
+  },
   {
     version: "1.10.66",
     date: "2026-04-26",
@@ -6164,81 +6174,15 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           </div>
         </div>
       )}
-      {/* v1.10.65 — 다중 비교 오버레이. 선택 순서대로 격자 배치, contain 으로 풀사이즈. */}
-      {compareMode && selectedUrls.size >= 2 && (() => {
-        const urls = [...selectedUrls];
-        const n = urls.length;
-        const cols = n <= 2 ? n : (n <= 4 ? 2 : (n <= 6 ? 3 : 4));
-        return (
-          <div
-            onKeyDown={(e) => { if (e.key === "Escape") setCompareMode(false); }}
-            tabIndex={-1}
-            ref={(el) => el?.focus()}
-            style={{
-              position: "fixed", inset: 0, zIndex: 1200,
-              background: "rgba(8,10,14,0.97)",
-              display: "flex", flexDirection: "column",
-              outline: "none",
-            }}
-          >
-            <div style={{
-              padding: "10px 16px", display: "flex", alignItems: "center", gap: 10,
-              borderBottom: "1px solid rgba(255,255,255,0.08)",
-            }}>
-              <div style={{ color: "#fff", fontSize: 14, fontWeight: 800 }}>
-                🔀 비교 — {n}장
-              </div>
-              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
-                ESC 로 갤러리 복귀
-              </span>
-              <button
-                onClick={() => setCompareMode(false)}
-                style={{
-                  marginLeft: "auto", padding: "5px 12px", borderRadius: 8,
-                  background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
-                  color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                }}
-              >← 갤러리로</button>
-            </div>
-            <div style={{
-              flex: 1, padding: 14, overflow: "hidden",
-              display: "grid",
-              gridTemplateColumns: `repeat(${cols}, 1fr)`,
-              gridAutoRows: "1fr",
-              gap: 10,
-            }}>
-              {urls.map((u, i) => (
-                <div
-                  key={u}
-                  style={{
-                    position: "relative", borderRadius: 10, overflow: "hidden",
-                    background: "#000",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                  }}
-                >
-                  <img
-                    src={u}
-                    alt=""
-                    onClick={() => setLightboxSrc(u)}
-                    style={{
-                      width: "100%", height: "100%",
-                      objectFit: "contain",
-                      cursor: "zoom-in", display: "block",
-                      background: "#000",
-                    }}
-                  />
-                  <div style={{
-                    position: "absolute", top: 6, left: 6,
-                    padding: "2px 9px", borderRadius: 11,
-                    background: "rgba(0,0,0,0.7)", color: "#fff",
-                    fontSize: 11, fontWeight: 700, pointerEvents: "none",
-                  }}>#{i + 1}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
+      {/* v1.10.65 — 다중 비교 오버레이. 선택 순서대로 격자 배치, contain 으로 풀사이즈.
+          v1.10.67 — 2장 선택 시 🪄 슬라이더 모드 토글 (Before/After 비교). */}
+      {compareMode && selectedUrls.size >= 2 && (
+        <CompareOverlay
+          urls={[...selectedUrls]}
+          onClose={() => setCompareMode(false)}
+          onOpenLightbox={(u) => setLightboxSrc(u)}
+        />
+      )}
     </div>
   );
 }
@@ -6821,6 +6765,241 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
           display: "flex", alignItems: "center", gap: 6, zIndex: 2,
         }}
       >📥 저장</a>
+    </div>
+  );
+}
+
+// v1.10.67 — 다중 선택 비교 오버레이. 그리드 모드(N장 격자) + 슬라이더 모드(2장 Before/After).
+function CompareOverlay({ urls, onClose, onOpenLightbox }) {
+  const n = urls.length;
+  const cols = n <= 2 ? n : (n <= 4 ? 2 : (n <= 6 ? 3 : 4));
+  const [mode, setMode] = React.useState("grid");      // "grid" | "slider"
+  const [sliderPos, setSliderPos] = React.useState(0.5); // 0~1 (좌→우)
+  const [sliderA, setSliderA] = React.useState(0);       // 좌측 이미지 idx
+  const [sliderB, setSliderB] = React.useState(1);       // 우측 이미지 idx
+  const sliderRef = React.useRef(null);
+  const draggingSlider = React.useRef(false);
+
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // n 변경 시 슬라이더 인덱스 보정
+  React.useEffect(() => {
+    if (sliderA >= n) setSliderA(0);
+    if (sliderB >= n) setSliderB(Math.min(1, n - 1));
+  }, [n, sliderA, sliderB]);
+
+  const onSliderDown = (e) => {
+    draggingSlider.current = true;
+    sliderRef.current?.setPointerCapture?.(e.pointerId);
+    updateSlider(e);
+  };
+  const onSliderMove = (e) => {
+    if (!draggingSlider.current) return;
+    updateSlider(e);
+  };
+  const onSliderUp = (e) => {
+    draggingSlider.current = false;
+    sliderRef.current?.releasePointerCapture?.(e.pointerId);
+  };
+  const updateSlider = (e) => {
+    const rect = sliderRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = (e.clientX - rect.left) / rect.width;
+    setSliderPos(Math.max(0, Math.min(1, x)));
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1200,
+        background: "rgba(8,10,14,0.97)",
+        display: "flex", flexDirection: "column",
+        outline: "none",
+      }}
+    >
+      <div style={{
+        padding: "10px 16px", display: "flex", alignItems: "center", gap: 10,
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <div style={{ color: "#fff", fontSize: 14, fontWeight: 800 }}>
+          🔀 비교 — {n}장
+        </div>
+        {/* v1.10.67 — 모드 토글 */}
+        <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 8, background: "rgba(255,255,255,0.06)" }}>
+          <button
+            onClick={() => setMode("grid")}
+            style={{
+              padding: "4px 10px", borderRadius: 6, border: "none",
+              background: mode === "grid" ? "rgba(255,255,255,0.15)" : "transparent",
+              color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            }}
+          >📰 그리드</button>
+          <button
+            onClick={() => setMode("slider")}
+            disabled={n < 2}
+            style={{
+              padding: "4px 10px", borderRadius: 6, border: "none",
+              background: mode === "slider" ? "rgba(255,255,255,0.15)" : "transparent",
+              color: n < 2 ? "rgba(255,255,255,0.3)" : "#fff",
+              fontSize: 11, fontWeight: 700, cursor: n < 2 ? "not-allowed" : "pointer",
+            }}
+          >🪄 슬라이더</button>
+        </div>
+        {mode === "slider" && n >= 2 && (
+          <>
+            <select
+              value={sliderA}
+              onChange={(e) => setSliderA(Number(e.target.value))}
+              style={{
+                padding: "3px 8px", borderRadius: 6,
+                background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
+                color: "#fff", fontSize: 11, fontWeight: 600,
+              }}
+            >
+              {urls.map((_, i) => <option key={i} value={i} style={{ color: "#000" }}>좌: #{i + 1}</option>)}
+            </select>
+            <span style={{ color: "rgba(255,255,255,0.4)" }}>↔</span>
+            <select
+              value={sliderB}
+              onChange={(e) => setSliderB(Number(e.target.value))}
+              style={{
+                padding: "3px 8px", borderRadius: 6,
+                background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
+                color: "#fff", fontSize: 11, fontWeight: 600,
+              }}
+            >
+              {urls.map((_, i) => <option key={i} value={i} style={{ color: "#000" }}>우: #{i + 1}</option>)}
+            </select>
+          </>
+        )}
+        <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>ESC 로 갤러리 복귀</span>
+        <button
+          onClick={onClose}
+          style={{
+            marginLeft: "auto", padding: "5px 12px", borderRadius: 8,
+            background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
+            color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          }}
+        >← 갤러리로</button>
+      </div>
+      {mode === "grid" && (
+        <div style={{
+          flex: 1, padding: 14, overflow: "hidden",
+          display: "grid",
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          gridAutoRows: "1fr",
+          gap: 10,
+        }}>
+          {urls.map((u, i) => (
+            <div
+              key={u}
+              style={{
+                position: "relative", borderRadius: 10, overflow: "hidden",
+                background: "#000",
+                border: "1px solid rgba(255,255,255,0.12)",
+              }}
+            >
+              <img
+                src={u}
+                alt=""
+                onClick={() => onOpenLightbox?.(u)}
+                style={{
+                  width: "100%", height: "100%",
+                  objectFit: "contain",
+                  cursor: "zoom-in", display: "block",
+                  background: "#000",
+                }}
+              />
+              <div style={{
+                position: "absolute", top: 6, left: 6,
+                padding: "2px 9px", borderRadius: 11,
+                background: "rgba(0,0,0,0.7)", color: "#fff",
+                fontSize: 11, fontWeight: 700, pointerEvents: "none",
+              }}>#{i + 1}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {mode === "slider" && n >= 2 && (
+        <div
+          ref={sliderRef}
+          onPointerDown={onSliderDown}
+          onPointerMove={onSliderMove}
+          onPointerUp={onSliderUp}
+          style={{
+            flex: 1, position: "relative",
+            background: "#000",
+            cursor: "ew-resize",
+            overflow: "hidden",
+            userSelect: "none",
+            touchAction: "none",
+          }}
+        >
+          {/* 좌측 (A) — 풀사이즈 */}
+          <img
+            src={urls[Math.min(sliderA, n - 1)]}
+            alt=""
+            draggable={false}
+            style={{
+              position: "absolute", inset: 0,
+              width: "100%", height: "100%",
+              objectFit: "contain",
+              pointerEvents: "none",
+            }}
+          />
+          {/* 우측 (B) — clip-path 로 sliderPos 우측만 표시 */}
+          <img
+            src={urls[Math.min(sliderB, n - 1)]}
+            alt=""
+            draggable={false}
+            style={{
+              position: "absolute", inset: 0,
+              width: "100%", height: "100%",
+              objectFit: "contain",
+              clipPath: `inset(0 0 0 ${sliderPos * 100}%)`,
+              pointerEvents: "none",
+            }}
+          />
+          {/* 슬라이더 라인 + 핸들 */}
+          <div style={{
+            position: "absolute", top: 0, bottom: 0,
+            left: `${sliderPos * 100}%`,
+            width: 2, marginLeft: -1,
+            background: "rgba(255,255,255,0.85)",
+            boxShadow: "0 0 12px rgba(0,0,0,0.6)",
+            pointerEvents: "none",
+          }} />
+          <div style={{
+            position: "absolute", top: "50%",
+            left: `${sliderPos * 100}%`,
+            transform: "translate(-50%, -50%)",
+            width: 44, height: 44, borderRadius: 22,
+            background: "rgba(255,255,255,0.95)",
+            border: "2px solid #fff",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#1a1d23", fontSize: 18, fontWeight: 800,
+            pointerEvents: "none",
+          }}>↔</div>
+          {/* 라벨 */}
+          <div style={{
+            position: "absolute", top: 12, left: 12,
+            padding: "4px 10px", borderRadius: 12,
+            background: "rgba(0,0,0,0.65)", color: "#fff",
+            fontSize: 12, fontWeight: 700, pointerEvents: "none",
+          }}>좌 #{sliderA + 1}</div>
+          <div style={{
+            position: "absolute", top: 12, right: 12,
+            padding: "4px 10px", borderRadius: 12,
+            background: "rgba(0,0,0,0.65)", color: "#fff",
+            fontSize: 12, fontWeight: 700, pointerEvents: "none",
+          }}>우 #{sliderB + 1}</div>
+        </div>
+      )}
     </div>
   );
 }
