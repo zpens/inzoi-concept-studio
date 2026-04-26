@@ -451,6 +451,38 @@ app.all("/api/ai/claude/*", async (c) => {
   }
 });
 
+// v1.10.90 — 일별 시계열 사용량. UI 의 일자별 차트용.
+app.get("/api/usage/daily", (c) => {
+  const actor = c.req.query("actor") || null;
+  const days = Math.min(365, Math.max(1, parseInt(c.req.query("days") || "30", 10)));
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  if (actor === "*") {
+    const rows = db.prepare(`
+      SELECT date(created_at) AS day,
+             COUNT(*) AS calls,
+             SUM(COALESCE(cost_usd, 0)) AS cost_usd,
+             SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+             SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+             SUM(COALESCE(image_count, 0)) AS image_count
+      FROM ai_usage_log WHERE created_at >= ?
+      GROUP BY date(created_at) ORDER BY day ASC
+    `).all(since);
+    return c.json({ actor: "*", days, rows });
+  }
+  const rows = db.prepare(`
+    SELECT date(created_at) AS day,
+           COUNT(*) AS calls,
+           SUM(COALESCE(cost_usd, 0)) AS cost_usd,
+           SUM(COALESCE(input_tokens, 0)) AS input_tokens,
+           SUM(COALESCE(output_tokens, 0)) AS output_tokens,
+           SUM(COALESCE(image_count, 0)) AS image_count
+    FROM ai_usage_log
+    WHERE created_at >= ? AND ((? IS NULL AND actor IS NULL) OR actor = ?)
+    GROUP BY date(created_at) ORDER BY day ASC
+  `).all(since, actor, actor);
+  return c.json({ actor, days, rows });
+});
+
 // v1.10.89 — 사용량 조회. ?actor= 단일, ?actor=* 전체 합산, ?days= 기간.
 app.get("/api/usage", (c) => {
   const actor = c.req.query("actor") || null;

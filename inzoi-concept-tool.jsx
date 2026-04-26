@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.89";
+const APP_VERSION = "1.10.90";
 const CHANGELOG = [
+  {
+    version: "1.10.90",
+    date: "2026-04-26",
+    changes: [
+      "API 사용량 패널 풀 개편 — 🏆 Top 5 사용자 leaderboard (메달 + 비율 막대), 프로필 드롭다운으로 다른 사용자 사용량 조회, 기간 토글(오늘/7일/30일/90일), 탭 뷰(🤖 모델별 / 📅 일자별 / 🕐 최근 호출)",
+      "📅 일자별 — 막대 그래프로 일 단위 비용 시각화 (최대 90일)",
+      "🤖 모델별 — 선택된 기간 범위로 자동 갱신 (이전엔 month 고정)",
+      "Top 5 항목 클릭 → 해당 사용자 상세로 자동 전환",
+      "GET /api/usage/daily?actor=&days= 신규 — 일별 시계열 집계",
+    ],
+  },
   {
     version: "1.10.89",
     date: "2026-04-26",
@@ -7858,41 +7869,79 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
 }
 
 // 카드 공유 링크 복사 — 제목 옆 작은 🔗 아이콘, 클릭 시 현재 카드 URL 을 클립보드에 복사 (v1.10.24).
-// v1.10.89 — API 설정 모달 안의 사용량 패널. /api/usage?actor=... 폴링.
-function ApiUsagePanel({ actor }) {
+// v1.10.89 — API 설정 모달 안의 사용량 패널.
+// v1.10.90 — Top 5 leaderboard + 프로필 선택 + 기간 + 탭 뷰(요약/모델/일자/최근).
+function ApiUsagePanel({ currentActor, profiles = [] }) {
+  const [selectedActor, setSelectedActor] = React.useState(currentActor || "");
+  const [period, setPeriod] = React.useState("month"); // today / week / month / 90d
+  const [view, setView] = React.useState("summary");   // summary / model / daily / recent
   const [data, setData] = React.useState(null);
+  const [leaderboard, setLeaderboard] = React.useState(null);
+  const [daily, setDaily] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
-  const [showAll, setShowAll] = React.useState(false);
-  const [allRows, setAllRows] = React.useState(null);
-  const reload = React.useCallback(async () => {
+
+  const periodToDays = (p) => p === "today" ? 1 : p === "week" ? 7 : p === "month" ? 30 : 90;
+  const periodLabel = (p) => p === "today" ? "오늘" : p === "week" ? "이번주(7일)" : p === "month" ? "이번달(30일)" : "최근 90일";
+
+  // 단일 actor 요약 + 최근 호출
+  const reloadActor = React.useCallback(async () => {
     setLoading(true);
     try {
-      const q = actor ? `?actor=${encodeURIComponent(actor)}` : "";
+      const q = selectedActor ? `?actor=${encodeURIComponent(selectedActor)}` : "";
       const r = await fetch(`/api/usage${q}`);
       if (r.ok) setData(await r.json());
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [actor]);
-  React.useEffect(() => { reload(); }, [reload]);
-  const reloadAll = async () => {
+  }, [selectedActor]);
+
+  // Top 5 leaderboard (전체 사용자, 30일)
+  const reloadLeaderboard = React.useCallback(async () => {
     try {
       const r = await fetch(`/api/usage?actor=*&days=30`);
-      if (r.ok) setAllRows((await r.json()).rows);
+      if (r.ok) setLeaderboard(((await r.json()).rows || []).slice(0, 5));
     } catch { /* ignore */ }
-  };
+  }, []);
+
+  // 일자별 시계열
+  const reloadDaily = React.useCallback(async () => {
+    try {
+      const days = periodToDays(period);
+      const a = selectedActor ? encodeURIComponent(selectedActor) : "";
+      const r = await fetch(`/api/usage/daily?actor=${a}&days=${days}`);
+      if (r.ok) setDaily((await r.json()).rows || []);
+    } catch { /* ignore */ }
+  }, [selectedActor, period]);
+
+  React.useEffect(() => { reloadActor(); }, [reloadActor]);
+  React.useEffect(() => { reloadLeaderboard(); }, [reloadLeaderboard]);
+  React.useEffect(() => { if (view === "daily") reloadDaily(); }, [view, reloadDaily]);
+
   const fmtCost = (n) => "$" + (Number(n) || 0).toFixed(4);
   const fmtTok = (n) => (Number(n) || 0).toLocaleString();
   const sumCost = (arr) => (arr || []).reduce((s, r) => s + (Number(r.cost_usd) || 0), 0);
   const sumCalls = (arr) => (arr || []).reduce((s, r) => s + (Number(r.calls) || 0), 0);
+
+  // 선택된 기간의 집계 행 (data.today/week/month, 90d 는 daily 합산)
+  const periodRows = data ? (period === "today" ? data.today : period === "week" ? data.week : data.month) : null;
+  // 90d 는 별도 fetch 필요할 수 있지만 month(30) 까지만 단일-actor 엔드포인트가 제공. 90 은 daily 합산.
+
+  // Top 5 비용 합산 (퍼센트용)
+  const lbTotalCost = leaderboard ? leaderboard.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0) : 0;
+  const dailyMaxCost = daily ? Math.max(0.001, ...daily.map((r) => Number(r.cost_usd) || 0)) : 0.001;
+
+  // 프로필 옵션: 선택된 actor + 모든 프로필 + (익명).
+  const profileOptions = (() => {
+    const opts = profiles.map((p) => p.name);
+    if (currentActor && !opts.includes(currentActor)) opts.unshift(currentActor);
+    return opts;
+  })();
+
   return (
     <div style={{ marginTop: 24, paddingTop: 18, borderTop: "1px solid var(--surface-border)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-main)" }}>📊 API 사용량</span>
-        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          {actor ? `프로필: ${actor}` : "(프로필 미선택 — 익명 호출)"}
-        </span>
         <button
-          onClick={reload}
+          onClick={() => { reloadActor(); reloadLeaderboard(); reloadDaily(); }}
           disabled={loading}
           title="새로고침"
           style={{
@@ -7902,53 +7951,165 @@ function ApiUsagePanel({ actor }) {
             cursor: loading ? "wait" : "pointer",
           }}
         >{loading ? "로딩..." : "🔄 새로고침"}</button>
-        <button
-          onClick={() => { setShowAll((v) => !v); if (!allRows) reloadAll(); }}
-          title="전체 사용자 비교"
-          style={{
-            padding: "4px 10px", borderRadius: 8,
-            background: showAll ? "rgba(7,110,232,0.1)" : "rgba(0,0,0,0.04)",
-            border: `1px solid ${showAll ? "var(--primary)" : "var(--surface-border)"}`,
-            color: showAll ? "var(--primary)" : "var(--text-muted)",
-            fontSize: 11, fontWeight: 600, cursor: "pointer",
-          }}
-        >👥 전체 비교</button>
       </div>
-      {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
-          {[
-            { key: "today", label: "오늘", rows: data.today },
-            { key: "week",  label: "이번주(7일)", rows: data.week },
-            { key: "month", label: "이번달(30일)", rows: data.month },
-          ].map((p) => (
-            <div key={p.key} style={{
-              padding: 10, borderRadius: 10,
-              background: "rgba(0,0,0,0.03)", border: "1px solid var(--surface-border)",
-            }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{p.label}</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)", marginTop: 4 }}>
-                {fmtCost(sumCost(p.rows))}
-              </div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                {sumCalls(p.rows)}회 호출
-              </div>
+
+      {/* 🏆 Top 5 leaderboard (이번달, 전체 사용자) */}
+      {leaderboard && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>
+            🏆 Top 5 사용자 (최근 30일)
+          </div>
+          {leaderboard.length === 0 ? (
+            <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--text-muted)", textAlign: "center", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
+              호출 기록 없음
             </div>
-          ))}
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {leaderboard.map((r, i) => {
+                const pct = lbTotalCost > 0 ? (Number(r.cost_usd) / lbTotalCost) * 100 : 0;
+                const isCurrent = r.actor === currentActor;
+                const isSelected = r.actor === selectedActor;
+                const medal = ["🥇", "🥈", "🥉", "4위", "5위"][i] || `${i + 1}위`;
+                return (
+                  <button
+                    key={r.actor + i}
+                    onClick={() => setSelectedActor(r.actor === "(익명)" ? "" : r.actor)}
+                    title="클릭해서 이 사용자의 상세 보기"
+                    style={{
+                      display: "grid", gridTemplateColumns: "32px 1fr auto auto", gap: 8,
+                      alignItems: "center", padding: "6px 10px",
+                      borderRadius: 8, border: "none", textAlign: "left", cursor: "pointer",
+                      background: isSelected ? "rgba(7,110,232,0.08)" : "rgba(0,0,0,0.02)",
+                      borderLeft: isSelected ? "3px solid var(--primary)" : "3px solid transparent",
+                      fontSize: 12, position: "relative",
+                    }}
+                  >
+                    <span style={{ fontSize: 13, fontWeight: 800 }}>{medal}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        fontWeight: isCurrent ? 800 : 600,
+                        color: isCurrent ? "var(--primary)" : "var(--text-main)",
+                      }}>
+                        {isCurrent && <span>👤</span>}
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.actor}</span>
+                      </div>
+                      <div style={{ marginTop: 2, height: 4, borderRadius: 2, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, var(--primary), var(--secondary))" }} />
+                      </div>
+                    </div>
+                    <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{r.calls}회</span>
+                    <span style={{ fontWeight: 700, minWidth: 70, textAlign: "right" }}>{fmtCost(r.cost_usd)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
-      {data && data.month && data.month.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4 }}>
-            엔드포인트별 (이번달)
-          </div>
-          <div style={{
-            border: "1px solid var(--surface-border)", borderRadius: 8, overflow: "hidden",
-          }}>
-            {data.month.map((r, i) => (
+
+      {/* 프로필 / 기간 선택 */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>프로필:</span>
+        <select
+          value={selectedActor}
+          onChange={(e) => setSelectedActor(e.target.value)}
+          style={{
+            padding: "4px 10px", borderRadius: 6, fontSize: 12,
+            border: "1px solid var(--surface-border)", background: "#fff",
+            color: "var(--text-main)", fontWeight: 600, cursor: "pointer",
+          }}
+        >
+          <option value="">(익명)</option>
+          {profileOptions.map((name) => (
+            <option key={name} value={name}>
+              {name === currentActor ? `👤 ${name} (나)` : name}
+            </option>
+          ))}
+        </select>
+        <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginLeft: 8 }}>기간:</span>
+        <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(0,0,0,0.04)" }}>
+          {[
+            { id: "today", label: "오늘" },
+            { id: "week",  label: "7일" },
+            { id: "month", label: "30일" },
+            { id: "90d",   label: "90일" },
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPeriod(p.id)}
+              style={{
+                padding: "3px 9px", borderRadius: 5, border: "none",
+                background: period === p.id ? "#fff" : "transparent",
+                color: period === p.id ? "var(--primary)" : "var(--text-muted)",
+                fontSize: 11, fontWeight: 700, cursor: "pointer",
+                boxShadow: period === p.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              }}
+            >{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* 합계 한 줄 */}
+      {data && periodRows && period !== "90d" && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "8px 12px", borderRadius: 8, marginBottom: 10,
+          background: "linear-gradient(135deg, rgba(7,110,232,0.06), rgba(139,92,246,0.04))",
+          border: "1px solid rgba(7,110,232,0.18)",
+        }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{periodLabel(period)}:</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: "var(--primary)" }}>{fmtCost(sumCost(periodRows))}</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{sumCalls(periodRows)}회 호출</span>
+        </div>
+      )}
+      {period === "90d" && daily && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "8px 12px", borderRadius: 8, marginBottom: 10,
+          background: "linear-gradient(135deg, rgba(7,110,232,0.06), rgba(139,92,246,0.04))",
+          border: "1px solid rgba(7,110,232,0.18)",
+        }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>최근 90일:</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: "var(--primary)" }}>
+            {fmtCost(daily.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0))}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            {daily.reduce((s, r) => s + (Number(r.calls) || 0), 0)}회 호출 / {daily.length}일 활성
+          </span>
+        </div>
+      )}
+
+      {/* 탭 */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 8, borderBottom: "1px solid var(--surface-border)" }}>
+        {[
+          { id: "model",  label: "🤖 모델별" },
+          { id: "daily",  label: "📅 일자별" },
+          { id: "recent", label: "🕐 최근 호출" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setView(t.id)}
+            style={{
+              padding: "6px 12px", borderRadius: "6px 6px 0 0", border: "none",
+              borderBottom: view === t.id ? "2px solid var(--primary)" : "2px solid transparent",
+              background: "transparent",
+              color: view === t.id ? "var(--primary)" : "var(--text-muted)",
+              fontSize: 12, fontWeight: 700, cursor: "pointer",
+              marginBottom: -1,
+            }}
+          >{t.label}</button>
+        ))}
+      </div>
+
+      {/* 모델별 */}
+      {view === "model" && (
+        periodRows && periodRows.length > 0 ? (
+          <div style={{ border: "1px solid var(--surface-border)", borderRadius: 8, overflow: "hidden", marginBottom: 8 }}>
+            {periodRows.map((r, i) => (
               <div key={`${r.endpoint}-${r.model}-${i}`} style={{
                 display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 10,
-                alignItems: "center", padding: "6px 10px",
-                fontSize: 11,
+                alignItems: "center", padding: "6px 10px", fontSize: 11,
                 background: i % 2 ? "rgba(0,0,0,0.02)" : "transparent",
               }}>
                 <span style={{ color: r.endpoint === "claude" ? "#a855f7" : "#076ee8", fontWeight: 700 }}>
@@ -7960,20 +8121,55 @@ function ApiUsagePanel({ actor }) {
                 <span style={{ color: "var(--text-muted)" }}>
                   {r.image_count > 0 ? `🖼 ${r.image_count}장` : `${fmtTok(r.input_tokens)}↓ / ${fmtTok(r.output_tokens)}↑`}
                 </span>
-                <span style={{ fontWeight: 700, color: "var(--text-main)", minWidth: 70, textAlign: "right" }}>
+                <span style={{ fontWeight: 700, minWidth: 70, textAlign: "right" }}>
                   {fmtCost(r.cost_usd)} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {r.calls}회</span>
                 </span>
               </div>
             ))}
           </div>
-        </div>
+        ) : (
+          <div style={{ padding: 14, textAlign: "center", fontSize: 11, color: "var(--text-muted)", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
+            기록 없음
+          </div>
+        )
       )}
-      {data && data.recent && data.recent.length > 0 && (
-        <details style={{ marginBottom: 8 }}>
-          <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", cursor: "pointer", padding: "4px 0" }}>
-            최근 호출 ({data.recent.length}건)
-          </summary>
-          <div style={{ marginTop: 4, maxHeight: 220, overflowY: "auto", border: "1px solid var(--surface-border)", borderRadius: 8 }}>
+
+      {/* 일자별 — 최대 30일 막대 그래프 */}
+      {view === "daily" && (
+        daily && daily.length > 0 ? (
+          <div style={{ border: "1px solid var(--surface-border)", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 80, marginBottom: 6 }}>
+              {daily.map((r) => {
+                const h = Math.max(2, (Number(r.cost_usd) || 0) / dailyMaxCost * 76);
+                return (
+                  <div
+                    key={r.day}
+                    title={`${r.day} · $${(Number(r.cost_usd) || 0).toFixed(4)} · ${r.calls}회`}
+                    style={{
+                      flex: 1, height: `${h}px`,
+                      background: "linear-gradient(180deg, var(--primary), var(--secondary))",
+                      borderRadius: "2px 2px 0 0", minWidth: 4,
+                    }}
+                  />
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>
+              <span>{daily[0]?.day || ""}</span>
+              <span>{daily[daily.length - 1]?.day || ""}</span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: 14, textAlign: "center", fontSize: 11, color: "var(--text-muted)", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
+            기록 없음 (탭 진입 시 자동 로드)
+          </div>
+        )
+      )}
+
+      {/* 최근 호출 */}
+      {view === "recent" && (
+        data && data.recent && data.recent.length > 0 ? (
+          <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--surface-border)", borderRadius: 8, marginBottom: 8 }}>
             {data.recent.map((r, i) => (
               <div key={i} style={{
                 display: "grid", gridTemplateColumns: "auto auto 1fr auto auto", gap: 8,
@@ -7988,34 +8184,13 @@ function ApiUsagePanel({ actor }) {
               </div>
             ))}
           </div>
-        </details>
-      )}
-      {showAll && allRows && (
-        <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4 }}>
-            전체 사용자 (이번달)
+        ) : (
+          <div style={{ padding: 14, textAlign: "center", fontSize: 11, color: "var(--text-muted)", border: "1px dashed var(--surface-border)", borderRadius: 8 }}>
+            기록 없음
           </div>
-          <div style={{ border: "1px solid var(--surface-border)", borderRadius: 8, overflow: "hidden" }}>
-            {allRows.length === 0
-              ? <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>호출 기록 없음</div>
-              : allRows.map((r, i) => (
-                <div key={r.actor + "-" + i} style={{
-                  display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8,
-                  alignItems: "center", padding: "6px 10px",
-                  fontSize: 11,
-                  background: i % 2 ? "rgba(0,0,0,0.02)" : "transparent",
-                  fontWeight: r.actor === actor ? 700 : 500,
-                }}>
-                  <span style={{ color: r.actor === actor ? "var(--primary)" : "var(--text-main)" }}>
-                    {r.actor === actor ? "👤 " : ""}{r.actor || "(익명)"}
-                  </span>
-                  <span style={{ color: "var(--text-muted)" }}>{r.calls}회</span>
-                  <span style={{ fontWeight: 700, minWidth: 70, textAlign: "right" }}>{fmtCost(r.cost_usd)}</span>
-                </div>
-              ))}
-          </div>
-        </div>
+        )
       )}
+
       <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5 }}>
         💡 비용은 모델별 공개 단가(Gemini 3 Flash Image $0.039/장, Claude Sonnet $3/$15 per 1M 등)로 추정. 실제 청구액과 ±10% 차이 가능
       </div>
@@ -13185,8 +13360,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 개인 키는 브라우저 로컬 스토리지에만 저장됩니다 · 팀 기본값은 서버 환경변수에서 제공
               </div>
 
-              {/* v1.10.89 — API 사용량 (현재 프로필 기준) */}
-              <ApiUsagePanel actor={actorName} />
+              {/* v1.10.89 — API 사용량 (현재 프로필 기준).
+                  v1.10.90 — Top 5 + 프로필 선택 + 기간 + 탭 뷰 */}
+              <ApiUsagePanel currentActor={actorName} profiles={profiles} />
             </div>
           </div>
         </>
