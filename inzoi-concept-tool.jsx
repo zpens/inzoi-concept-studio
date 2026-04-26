@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.62";
+const APP_VERSION = "1.10.63";
 const CHANGELOG = [
+  {
+    version: "1.10.63",
+    date: "2026-04-26",
+    changes: [
+      "갤러리 캔버스(F) — 타일 클릭 시 ImageLightbox 진입 (줌/패닝/그리기 전체 기능). 갤러리 위에 스택되도록 zIndex 1100 적용",
+      "타일 hover 우상단에 🎯 참조 버튼 (시안/시트 종류만) — 클릭 한 번으로 해당 이미지 URL 을 ref_images 에 추가, 다음 시안 생성에 자동 반영. 중복은 무시",
+      "타일 좌클릭 = lightbox / 미들·우 드래그 = 패닝 / 좌 드래그(>4px) 도 클릭 무시. 기존 cover/copy-ref 버튼은 stopPropagation 으로 클릭 분리",
+      "ImageLightbox 에 zIndex prop 추가 (default 300, 갤러리에서는 1100)",
+    ],
+  },
   {
     version: "1.10.62",
     date: "2026-04-26",
@@ -5476,6 +5486,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   const [dragging, setDragging] = React.useState(false);
   // 이미지별 aspect ratio (w/h) — onLoad 에서 채워 justified 레이아웃에 사용 (v1.10.34).
   const [aspects, setAspects] = React.useState({});
+  // v1.10.63 — 타일 클릭 시 lightbox (줌/패닝/그리기 전체 기능) 열기.
+  const [lightboxSrc, setLightboxSrc] = React.useState(null);
   const wrapRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const panStart = React.useRef(null);
@@ -5729,6 +5741,28 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       await onSaved?.();
     } catch (e) { alert("대표 지정 실패: " + e.message); }
   };
+  // v1.10.63 — 시안/시트 → 다음 시안 생성 참조로 추가 (ref_images 끝에 push).
+  // 이미 ref_images 에 있는 URL 이면 무시.
+  const copyToRef = async (url) => {
+    if (!url) return;
+    const existing = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+    if (existing.includes(url)) {
+      alert("이미 참조 이미지로 등록되어 있습니다.");
+      return;
+    }
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), ref_images: [...existing, url] },
+          actor,
+        }),
+      });
+      await onSaved?.();
+      alert("🎯 참조 이미지에 추가됨. 다음 시안 생성에 반영됩니다.");
+    } catch (e) { alert("참조 추가 실패: " + e.message); }
+  };
   const selectDesign = async (idx) => {
     try {
       const d = card.data?.designs?.[idx];
@@ -5900,6 +5934,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                   naturalImgH={naturalImgH}
                   scale={scale}
                   onSetCover={setCover}
+                  onCopyToRef={copyToRef}
+                  onOpenLightbox={(url) => setLightboxSrc(url)}
                   onImageLoad={onImageLoad}
                 />
               ))}
@@ -5907,6 +5943,24 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           ))}
         </div>
       </div>
+      {/* v1.10.63 — 타일 클릭 시 ImageLightbox (zIndex 1100 으로 갤러리 위에). */}
+      {lightboxSrc && (() => {
+        const flat = groups.flatMap((g) => g.items.map((it) => it.url)).filter(Boolean);
+        const uniq = Array.from(new Set(flat));
+        return (
+          <ImageLightbox
+            src={lightboxSrc}
+            gallery={uniq}
+            onChange={setLightboxSrc}
+            onClose={() => setLightboxSrc(null)}
+            card={card}
+            projectSlug={projectSlug}
+            actor={actor}
+            onSavedRef={async () => { await onSaved?.(); }}
+            zIndex={1100}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -5916,7 +5970,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
 // 휠 줌(커서 기준), 좌/중/우 클릭 드래그 패닝, 0 키로 fit, ←/→ 로 갤러리 이동, ESC 닫기.
 // v1.10.60 — 그리기 모드 추가 (펜/지우개/색상). 카드 컨텍스트(card+projectSlug+actor) 가
 // 있으면 합성 이미지를 ref_images 끝에 추가해 다음 시안 생성에 자동 반영.
-function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, actor, onSavedRef }) {
+function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, actor, onSavedRef, zIndex = 300 }) {
   const idx = gallery.indexOf(src);
   const hasNav = gallery.length > 1 && idx >= 0;
   const canSaveRef = !!(card && projectSlug);
@@ -6228,7 +6282,7 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
       onPointerUp={onPointerUp}
       onContextMenu={(e) => e.preventDefault()}
       style={{
-        position: "fixed", inset: 0, zIndex: 300,
+        position: "fixed", inset: 0, zIndex,
         background: "rgba(0,0,0,0.92)", backdropFilter: "blur(6px)",
         cursor: dragging ? "grabbing" : "grab",
         animation: "fadeIn 0.2s ease",
@@ -6493,7 +6547,7 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
   );
 }
 
-function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onImageLoad }) {
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, onImageLoad }) {
   // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
   // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
@@ -6538,16 +6592,37 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
     };
   }
 
+  // v1.10.63 — 좌클릭 시 lightbox(줌/패닝/그리기 전체 기능). 작은 클릭만 → 드래그-팬과 충돌 회피.
+  const downRef = React.useRef(null);
+  const onTileDown = (e) => {
+    if (e.button !== 0) return;
+    downRef.current = { x: e.clientX, y: e.clientY };
+  };
+  const onTileUp = (e) => {
+    if (e.button !== 0 || !downRef.current) return;
+    const dx = Math.abs(e.clientX - downRef.current.x);
+    const dy = Math.abs(e.clientY - downRef.current.y);
+    downRef.current = null;
+    if (dx < 4 && dy < 4) {
+      // 데이터 액션 버튼은 stopPropagation 으로 여기 도달 안 함.
+      onOpenLightbox?.(item.url);
+    }
+  };
+  const isCopyable = item.type === "design" || item.type === "sheet" || item.type === "sheet-history";
+
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onPointerDown={onTileDown}
+      onPointerUp={onTileUp}
       style={{
         width, height,
         position: "relative",
         display: "inline-block", flexShrink: 0,
         overflow: "hidden",
         background: "#111",
+        cursor: "zoom-in",
       }}>
       <img
         src={item.url}
@@ -6589,6 +6664,8 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           if (item.isCover) return;
           onSetCover(item.url);
         }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
         title={coverBtnTitle}
         style={{
           position: "absolute", top: 6, right: 6,
@@ -6603,6 +6680,25 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
         }}
       >{item.isCover ? "⭐" : "☆"}</button>
+      {/* v1.10.63 — 시안/시트 → 다음 시안 생성 참조로 추가 (hover 시만 노출) */}
+      {hovered && isCopyable && onCopyToRef && (
+        <button
+          data-action="copy-ref"
+          onClick={(e) => { e.stopPropagation(); onCopyToRef(item.url); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          title="다음 시안 생성 참조로 추가"
+          style={{
+            position: "absolute", top: 6, right: 42,
+            padding: "4px 9px", borderRadius: 13,
+            background: "rgba(7,110,232,0.85)", border: "none",
+            color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            transform: `scale(${invScale})`, transformOrigin: "top right",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+            whiteSpace: "nowrap",
+          }}
+        >🎯 참조</button>
+      )}
     </div>
   );
 }
