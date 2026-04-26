@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.68";
+const APP_VERSION = "1.10.69";
 const CHANGELOG = [
+  {
+    version: "1.10.69",
+    date: "2026-04-26",
+    changes: [
+      "갤러리 캔버스(F) 시안 순서 변경 — 시안 타일 hover 시 좌측에 ◀/▶ 버튼 (designs ≥ 2 일 때만). 한 번 클릭으로 designs 배열 swap, selected_design 인덱스도 자동 동기",
+      "레이아웃 모드 토글 — 🧱 justified(자유 배치) / ▦ 균등 그리드(360×360 고정) / ⏱ 타임라인(1열, 최신순). 상단 바 우측 셀렉트, localStorage 영속, 모드 변경 시 자동 refit",
+      "타임라인은 item.meta.createdAt 으로 정렬 — AI 시안/시트 history 모두 시간 기준으로 한 줄에 배치, 최대 폭 70% 캡",
+    ],
+  },
   {
     version: "1.10.68",
     date: "2026-04-26",
@@ -5612,6 +5621,14 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       return raw ? new Set(JSON.parse(raw)) : new Set();
     } catch { return new Set(); }
   });
+  // v1.10.69 — 레이아웃 모드: justified / grid / timeline. localStorage 영속.
+  const [layoutMode, setLayoutMode] = React.useState(() => {
+    try { return localStorage.getItem("gallery_layout_mode") || "justified"; }
+    catch { return "justified"; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem("gallery_layout_mode", layoutMode); } catch {}
+  }, [layoutMode]);
   const toggleGroup = (key) => {
     setDisabledGroups((prev) => {
       const next = new Set(prev);
@@ -5675,10 +5692,11 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // v1.10.64 — 그룹 토글 시 자동 refit (콘텐츠 크기 변경 반영).
+  // v1.10.69 — 레이아웃 모드 변경 시도 자동 refit.
   React.useEffect(() => {
     const t = setTimeout(fitToViewport, 50);
     return () => clearTimeout(t);
-  }, [disabledGroups, fitToViewport]);
+  }, [disabledGroups, layoutMode, fitToViewport]);
   const onImageLoad = React.useCallback((e, url) => {
     // v1.10.61 — aspect 와 자연 해상도(w, h) 모두 저장. 자연 해상도로 IMG 렌더해야
     // 줌인 시 원본 픽셀이 보임 (이전엔 셀 크기로 다운샘플 → GPU 업스케일 → 흐림).
@@ -5901,6 +5919,27 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       alert("🎯 참조 이미지에 추가됨. 다음 시안 생성에 반영됩니다.");
     } catch (e) { alert("참조 추가 실패: " + e.message); }
   };
+  // v1.10.69 — 시안 순서 변경 (designs 배열 swap). selected_design 도 새 인덱스로 동기.
+  const moveDesign = async (idx, dir) => {
+    const designs = Array.isArray(card.data?.designs) ? [...card.data.designs] : [];
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= designs.length) return;
+    [designs[idx], designs[newIdx]] = [designs[newIdx], designs[idx]];
+    let nextSelected = card.data?.selected_design;
+    if (nextSelected === idx) nextSelected = newIdx;
+    else if (nextSelected === newIdx) nextSelected = idx;
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), designs, selected_design: nextSelected },
+          actor,
+        }),
+      });
+      await onSaved?.();
+    } catch (e) { alert("순서 변경 실패: " + e.message); }
+  };
   const selectDesign = async (idx) => {
     try {
       const d = card.data?.designs?.[idx];
@@ -5925,19 +5964,70 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   const LAYOUT = React.useMemo(() => {
     const TARGET_H = 460;      // 기본 행 높이 (큼)
     const CONTAINER_W = 2800;  // 한 행 폭. 화면보다 크게 잡고 fit-to-viewport 가 축소해서 화면에 맞춤
-    const GAP = 2;             // 이미지 간 간격 (거의 붙게)
+    const GAP = 2;
     // v1.10.64 — 비활성 그룹 제외 후 펴기.
     const flat = groups.filter((g) => !disabledGroups.has(g.key)).flatMap((g) => g.items);
-    const rows = [];
-    let cur = [];
-    let curW = 0;
-    // v1.10.61 — aspects 가 객체 {aspect,w,h} 또는 옛 number 일 수도 있어 헬퍼.
+    // v1.10.61 — aspects 헬퍼 ({aspect,w,h} 또는 옛 number 호환).
     const aspectOf = (url) => {
       const v = aspects[url];
       if (typeof v === "number") return v;
       if (v && typeof v === "object") return v.aspect || 1;
       return 1;
     };
+    const naturalOf = (url) => {
+      const v = aspects[url];
+      const natW = (v && typeof v === "object" && v.w) ? v.w : null;
+      const natH = (v && typeof v === "object" && v.h) ? v.h : null;
+      return { natW, natH };
+    };
+
+    // v1.10.69 — 균등 그리드: 모든 타일 동일 크기.
+    if (layoutMode === "grid") {
+      const SIZE = 360;
+      const GGAP = 6;
+      const perRow = Math.max(1, Math.floor((CONTAINER_W + GGAP) / (SIZE + GGAP)));
+      const rows = [];
+      for (let i = 0; i < flat.length; i += perRow) {
+        const slice = flat.slice(i, i + perRow);
+        rows.push({
+          height: SIZE,
+          items: slice.map((item) => {
+            const { natW, natH } = naturalOf(item.url);
+            return { item, width: SIZE, naturalImgW: natW, naturalImgH: natH };
+          }),
+        });
+      }
+      return { rows, gap: GGAP, containerWidth: CONTAINER_W };
+    }
+
+    // v1.10.69 — 타임라인: 1열, 생성 시각 desc (최신순). createdAt 없으면 원래 순서.
+    if (layoutMode === "timeline") {
+      const indexed = flat.map((item, i) => ({ item, i }));
+      indexed.sort((a, b) => {
+        const ad = a.item.meta?.createdAt || "";
+        const bd = b.item.meta?.createdAt || "";
+        if (ad && bd) return bd.localeCompare(ad);
+        if (ad) return -1;
+        if (bd) return 1;
+        return a.i - b.i;
+      });
+      const ROW_H = 540;
+      const MAX_W = CONTAINER_W * 0.7;
+      const rows = indexed.map(({ item }) => {
+        const a = aspectOf(item.url);
+        let w = ROW_H * a;
+        let h = ROW_H;
+        if (w > MAX_W) { w = MAX_W; h = MAX_W / a; }
+        const { natW, natH } = naturalOf(item.url);
+        return { height: h, items: [{ item, width: w, naturalImgW: natW, naturalImgH: natH }] };
+      });
+      return { rows, gap: 12, containerWidth: CONTAINER_W };
+    }
+
+    // justified (기본) — 기존 로직.
+    const rows = [];
+    let cur = [];
+    let curW = 0;
     for (const item of flat) {
       const a = aspectOf(item.url);
       const w = TARGET_H * a;
@@ -5950,7 +6040,6 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       curW += w;
     }
     if (cur.length) rows.push({ items: cur, totalW: curW, full: false });
-    // 각 행의 실제 높이 / 너비 계산.
     const laid = rows.map((row) => {
       const available = CONTAINER_W - GAP * (row.items.length - 1);
       const rowScale = row.full ? available / row.totalW : Math.min(1, available / row.totalW);
@@ -5958,15 +6047,13 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       return {
         height: rowH,
         items: row.items.map((x) => {
-          const meta = aspects[x.item.url];
-          const natW = (meta && typeof meta === "object" && meta.w) ? meta.w : null;
-          const natH = (meta && typeof meta === "object" && meta.h) ? meta.h : null;
+          const { natW, natH } = naturalOf(x.item.url);
           return { item: x.item, width: x.naturalW * rowScale, naturalImgW: natW, naturalImgH: natH };
         }),
       };
     });
     return { rows: laid, gap: GAP, containerWidth: CONTAINER_W };
-  }, [groups, aspects, disabledGroups]);
+  }, [groups, aspects, disabledGroups, layoutMode]);
 
 
   return (
@@ -6049,6 +6136,25 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               >✕ 해제</button>
             </>
           )}
+          {/* v1.10.69 — 레이아웃 모드 토글 (justified / 균등 / 타임라인) */}
+          <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)" }}>
+            {[
+              { id: "justified", icon: "🧱", title: "Justified (자유 배치)" },
+              { id: "grid",      icon: "▦",  title: "균등 그리드" },
+              { id: "timeline",  icon: "⏱",  title: "타임라인 (시간순 1열)" },
+            ].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setLayoutMode(m.id)}
+                title={m.title}
+                style={{
+                  padding: "3px 8px", borderRadius: 5, border: "none",
+                  background: layoutMode === m.id ? "rgba(255,255,255,0.18)" : "transparent",
+                  color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                }}
+              >{m.icon}</button>
+            ))}
+          </div>
           <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
             휠 줌 · 가운데/우클릭 드래그 팬 · 0 전체 · Ctrl+클릭 선택 · Esc/F 닫기
           </span>
@@ -6131,6 +6237,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               {row.items.map(({ item, width, naturalImgW, naturalImgH }, ii) => {
                 const cmts = card?.data?.point_comments?.[item.url];
                 const commentCount = Array.isArray(cmts) ? cmts.length : 0;
+                const designsLen = Array.isArray(card?.data?.designs) ? card.data.designs.length : 0;
                 return (
                   <GalleryTile
                     key={`${ri}-${ii}`}
@@ -6146,6 +6253,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                     selected={selectedUrls.has(item.url)}
                     onToggleSelect={toggleSelect}
                     commentCount={commentCount}
+                    designsCount={designsLen}
+                    onMoveDesign={moveDesign}
                     onImageLoad={onImageLoad}
                   />
                 );
@@ -7267,7 +7376,7 @@ function CompareOverlay({ urls, onClose, onOpenLightbox }) {
   );
 }
 
-function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, onImageLoad }) {
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, designsCount = 0, onMoveDesign, onImageLoad }) {
   // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
   // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
@@ -7448,6 +7557,47 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
             whiteSpace: "nowrap",
           }}
         >🎯 참조</button>
+      )}
+      {/* v1.10.69 — 시안 순서 변경 ◀/▶ (design 타입 + 2개 이상일 때 hover) */}
+      {hovered && item.type === "design" && designsCount > 1 && onMoveDesign && (
+        <div style={{
+          position: "absolute", top: "50%", left: 6,
+          transform: `translateY(-50%) scale(${invScale})`, transformOrigin: "left center",
+          display: "flex", flexDirection: "column", gap: 4,
+        }}>
+          <button
+            data-action="move-prev"
+            onClick={(e) => { e.stopPropagation(); onMoveDesign(item.designIdx, -1); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            disabled={item.designIdx === 0}
+            title="앞으로 이동"
+            style={{
+              width: 30, height: 30, borderRadius: 15, border: "none",
+              background: item.designIdx === 0 ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.7)",
+              color: item.designIdx === 0 ? "rgba(255,255,255,0.4)" : "#fff",
+              fontSize: 14, fontWeight: 800,
+              cursor: item.designIdx === 0 ? "not-allowed" : "pointer",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+            }}
+          >◀</button>
+          <button
+            data-action="move-next"
+            onClick={(e) => { e.stopPropagation(); onMoveDesign(item.designIdx, +1); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            disabled={item.designIdx === designsCount - 1}
+            title="뒤로 이동"
+            style={{
+              width: 30, height: 30, borderRadius: 15, border: "none",
+              background: item.designIdx === designsCount - 1 ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.7)",
+              color: item.designIdx === designsCount - 1 ? "rgba(255,255,255,0.4)" : "#fff",
+              fontSize: 14, fontWeight: 800,
+              cursor: item.designIdx === designsCount - 1 ? "not-allowed" : "pointer",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+            }}
+          >▶</button>
+        </div>
       )}
     </div>
   );
