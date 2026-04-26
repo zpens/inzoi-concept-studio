@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.90";
+const APP_VERSION = "1.10.91";
 const CHANGELOG = [
+  {
+    version: "1.10.91",
+    date: "2026-04-26",
+    changes: [
+      "[버그 수정] API 사용량 로그가 actor=null(익명) 으로 누적되던 문제 — AI 프록시 헤더 헬퍼가 localStorage('inzoi_actor_name') 를 읽어 X-Actor-Name 으로 전달하는데, 프로필 선택 시 그 키가 갱신 안 됨(actorName 은 currentProfile.name 에서 파생되는 메모이제이션 값일 뿐). actorName 변경 시 localStorage 자동 동기 effect 추가. 새로고침 후 호출하면 그 사용자 사용량으로 정상 기록",
+    ],
+  },
   {
     version: "1.10.90",
     date: "2026-04-26",
@@ -10200,6 +10207,15 @@ export default function InZOIConceptTool() {
     if (currentProfile?.name) return currentProfile.name;
     try { return localStorage.getItem("inzoi_actor_name") || null; } catch { return null; }
   }, [currentProfile]);
+  // v1.10.91 — inzoi_actor_name localStorage 동기화. AI 프록시 헤더(X-Actor-Name) 가
+  // localStorage 를 읽어 사용량 로깅. 프로필 선택만으론 localStorage 가 갱신되지 않아
+  // 모든 호출이 actor=null(익명) 로 기록되던 버그 수정.
+  useEffect(() => {
+    try {
+      if (actorName) localStorage.setItem("inzoi_actor_name", actorName);
+      else localStorage.removeItem("inzoi_actor_name");
+    } catch { /* ignore */ }
+  }, [actorName]);
   // actor 이름으로 프로필 찾기 (댓글/활동에 아이콘 표시용).
   const profileByName = useMemo(() => {
     const m = new Map();
