@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.112";
+const APP_VERSION = "1.10.113";
 const CHANGELOG = [
+  {
+    version: "1.10.113",
+    date: "2026-04-27",
+    changes: [
+      "상세 모달 정리 — CardActionPanel 통째로 제거 (위시→시안 안내 패널·시트 단계 이동 버튼 모두 제거). 단계 이동은 카드 목록의 상태 chip 으로 일원화되어 상세 모달은 작업(시안·시트) 에 집중",
+      "WishlistToDraftingAction 함수 정의도 제거 (≈40줄 감소)",
+      "SheetPanel 컴팩트 갤러리 스타일로 재설계 — 헤더 한 줄(📑 시트 + 뷰 카운트 + 생성/재생성 버튼), 본문은 5타일 한 줄 그리드(정·측·후·상·📏), 소스 이미지 미리보기 제거(시안 패널과 중복), 이전 시트 기록 details 안 접힘 기본",
+      "SheetPanel 톤을 DesignsPanel 과 일관 (회색 배경 + 기본 border) — 파랑 그라디언트 강조 제거로 시각적 무게감 ↓",
+      "이전 시트 기록 — 5뷰까지 동적 그리드 + 라벨 칩 추가, 단일 legacy 와 다중 뷰 모두 한 흐름으로 표시",
+    ],
+  },
   {
     version: "1.10.112",
     date: "2026-04-27",
@@ -4650,66 +4661,8 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
   );
 }
 
-// 카드 상태별 액션 패널 (Phase E):
-//   wishlist → "시안 생성 시작"
-//   drafting → Gemini 시안 추가 생성 + 그리드 + 선정
-//   sheet    → "최종 완료" 버튼 (시트 생성은 기존 흐름 혹은 간단화)
-//   done     → (confirmed 잠금, 이 패널은 렌더 안 함)
-function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedModel, actor, onMoveTo, onRefresh, onOpenApiSettings, onOpenImage, onGenerateProgress, onGenerateEnd }) {
-  // v1.10.58 — drafting 분기가 DesignsPanel 로 이동(v1.10.57)한 뒤 남은 dead-state 정리.
-  // sheet 분기의 makeSheet 가 busy/progress 만 사용. count/extraPrompt/doGenerate/
-  // selectDesign/setCoverDesign/removeDesign 은 모두 DesignsPanel 로 이주됨.
-  const [busy, setBusy] = React.useState(false);
-  const [progress, setProgress] = React.useState(null);
-
-  const designs = Array.isArray(card.data?.designs) ? card.data.designs : [];
-  const selectedIdx = card.data?.selected_design;
-
-  const sectionStyle = {
-    marginBottom: 20, padding: 14, borderRadius: 12,
-    background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
-    border: "1px solid rgba(7,110,232,0.18)",
-  };
-  const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
-
-  if (statusKey === "wishlist") {
-    return <WishlistToDraftingAction card={card} onMoveTo={onMoveTo} />;
-  }
-
-  // v1.10.57 — drafting 분기는 DesignsPanel 로 흡수됨. 시안 그리드와 생성 UI 가
-  // 한 패널에 통합되어 시각 중복 제거.
-  if (statusKey === "drafting") return null;
-
-  // v1.10.112 — 시트 생성 UI 는 SheetPanel 로 분리되어 모든 단계에서 항상 노출.
-  // CardActionPanel 의 sheet 분기는 단계 전환 버튼만 남김.
-  if (statusKey === "sheet") {
-    return (
-      <div style={sectionStyle}>
-        <div style={titleStyle}>단계 이동</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={() => onMoveTo("done")}
-            style={{
-              flex: 1, padding: "10px 14px", borderRadius: 10,
-              background: "linear-gradient(135deg, #10b981, #059669)",
-              border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
-            }}
-          >✅ 최종 완료로 이동</button>
-          <button
-            onClick={() => onMoveTo("drafting")}
-            style={{
-              padding: "10px 14px", borderRadius: 10,
-              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-              color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-            }}
-          >← 시안으로</button>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-}
+// v1.10.113 — CardActionPanel 제거. 단계 이동은 카드 목록의 상태 chip 으로 일원화.
+// 시트 생성 UI 는 아래 SheetPanel 로 분리되어 모든 단계에서 항상 노출.
 
 // v1.10.112 — SheetPanel: 시트 생성 UI 를 단계 무관하게 항상 노출.
 // 위시 / 시안 / 시트 / 완료 어느 단계에서도 렌더링되며, 시안(designs) 또는 카드 썸네일이 있으면 시트 생성 가능.
@@ -4745,12 +4698,12 @@ function SheetPanel({
       ? `시안 #${designs.indexOf(fallbackDesign) + 1} (미선정)`
       : card.thumbnail_url ? "카드 썸네일" : null;
 
+  // v1.10.113 — DesignsPanel 톤과 일관된 컴팩트 스타일.
   const sectionStyle = {
-    marginBottom: 0, padding: 14, borderRadius: 12,
-    background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
-    border: "1px solid rgba(7,110,232,0.18)",
+    padding: 14, borderRadius: 12,
+    background: "rgba(0,0,0,0.02)",
+    border: "1px solid var(--surface-border)",
   };
-  const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
 
   const makeSheet = async () => {
       if (!geminiApiKey) { onOpenApiSettings?.(); return; }
@@ -4814,133 +4767,92 @@ function SheetPanel({
       }
     };
 
+    // v1.10.113 — DesignsPanel 톤과 일관된 컴팩트 갤러리 스타일.
+    // 5타일 한 줄 (정/측/후/상 + 스케일), 소스 미리보기 제거, 이력 details 안 접힘.
+    const presentOrtho = SHEET_VIEWS.filter((v) => views?.[v.id]);
+    const tileItems = [
+      ...presentOrtho.map((v) => ({ id: v.id, label: v.label, url: views[v.id] })),
+      ...(hasScale ? [{ id: "scale", label: "📏 스케일", url: views.scale }] : []),
+    ];
+    const tileCols = Math.max(1, tileItems.length);
     return (
       <div style={sectionStyle}>
-        <div style={titleStyle}>시트 (직교 뷰 · Gemini)</div>
-        {sourceImageUrl && (
-          <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "rgba(0,0,0,0.03)" }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-              소스 이미지: {sourceLabel}{sourceSeed != null ? ` (seed: ${sourceSeed})` : ""}
-            </div>
-            <img
-              src={sourceImageUrl}
-              alt="소스 이미지"
-              onClick={() => onOpenImage?.(sourceImageUrl)}
-              style={{ width: "100%", maxHeight: 160, objectFit: "contain", borderRadius: 6, background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
-            />
+        {/* 헤더 한 줄 — 제목 / 소스 / 생성 버튼 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+            📑 시트{hasViews ? ` (${hasSingle ? "1 legacy" : `${tileItems.length}뷰${hasScale ? " · 스케일" : ""}`})` : ""}
           </div>
-        )}
-
-        {hasOrtho || hasScale ? (
-          // v1.10.105 — 다중 직교 뷰 동적 렌더링. 정면 항상, 측/후/상 은 있을 때만.
-          // v1.10.109 — 스케일 참조 이미지 (인체 실루엣 포함) 1장 항상 추가 표시.
-          (() => {
-            const presentOrtho = SHEET_VIEWS.filter((v) => views[v.id]);
-            const cols = Math.max(1, Math.min(presentOrtho.length, 2));
-            const totalViews = presentOrtho.length + (hasScale ? 1 : 0);
-            return (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 11, color: "#22c55e", marginBottom: 6, fontWeight: 700 }}>
-                  ✓ 시트 생성됨 ({totalViews}뷰{hasScale ? " · 스케일 참조 포함" : ""}){views.model && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {views.model}</span>}
-                </div>
-                {views.view_decision?.reasoning && (
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6, fontStyle: "italic" }}>
-                    💭 {views.view_decision.reasoning}
-                  </div>
-                )}
-
-                {presentOrtho.length > 0 && (
-                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 6, marginBottom: hasScale ? 10 : 0 }}>
-                    {presentOrtho.map((v) => {
-                      const url = views[v.id];
-                      return (
-                        <div key={v.id} style={{
-                          position: "relative", borderRadius: 8, overflow: "hidden",
-                          border: "1px solid var(--surface-border)", background: "#000",
-                        }}>
-                          <img
-                            src={url}
-                            alt={v.label}
-                            onClick={() => onOpenImage?.(url)}
-                            style={{ width: "100%", height: presentOrtho.length === 1 ? "auto" : 200, objectFit: "contain", display: "block", background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
-                          />
-                          <div style={{
-                            position: "absolute", top: 4, left: 4,
-                            padding: "2px 6px", borderRadius: 4,
-                            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
-                            pointerEvents: "none",
-                          }}>{v.label}</div>
-                          <a
-                            href={url}
-                            download={`inzoi_${card.id}_${v.id}.png`}
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                              position: "absolute", bottom: 4, right: 4,
-                              padding: "2px 6px", borderRadius: 4,
-                              background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10,
-                              textDecoration: "none", fontWeight: 600,
-                            }}
-                            title="PNG 저장"
-                          >📥</a>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {hasScale && (
-                  <div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4, fontWeight: 700 }}>
-                      📏 스케일 참조 (인체 실루엣 180cm + 10cm 그리드)
-                    </div>
-                    <div style={{
-                      position: "relative", borderRadius: 8, overflow: "hidden",
-                      border: "1px solid var(--surface-border)", background: "#000",
-                    }}>
-                      <img
-                        src={views.scale}
-                        alt="스케일 참조"
-                        onClick={() => onOpenImage?.(views.scale)}
-                        style={{ width: "100%", display: "block", cursor: onOpenImage ? "zoom-in" : "default", background: "#fff" }}
-                      />
-                      <div style={{
-                        position: "absolute", top: 4, left: 4,
-                        padding: "2px 6px", borderRadius: 4,
-                        background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 10, fontWeight: 700,
-                        pointerEvents: "none",
-                      }}>스케일</div>
-                      <a
-                        href={views.scale}
-                        download={`inzoi_${card.id}_scale.png`}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          position: "absolute", bottom: 6, right: 6,
-                          padding: "4px 10px", borderRadius: 6,
-                          background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 11,
-                          textDecoration: "none", fontWeight: 700,
-                        }}
-                        title="PNG 저장"
-                      >📥 저장</a>
-                    </div>
-                    {views.scale_prompt && (
-                      <details style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
-                        <summary style={{ cursor: "pointer" }}>📝 스케일 프롬프트 보기</summary>
-                        <div style={{ marginTop: 4, padding: 8, borderRadius: 6, background: "rgba(0,0,0,0.03)", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "monospace", fontSize: 10, lineHeight: 1.5, maxHeight: 200, overflowY: "auto" }}>
-                          {views.scale_prompt}
-                        </div>
-                      </details>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })()
-        ) : hasSingle ? (
-          // legacy v1.10.103~104 단일 이미지 (인체 실루엣 포함). 새 생성에서는 만들지 않음.
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 700 }}>
-              📦 단일 시트 (legacy){views.model && <span style={{ fontWeight: 400 }}> · {views.model}</span>}
+          {sourceLabel && !hasViews && (
+            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              소스: {sourceLabel}
             </div>
+          )}
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={makeSheet}
+            disabled={busy || !canMakeSheet}
+            title={!geminiApiKey ? "Gemini API 키 필요" : disabled ? "완료 상태에서는 편집 불가" : canMakeSheet ? `${sourceLabel} 으로 직교 뷰 시트 생성` : "시안 또는 카드 이미지 필요"}
+            style={{
+              padding: "6px 14px", borderRadius: 8,
+              background: busy || !canMakeSheet ? "rgba(0,0,0,0.08)" : "var(--primary)",
+              border: "none",
+              color: busy || !canMakeSheet ? "var(--text-muted)" : "#fff",
+              fontSize: 11, fontWeight: 700,
+              cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
+              whiteSpace: "nowrap",
+            }}
+          >
+            {busy
+              ? (progress?.label || `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
+              : hasViews ? "🔄 재생성" : "🎨 시트 생성"}
+          </button>
+        </div>
+
+        {/* 본문 */}
+        {tileItems.length > 0 ? (
+          <>
+            {views.view_decision?.reasoning && (
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6, fontStyle: "italic" }}>
+                💭 {views.view_decision.reasoning}
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${tileCols}, 1fr)`, gap: 6 }}>
+              {tileItems.map((it) => (
+                <div key={it.id} style={{
+                  position: "relative", borderRadius: 8, overflow: "hidden",
+                  border: "1px solid var(--surface-border)", background: "#fff",
+                }}>
+                  <img
+                    src={it.url}
+                    alt={it.label}
+                    onClick={() => onOpenImage?.(it.url)}
+                    style={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", display: "block", background: "#fff", cursor: onOpenImage ? "zoom-in" : "default" }}
+                  />
+                  <div style={{
+                    position: "absolute", top: 3, left: 3,
+                    padding: "1px 5px", borderRadius: 4,
+                    background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontWeight: 700,
+                    pointerEvents: "none",
+                  }}>{it.label}</div>
+                  <a
+                    href={it.url}
+                    download={`inzoi_${card.id}_${it.id}.png`}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: "absolute", bottom: 3, right: 3,
+                      padding: "1px 5px", borderRadius: 4,
+                      background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 9,
+                      textDecoration: "none", fontWeight: 600,
+                    }}
+                    title="PNG 저장"
+                  >📥</a>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : hasSingle ? (
+          // legacy 단일 이미지 — 압축 표시
+          <div>
             <div style={{
               position: "relative", borderRadius: 8, overflow: "hidden",
               border: "1px solid var(--surface-border)", background: "#000",
@@ -4951,140 +4863,90 @@ function SheetPanel({
                 onClick={() => onOpenImage?.(views.single)}
                 style={{ width: "100%", display: "block", cursor: onOpenImage ? "zoom-in" : "default" }}
               />
+              <div style={{
+                position: "absolute", top: 4, left: 4,
+                padding: "1px 6px", borderRadius: 4,
+                background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontWeight: 700,
+              }}>legacy</div>
               <a
                 href={views.single}
                 download={`inzoi_${card.id}_sheet.png`}
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                  position: "absolute", bottom: 6, right: 6,
-                  padding: "4px 10px", borderRadius: 6,
-                  background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 11,
-                  textDecoration: "none", fontWeight: 700,
+                  position: "absolute", bottom: 4, right: 4,
+                  padding: "2px 8px", borderRadius: 4,
+                  background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10,
+                  textDecoration: "none", fontWeight: 600,
                 }}
                 title="PNG 저장"
-              >📥 저장</a>
+              >📥</a>
             </div>
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
               재생성하면 새 다중 직교 뷰 형식으로 변환됩니다.
             </div>
           </div>
         ) : (
-          <div style={{ padding: 14, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12, marginBottom: 10 }}>
-            정면 직교 뷰 + 형태가 복잡하면 측/후/상 추가 + 스케일 참조 (인체 실루엣) 1장.
+          <div style={{ padding: 12, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 11 }}>
+            시안 또는 카드 이미지가 있으면 정면 + (필요시 측/후/상) + 스케일 참조 1장을 생성합니다.
           </div>
         )}
 
-        {/* 이전 시트 기록 — 재생성 시 보존 (v1.10.20) */}
+        {/* 이전 시트 기록 — 접힘 기본, 컴팩트 */}
         {Array.isArray(card.data?.concept_sheet_history) && card.data.concept_sheet_history.length > 0 && (
-          <details style={{ marginBottom: 10 }}>
-            <summary style={{
-              cursor: "pointer", fontSize: 11, fontWeight: 700,
-              color: "var(--text-muted)", padding: "6px 0",
-            }}>📚 이전 시트 기록 ({card.data.concept_sheet_history.length})</summary>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-              {card.data.concept_sheet_history.map((h, i) => (
-                <div key={i} style={{ padding: 8, borderRadius: 8, background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)" }}>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
-                    {h.generated_at ? formatLocalTime(h.generated_at, "full") : "시점 불명"}
-                    {h.model && ` · ${h.model}`}
-                    {h.single ? " · 단일 시트 (legacy)" : ` · ${SHEET_VIEWS.filter((v) => h[v.id]).length}뷰`}
+          <details style={{ marginTop: 10 }}>
+            <summary style={{ cursor: "pointer", fontSize: 10, fontWeight: 700, color: "var(--text-muted)" }}>
+              📚 이전 시트 ({card.data.concept_sheet_history.length})
+            </summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+              {card.data.concept_sheet_history.map((h, i) => {
+                const histKeys = [...SHEET_VIEWS.map((v) => v.id), "scale"].filter((k) => h[k]);
+                const histLabel = (k) => k === "scale" ? "📏" : (SHEET_VIEWS.find((v) => v.id === k)?.label || k);
+                return (
+                  <div key={i} style={{ padding: 6, borderRadius: 6, background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)" }}>
+                    <div style={{ fontSize: 9, color: "var(--text-muted)", marginBottom: 3 }}>
+                      {h.generated_at ? formatLocalTime(h.generated_at, "full") : "시점 불명"}
+                      {h.model && ` · ${h.model}`}
+                      {h.single ? " · 단일 (legacy)" : ` · ${histKeys.length}뷰`}
+                    </div>
+                    {h.single ? (
+                      <img
+                        src={h.single}
+                        alt="이전 시트"
+                        onClick={() => onOpenImage?.(h.single)}
+                        style={{ width: "100%", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
+                      />
+                    ) : histKeys.length > 0 ? (
+                      <div style={{ display: "grid", gridTemplateColumns: `repeat(${histKeys.length}, 1fr)`, gap: 3 }}>
+                        {histKeys.map((k) => (
+                          <div key={k} style={{ position: "relative" }}>
+                            <img
+                              src={h[k]}
+                              alt={histLabel(k)}
+                              title={histLabel(k)}
+                              onClick={() => onOpenImage?.(h[k])}
+                              style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
+                            />
+                            <div style={{
+                              position: "absolute", top: 1, left: 1,
+                              padding: "0 4px", borderRadius: 3,
+                              background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 8, fontWeight: 700,
+                              pointerEvents: "none",
+                            }}>{histLabel(k)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                  {h.single ? (
-                    <img
-                      src={h.single}
-                      alt="이전 시트"
-                      onClick={() => onOpenImage?.(h.single)}
-                      style={{ width: "100%", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
-                    />
-                  ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
-                    {SHEET_VIEWS.map((v) => {
-                      const url = h[v.id];
-                      return url ? (
-                        <img
-                          key={v.id}
-                          src={url}
-                          alt={v.label}
-                          title={v.label}
-                          onClick={() => onOpenImage?.(url)}
-                          style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
-                        />
-                      ) : (
-                        <div key={v.id} title={`${v.label} (없음)`} style={{ width: "100%", aspectRatio: "1/1", background: "rgba(0,0,0,0.05)", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "var(--text-muted)" }}>—</div>
-                      );
-                    })}
-                  </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </details>
         )}
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            onClick={makeSheet}
-            disabled={busy || !canMakeSheet}
-            style={{
-              flex: 1, minWidth: 140, padding: "10px 14px", borderRadius: 10,
-              background: busy || !canMakeSheet ? "rgba(0,0,0,0.08)" : "var(--primary)",
-              border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
-            }}
-            title={!geminiApiKey ? "Gemini API 키 필요" : disabled ? "완료 상태에서는 편집 불가" : canMakeSheet ? `${sourceLabel} 으로 직교 뷰 시트 생성` : "시안 또는 카드 이미지 필요"}
-          >
-            {busy
-              ? (progress?.label ? progress.label : `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
-              : hasViews ? "🔄 시트 재생성" : "🎨 시트 생성 (직교 뷰)"}
-          </button>
-        </div>
       </div>
     );
 }
 
-// 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 에서 이미 편집됨.
-// 여기서는 필수 필드(카테고리, 프롬프트) 검증 후 바로 상태 이동.
-// 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 의 🤖 자동 분류에서 채움.
-function WishlistToDraftingAction({ card, onMoveTo }) {
-  const hasCategory = !!(card.data?.category);
-  const hasPrompt = !!(card.data?.prompt || card.description);
-  const ready = hasCategory && hasPrompt;
-  const sectionStyle = {
-    marginBottom: 20, padding: 14, borderRadius: 12,
-    background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
-    border: "1px solid rgba(7,110,232,0.18)",
-  };
-  return (
-    <div style={sectionStyle}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 }}>
-        위시 → 시안
-      </div>
-      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 12 }}>
-        좌측 어셋 정보의 🤖 자동 분류로 카테고리·스타일·크기·프롬프트를 한 번에 채우거나 수동 입력한 뒤 이동하세요.
-        {!ready && (
-          <div style={{ marginTop: 6, color: "#d97706", fontWeight: 600 }}>
-            ⚠ {!hasCategory && "카테고리"}{!hasCategory && !hasPrompt && " · "}{!hasPrompt && "프롬프트"} 필요
-          </div>
-        )}
-      </div>
-      <button
-        onClick={async () => {
-          if (!ready) { alert("카테고리와 프롬프트를 먼저 입력해주세요."); return; }
-          await onMoveTo("drafting");
-        }}
-        className={ready ? "btn-primary" : ""}
-        disabled={!ready}
-        style={{
-          padding: "10px 18px", borderRadius: 10, border: "none",
-          background: ready ? undefined : "rgba(0,0,0,0.08)",
-          color: ready ? "#fff" : "var(--text-muted)",
-          fontSize: 13, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
-        }}
-      >✨ 시안 단계로 이동</button>
-    </div>
-  );
-}
-
+// v1.10.113 — WishlistToDraftingAction 제거. 단계 이동은 카드 목록의 상태 chip 으로 일원화.
 
 // 카드 제목 인라인 에디터. 클릭(또는 포커스)하면 input 로 전환,
 // blur / Enter 로 저장, ESC 로 취소.
@@ -14764,41 +14626,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   />
 
-                  {/* 1) 시안 생성 — 상태별 액션 (drafting: 생성, vote: 투표, sheet: 4뷰) */}
-                  {!confirmed && (
-                    <CardActionPanel
-                      card={card}
-                      statusKey={statusKey}
-                      projectSlug={projectSlug}
-                      geminiApiKey={geminiApiKey}
-                      selectedModel={selectedModel}
-                      actor={actorName}
-                      onMoveTo={moveTo}
-                      onOpenImage={setPreviewImage}
-                      onRefresh={async () => {
-                        const d = await fetchCardDetail(projectSlug, card.id);
-                        if (!d) return;
-                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                        // 사용자가 생성 도중 모달을 닫았다면 자동으로 다시 열지 않음 (v1.10.23).
-                        // 같은 카드가 열려있을 때만 detailCard 갱신.
-                        setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
-                      }}
-                      onOpenApiSettings={() => setShowApiSettings(true)}
-                      onGenerateProgress={(c, done, total) => setGeneratingCards((prev) => ({
-                        ...prev,
-                        [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total, completed: false },
-                      }))}
-                      onGenerateEnd={(c) => setGeneratingCards((prev) => {
-                        const cur = prev[c.id];
-                        if (!cur) return prev;
-                        // v1.10.95 — v1.10.94 의 자동 상세 오픈 롤백. 작업큐의 ✓ 완료 표시 후 사용자가
-                        // 클릭해야 상세 열림 (위시에서 시안만 만들고 보는 사용자 경험 방해 X).
-                        return { ...prev, [c.id]: { ...cur, completed: true, done: cur.total } };
-                      })}
-                    />
-                  )}
+                  {/* v1.10.113 — CardActionPanel 제거. 단계 이동은 카드 목록의 status chip 으로. */}
 
-                  {/* 2) 시안 — 생성 + 갤러리 + 선정 + 투표 + 삭제 통합 (v1.10.57: CardActionPanel drafting 흡수) */}
+                  {/* 1) 시안 — 생성 + 갤러리 + 선정 + 투표 + 삭제 통합 */}
                   <DesignsPanel
                     card={card}
                     projectSlug={projectSlug}
