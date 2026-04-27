@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.111";
+const APP_VERSION = "1.10.112";
 const CHANGELOG = [
+  {
+    version: "1.10.112",
+    date: "2026-04-27",
+    changes: [
+      "상세 모달 우측 프레임에 시트 패널을 단계 무관하게 항상 노출 — 위시/시안/시트/완료 어느 단계에서도 시안(DesignsPanel) 바로 아래에 시트(SheetPanel) 가 표시되어 시안 만들고 바로 시트까지 한 화면에서 가능. 단계 이동 (시트→완료/시안) 만 CardActionPanel sheet 분기에 분리 유지",
+      "SheetPanel 컴포넌트 추출 — CardActionPanel sheet 분기에 있던 시트 생성 UI(소스 이미지 미리보기 / 직교 뷰 + 스케일 참조 / 이전 시트 기록 / 시트 생성·재생성 버튼) 를 모두 새 컴포넌트로 분리. disabled (완료 상태) 일 때는 생성 버튼 비활성화하지만 기존 시트는 그대로 표시",
+    ],
+  },
   {
     version: "1.10.111",
     date: "2026-04-27",
@@ -4672,28 +4680,79 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
   // 한 패널에 통합되어 시각 중복 제거.
   if (statusKey === "drafting") return null;
 
+  // v1.10.112 — 시트 생성 UI 는 SheetPanel 로 분리되어 모든 단계에서 항상 노출.
+  // CardActionPanel 의 sheet 분기는 단계 전환 버튼만 남김.
   if (statusKey === "sheet") {
-    const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
-    const views = card.data?.concept_sheet_views || null; // { front, side?, back?, top? } 또는 legacy { single }
-    // v1.10.103 — 단일 이미지(views.single) 는 legacy. v1.10.105 부터는 직교 뷰로 복귀.
-    const hasSingle = !!views?.single;
-    const hasOrtho = !!views && (views.front || views.side || views.back || views.top);
-    const hasScale = !!views?.scale;
-    const hasViews = hasSingle || hasOrtho || hasScale;
-    // 소스 이미지 우선순위: 선정된 시안 → 첫 이미지 있는 시안 → 카드 썸네일.
-    const fallbackDesign = !selectedDesign?.imageUrl
-      ? designs.find((d) => d?.imageUrl) || null
-      : null;
-    const sourceImageUrl = selectedDesign?.imageUrl || fallbackDesign?.imageUrl || card.thumbnail_url;
-    const sourceSeed = selectedDesign?.seed ?? fallbackDesign?.seed ?? null;
-    const canMakeSheet = !!sourceImageUrl && !!geminiApiKey;
-    const sourceLabel = selectedDesign?.imageUrl
-      ? `선정 시안 #${selectedIdx + 1}`
-      : fallbackDesign
-        ? `시안 #${designs.indexOf(fallbackDesign) + 1} (미선정)`
-        : card.thumbnail_url ? "카드 썸네일" : null;
+    return (
+      <div style={sectionStyle}>
+        <div style={titleStyle}>단계 이동</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => onMoveTo("done")}
+            style={{
+              flex: 1, padding: "10px 14px", borderRadius: 10,
+              background: "linear-gradient(135deg, #10b981, #059669)",
+              border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+            }}
+          >✅ 최종 완료로 이동</button>
+          <button
+            onClick={() => onMoveTo("drafting")}
+            style={{
+              padding: "10px 14px", borderRadius: 10,
+              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+              color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}
+          >← 시안으로</button>
+        </div>
+      </div>
+    );
+  }
 
-    const makeSheet = async () => {
+  return null;
+}
+
+// v1.10.112 — SheetPanel: 시트 생성 UI 를 단계 무관하게 항상 노출.
+// 위시 / 시안 / 시트 / 완료 어느 단계에서도 렌더링되며, 시안(designs) 또는 카드 썸네일이 있으면 시트 생성 가능.
+function SheetPanel({
+  card, projectSlug, actor, disabled,
+  geminiApiKey, selectedModel,
+  onOpenImage, onOpenApiSettings, onRefresh,
+  onGenerateProgress, onGenerateEnd,
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState(null);
+
+  const designs = Array.isArray(card.data?.designs) ? card.data.designs : [];
+  const selectedIdx = card.data?.selected_design;
+  const selectedDesign = selectedIdx != null ? designs[selectedIdx] : null;
+
+  const views = card.data?.concept_sheet_views || null;
+  const hasSingle = !!views?.single;
+  const hasOrtho = !!views && (views.front || views.side || views.back || views.top);
+  const hasScale = !!views?.scale;
+  const hasViews = hasSingle || hasOrtho || hasScale;
+
+  // 소스 이미지 우선순위: 선정된 시안 → 첫 이미지 있는 시안 → 카드 썸네일.
+  const fallbackDesign = !selectedDesign?.imageUrl
+    ? designs.find((d) => d?.imageUrl) || null
+    : null;
+  const sourceImageUrl = selectedDesign?.imageUrl || fallbackDesign?.imageUrl || card.thumbnail_url;
+  const sourceSeed = selectedDesign?.seed ?? fallbackDesign?.seed ?? null;
+  const canMakeSheet = !!sourceImageUrl && !!geminiApiKey && !disabled;
+  const sourceLabel = selectedDesign?.imageUrl
+    ? `선정 시안 #${selectedIdx + 1}`
+    : fallbackDesign
+      ? `시안 #${designs.indexOf(fallbackDesign) + 1} (미선정)`
+      : card.thumbnail_url ? "카드 썸네일" : null;
+
+  const sectionStyle = {
+    marginBottom: 0, padding: 14, borderRadius: 12,
+    background: "linear-gradient(135deg, rgba(7,110,232,0.04), rgba(139,92,246,0.02))",
+    border: "1px solid rgba(7,110,232,0.18)",
+  };
+  const titleStyle = { fontSize: 13, fontWeight: 800, color: "var(--primary)", marginBottom: 10 };
+
+  const makeSheet = async () => {
       if (!geminiApiKey) { onOpenApiSettings?.(); return; }
       if (!sourceImageUrl) { alert("컨셉시트에 사용할 이미지가 없습니다."); return; }
       setBusy(true);
@@ -4972,37 +5031,15 @@ function CardActionPanel({ card, statusKey, projectSlug, geminiApiKey, selectedM
               border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
               cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
             }}
-            title={!geminiApiKey ? "Gemini API 키 필요" : canMakeSheet ? `${sourceLabel} 으로 직교 뷰 시트 생성` : "시안 또는 카드 이미지 필요"}
+            title={!geminiApiKey ? "Gemini API 키 필요" : disabled ? "완료 상태에서는 편집 불가" : canMakeSheet ? `${sourceLabel} 으로 직교 뷰 시트 생성` : "시안 또는 카드 이미지 필요"}
           >
             {busy
               ? (progress?.label ? progress.label : `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
               : hasViews ? "🔄 시트 재생성" : "🎨 시트 생성 (직교 뷰)"}
           </button>
         </div>
-
-        <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-          <button
-            onClick={() => onMoveTo("done")}
-            style={{
-              flex: 1, padding: "10px 14px", borderRadius: 10,
-              background: "linear-gradient(135deg, #10b981, #059669)",
-              border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
-            }}
-          >✅ 최종 완료로 이동</button>
-          <button
-            onClick={() => onMoveTo("drafting")}
-            style={{
-              padding: "10px 14px", borderRadius: 10,
-              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-              color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-            }}
-          >← 시안으로</button>
-        </div>
       </div>
     );
-  }
-
-  return null;
 }
 
 // 위시 → 시안 단계 전환 버튼. 어셋 정보는 AssetInfoEditor 에서 이미 편집됨.
@@ -14786,6 +14823,33 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       if (!d) return;
                       setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
                       // v1.10.98 — 모달이 닫혀 있으면 다시 열지 않음 (CardActionPanel v1.10.23 와 동일 정책).
+                      setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
+                    }}
+                  />
+
+                  {/* 2b) 시트 — 시안 아래에 항상 노출 (v1.10.112) — 단계 무관 (위시/시안/시트/완료) */}
+                  <SheetPanel
+                    card={card}
+                    projectSlug={projectSlug}
+                    actor={actorName}
+                    disabled={confirmed}
+                    geminiApiKey={geminiApiKey}
+                    selectedModel={selectedModel}
+                    onOpenImage={setPreviewImage}
+                    onOpenApiSettings={() => setShowApiSettings(true)}
+                    onGenerateProgress={(c, done, total) => setGeneratingCards((prev) => ({
+                      ...prev,
+                      [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total, completed: false },
+                    }))}
+                    onGenerateEnd={(c) => setGeneratingCards((prev) => {
+                      const cur = prev[c.id];
+                      if (!cur) return prev;
+                      return { ...prev, [c.id]: { ...cur, completed: true, done: cur.total } };
+                    })}
+                    onRefresh={async () => {
+                      const d = await fetchCardDetail(projectSlug, card.id);
+                      if (!d) return;
+                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
                       setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
                     }}
                   />
