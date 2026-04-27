@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.113";
+const APP_VERSION = "1.10.114";
 const CHANGELOG = [
+  {
+    version: "1.10.114",
+    date: "2026-04-27",
+    changes: [
+      "DesignsPanel '✨ 선정 시안으로 시트 단계로 이동 →' 버튼 제거 — 시트는 SheetPanel 에서 단계 무관 항상 생성 가능, 단계 이동은 카드 목록의 상태 chip 으로 일원화. moveSelectedToSheet 함수도 제거",
+    ],
+  },
   {
     version: "1.10.113",
     date: "2026-04-27",
@@ -9324,18 +9331,8 @@ function DesignsPanel({
     }
   };
 
-  // v1.10.58 — drafting → sheet 단계 이동 (선정된 시안으로 컨셉시트 만들기).
-  const moveSelectedToSheet = async () => {
-    if (disabled || selectedIdx == null) return;
-    try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status_key: "sheet", actor }),
-      });
-      await onRefresh?.();
-    } catch (e) { alert("단계 이동 실패: " + e.message); }
-  };
+  // v1.10.114 — moveSelectedToSheet 제거. 시트는 SheetPanel 에서 단계 무관하게 항상 가능,
+  // 단계 이동은 카드 목록의 상태 chip 으로 일원화.
 
   // 👍 시안 투표 (v1.10.41) — 프로필 기반 토글.
   // card.data.cardVotes = { [designIdx]: { [profileName]: true } } 로 저장.
@@ -9746,18 +9743,7 @@ function DesignsPanel({
         </div>
       )}
 
-      {/* v1.10.58 — drafting 에서 ☆ 선정은 대표만 변경, 단계 이동은 별도 버튼 */}
-      {statusKey === "drafting" && !disabled && selectedIdx != null && displayDesigns[selectedIdx]?.imageUrl && (
-        <button
-          onClick={moveSelectedToSheet}
-          style={{
-            marginTop: 12, width: "100%", padding: "10px 14px", borderRadius: 10,
-            background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-            border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
-            boxShadow: "0 2px 10px rgba(7,110,232,0.2)",
-          }}
-        >✨ 선정 시안 (#{selectedIdx + 1}) 으로 시트 단계로 이동 →</button>
-      )}
+      {/* v1.10.114 — '선정 시안으로 시트 단계로 이동' 버튼 제거. 시트는 아래 SheetPanel 에서 단계 무관하게 가능. */}
     </div>
   );
 }
