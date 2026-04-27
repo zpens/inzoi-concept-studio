@@ -1,8 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.116";
+const APP_VERSION = "1.10.117";
 const CHANGELOG = [
+  {
+    version: "1.10.117",
+    date: "2026-04-27",
+    changes: [
+      "갤러리(F) 화이트보드 통합 개선 — 줌 컨트롤 / Lineage 강조 / Alt+드래그 자유 배치 / 정렬 리셋. 화면 전체에서 시안·참조·시트 간 출처 관계와 자유 레이아웃 동시 작업 가능",
+      "줌 컨트롤 버튼 추가 — 헤더에 ＋ / − / ⊡전체 / 1:1 4버튼. 줌 인/아웃은 화면 중앙 기준 1.25× 단위. 휠 줌·키보드 + − 0 동작은 그대로",
+      "Lineage 강조 (💡 Lineage 토글, 기본 ON) — 타일 hover 시 그것의 sources(만든 입력) 와 targets(파생 결과) 가 노란 테두리로 강조, 무관한 타일은 35% 디밍. 시안→참조/대표, 시트→source 시안, 이전 시트도 동일 적용",
+      "시안 lineage 메타 저장 — generateCardVariants 가 각 design 에 sources: [{url, kind:'cover'|'ref'}] 저장. 기존 design 은 '현재 ref+cover' fallback",
+      "Alt+드래그로 타일 자유 이동 — 타일 위 Alt+클릭 후 드래그하면 기본 그리드 위치에서 오프셋 이동. 위치는 card.data.gallery_layout 에 자동 영속, 다음 진입 시 복원. 일반 드래그(좌클릭)는 lightbox, 가운데/우클릭은 캔버스 패닝 그대로",
+      "↺ 정렬 리셋 버튼 — 커스텀 위치가 1개라도 있으면 헤더에 표시, 클릭 시 모든 오프셋 제거 → 기본 그리드 복구",
+    ],
+  },
   {
     version: "1.10.116",
     date: "2026-04-27",
@@ -3966,11 +3978,17 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
     console.warn("[Claude prompt 최적화] 예외 발생, fallback:", e.message);
   }
 
+  // v1.10.117 — 시안 lineage 저장: 이번 생성에 실제로 사용된 ref/cover URL 들을 sources 로 기록.
+  // refImages[0] 은 cover (thumbnail_url, prepend 됨), 그 뒤는 ref_images.
+  const sourcesUsed = refImages.map((url, i) => ({
+    url,
+    kind: i === 0 && card.thumbnail_url === url ? "cover" : "ref",
+  }));
   const tasks = seeds.map((s) => async () => {
     try {
       const raw = await generateImageWithGemini(geminiApiKey, enhancedPrompt, selectedModel, refImages);
       const uploaded = await uploadDataUrl(raw);
-      return { seed: s, imageUrl: uploaded, createdAt: new Date().toISOString() };
+      return { seed: s, imageUrl: uploaded, createdAt: new Date().toISOString(), sources: sourcesUsed };
     } catch (err) {
       return { seed: s, imageUrl: null, error: err.message, createdAt: new Date().toISOString() };
     }
@@ -6666,6 +6684,101 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     return out;
   }, [card]);
 
+  // v1.10.117 — Lineage 맵: 각 URL 의 sources(이것을 만드는 데 쓰인 입력) 와 targets(이것에서 파생된 결과).
+  // 시안: design.sources (v1.10.117 부터 저장) 또는 legacy fallback (현재 ref+cover).
+  // 시트: views.source_image_url 이 시안 하나를 가리킴.
+  const lineageMap = React.useMemo(() => {
+    const map = {};
+    const node = (k) => {
+      if (!map[k]) map[k] = { sources: new Set(), targets: new Set() };
+      return map[k];
+    };
+    const designs = Array.isArray(card.data?.designs) ? card.data.designs : [];
+    const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+    const hero = card.thumbnail_url;
+    const allRefSet = new Set([...(hero ? [hero] : []), ...refs]);
+
+    // 시안 ← 참조/대표
+    designs.forEach((d) => {
+      if (!d?.imageUrl) return;
+      node(d.imageUrl);
+      const explicit = Array.isArray(d.sources) && d.sources.length > 0
+        ? d.sources.map((s) => s.url).filter(Boolean)
+        : null;
+      const sources = explicit || [...allRefSet]; // legacy fallback
+      sources.forEach((srcUrl) => {
+        if (!srcUrl || srcUrl === d.imageUrl) return;
+        node(d.imageUrl).sources.add(srcUrl);
+        node(srcUrl).targets.add(d.imageUrl);
+      });
+    });
+
+    // 시트 뷰 ← source 시안
+    const linkSheet = (sheetData, sheetUrls) => {
+      const src = sheetData?.source_image_url;
+      if (!src) return;
+      sheetUrls.forEach((url) => {
+        if (!url) return;
+        node(url).sources.add(src);
+        node(src).targets.add(url);
+      });
+    };
+    const v = card.data?.concept_sheet_views;
+    if (v) {
+      const urls = ["front", "side", "back", "top", "scale", "single"].map((k) => v[k]).filter(Boolean);
+      linkSheet(v, urls);
+    }
+    const history = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
+    history.forEach((h) => {
+      const urls = ["front", "side", "back", "top", "scale", "single"].map((k) => h[k]).filter(Boolean);
+      linkSheet(h, urls);
+    });
+
+    return map;
+  }, [card.data]);
+
+  // v1.10.117 — Lineage hover state.
+  const [lineageOn, setLineageOn] = React.useState(true);
+  const [hoveredUrl, setHoveredUrl] = React.useState(null);
+  const relatedUrls = React.useMemo(() => {
+    if (!lineageOn || !hoveredUrl) return null;
+    const n = lineageMap[hoveredUrl];
+    if (!n) return new Set();
+    return new Set([...n.sources, ...n.targets]);
+  }, [lineageOn, hoveredUrl, lineageMap]);
+
+  // v1.10.117 — 자유 배치: Alt+드래그로 타일별 오프셋 적용. card.data.gallery_layout 에 영속.
+  const [customLayout, setCustomLayout] = React.useState(() => {
+    const v = card?.data?.gallery_layout;
+    return (v && typeof v === "object") ? v : {};
+  });
+  // card 갱신 시 서버 값으로 동기화 (다른 사용자가 편집했을 수도).
+  React.useEffect(() => {
+    const v = card?.data?.gallery_layout;
+    if (v && typeof v === "object") setCustomLayout(v);
+  }, [card?.data?.gallery_layout]);
+  const tileDragRef = React.useRef(null); // { url, startX, startY, origDx, origDy }
+  const [tileDragging, setTileDragging] = React.useState(false);
+  const persistLayout = React.useCallback(async (next) => {
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), gallery_layout: next },
+          actor,
+        }),
+      });
+      // onSaved 호출하면 카드 새로고침되어 hovered 깜박임 — 호출 생략. 다음 진입 시 useEffect 가 server 값 반영.
+    } catch (e) { console.warn("gallery_layout 저장 실패:", e.message); }
+  }, [projectSlug, card?.id, card?.data, actor]);
+  const resetLayout = React.useCallback(async () => {
+    if (Object.keys(customLayout).length === 0) return;
+    if (!confirm("자유 배치된 타일 위치를 모두 기본 정렬로 되돌릴까요?")) return;
+    setCustomLayout({});
+    await persistLayout({});
+  }, [customLayout, persistLayout]);
+
   // 휠 줌 (커서 기준) — scale 은 setState, x/y 는 ref 로 직접 반영.
   const onWheel = React.useCallback((e) => {
     e.preventDefault();
@@ -6705,7 +6818,19 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     wrapRef.current?.setPointerCapture(e.pointerId);
   };
   // 팬: viewRef 업데이트 + 직접 transform — setState 안 불러 React 리렌더 없음.
+  // v1.10.117 — Alt+드래그 타일 이동도 wrap 의 pointermove 가 처리.
   const onPointerMove = (e) => {
+    if (tileDragRef.current) {
+      const td = tileDragRef.current;
+      const s = Math.max(0.05, viewRef.current.scale || 1);
+      const dx = (e.clientX - td.startX) / s;
+      const dy = (e.clientY - td.startY) / s;
+      setCustomLayout((prev) => ({
+        ...prev,
+        [td.url]: { dx: td.origDx + dx, dy: td.origDy + dy },
+      }));
+      return;
+    }
     if (!panStart.current) return;
     const { sx, sy, vx, vy } = panStart.current;
     const dx = e.clientX - sx, dy = e.clientY - sy;
@@ -6715,9 +6840,24 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     applyTransform();
   };
   const onPointerUp = (e) => {
+    if (tileDragRef.current) {
+      tileDragRef.current = null;
+      setTileDragging(false);
+      try { wrapRef.current?.releasePointerCapture?.(e.pointerId); } catch {}
+      // 현재 customLayout 을 서버에 저장.
+      setCustomLayout((cur) => { persistLayout(cur); return cur; });
+      return;
+    }
     panStart.current = null;
     setDragging(false);
     try { wrapRef.current?.releasePointerCapture?.(e.pointerId); } catch {}
+  };
+  // v1.10.117 — GalleryTile 에서 Alt+클릭 시 호출. 좌표는 client 기준.
+  const startTileDrag = (url, e) => {
+    const cur = customLayout[url] || { dx: 0, dy: 0 };
+    tileDragRef.current = { url, startX: e.clientX, startY: e.clientY, origDx: cur.dx || 0, origDy: cur.dy || 0 };
+    setTileDragging(true);
+    try { wrapRef.current?.setPointerCapture?.(e.pointerId); } catch {}
   };
 
   // 키보드.
@@ -6991,21 +7131,87 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               >{m.icon}</button>
             ))}
           </div>
+          {/* v1.10.117 — Lineage 토글 (hover 시 시안↔참조, 시트↔시안 관계 강조) */}
+          <button
+            onClick={() => setLineageOn((v) => !v)}
+            title="hover 시 어디서 만들어졌는지 표시 (참조→시안→시트)"
+            style={{
+              padding: "5px 10px", borderRadius: 6,
+              background: lineageOn ? "rgba(250,204,21,0.18)" : "rgba(255,255,255,0.08)",
+              border: `1px solid ${lineageOn ? "rgba(250,204,21,0.45)" : "rgba(255,255,255,0.15)"}`,
+              color: lineageOn ? "#facc15" : "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            }}
+          >💡 Lineage</button>
+          {/* v1.10.117 — 자유 배치 리셋 (커스텀 위치가 있을 때만 노출) */}
+          {Object.keys(customLayout).length > 0 && (
+            <button
+              onClick={resetLayout}
+              title="Alt+드래그로 옮긴 모든 타일 위치를 기본 정렬로 복구"
+              style={{
+                padding: "5px 10px", borderRadius: 6,
+                background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)",
+                color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer",
+              }}
+            >↺ 정렬 리셋 ({Object.keys(customLayout).length})</button>
+          )}
           <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
-            휠 줌 · 가운데/우클릭 드래그 팬 · 0 전체 · Ctrl+클릭 선택 · Esc/F 닫기
+            휠 줌 · 드래그 팬 · Alt+드래그 타일 이동 · 0 전체 · Ctrl+클릭 선택 · Esc/F 닫기
           </span>
           <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "monospace", padding: "3px 8px", borderRadius: 6, background: "rgba(255,255,255,0.08)" }}>
             {Math.round(scale * 100)}%
           </span>
+          {/* v1.10.117 — 줌 +/− 버튼 (휠 줌·키보드 +/− 와 동일 동작) */}
+          <button
+            onClick={() => {
+              const center = wrapRef.current ? { x: wrapRef.current.clientWidth / 2, y: wrapRef.current.clientHeight / 2 } : { x: 0, y: 0 };
+              const prev = viewRef.current;
+              const nextScale = clamp(prev.scale * 1.25, 0.05, 20);
+              const ratio = nextScale / prev.scale;
+              viewRef.current = {
+                scale: nextScale,
+                x: center.x - (center.x - prev.x) * ratio,
+                y: center.y - (center.y - prev.y) * ratio,
+              };
+              applyTransform(); setScale(nextScale);
+            }}
+            title="줌 인 (+ 키 동일)"
+            style={{
+              padding: "5px 10px", borderRadius: 6,
+              background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)",
+              color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              minWidth: 32,
+            }}
+          >＋</button>
+          <button
+            onClick={() => {
+              const center = wrapRef.current ? { x: wrapRef.current.clientWidth / 2, y: wrapRef.current.clientHeight / 2 } : { x: 0, y: 0 };
+              const prev = viewRef.current;
+              const nextScale = clamp(prev.scale / 1.25, 0.05, 20);
+              const ratio = nextScale / prev.scale;
+              viewRef.current = {
+                scale: nextScale,
+                x: center.x - (center.x - prev.x) * ratio,
+                y: center.y - (center.y - prev.y) * ratio,
+              };
+              applyTransform(); setScale(nextScale);
+            }}
+            title="줌 아웃 (− 키 동일)"
+            style={{
+              padding: "5px 10px", borderRadius: 6,
+              background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)",
+              color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              minWidth: 32,
+            }}
+          >−</button>
           <button
             onClick={fitToViewport}
-            title="화면에 가득 맞추기"
+            title="화면에 가득 맞추기 (0 키)"
             style={{
               padding: "5px 10px", borderRadius: 6,
               background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)",
               color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
             }}
-          >⊡ 전체 보기</button>
+          >⊡ 전체</button>
           <button
             onClick={() => {
               viewRef.current = { ...viewRef.current, scale: 1 };
@@ -7074,6 +7280,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                 const cmts = card?.data?.point_comments?.[item.url];
                 const commentCount = Array.isArray(cmts) ? cmts.length : 0;
                 const designsLen = Array.isArray(card?.data?.designs) ? card.data.designs.length : 0;
+                const isHovered = hoveredUrl === item.url;
+                const isRelated = relatedUrls?.has(item.url) || false;
+                const isDimmed = !!relatedUrls && !isHovered && !isRelated;
+                const offset = customLayout[item.url];
                 return (
                   <GalleryTile
                     key={`${ri}-${ii}`}
@@ -7091,6 +7301,12 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                     commentCount={commentCount}
                     designsCount={designsLen}
                     onImageLoad={onImageLoad}
+                    onLineageHover={(u) => setHoveredUrl(u)}
+                    isHovered={isHovered}
+                    isRelated={isRelated}
+                    isDimmed={isDimmed}
+                    offset={offset}
+                    onStartTileDrag={startTileDrag}
                   />
                 );
               })}
@@ -8228,7 +8444,7 @@ function CompareOverlay({ urls, onClose, onOpenLightbox }) {
   );
 }
 
-function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, designsCount = 0, onImageLoad }) {
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, designsCount = 0, onImageLoad, onLineageHover, isHovered, isRelated, isDimmed, offset, onStartTileDrag }) {
   // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
   // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
@@ -8275,9 +8491,17 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
 
   // v1.10.63 — 좌클릭 시 lightbox(줌/패닝/그리기 전체 기능). 작은 클릭만 → 드래그-팬과 충돌 회피.
   // v1.10.65 — Cmd/Ctrl-클릭은 선택 토글, 일반 클릭은 lightbox.
+  // v1.10.117 — Alt+클릭 = 타일 자유 이동 시작.
   const downRef = React.useRef(null);
   const onTileDown = (e) => {
     if (e.button !== 0) return;
+    if (e.altKey && onStartTileDrag) {
+      e.stopPropagation();
+      e.preventDefault();
+      onStartTileDrag(item.url, e);
+      downRef.current = null; // Alt 드래그는 lightbox 클릭으로 해석되지 않게
+      return;
+    }
     downRef.current = { x: e.clientX, y: e.clientY, mod: e.ctrlKey || e.metaKey };
   };
   const onTileUp = (e) => {
@@ -8293,10 +8517,18 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
   };
   const isCopyable = item.type === "design" || item.type === "sheet" || item.type === "sheet-history";
 
+  // v1.10.117 — Lineage 강조: hover 본인 = 노란 굵은 테두리, 관련 = 노란 얇은 테두리, 무관 = 30% opacity.
+  const lineageBox = isHovered ? "inset 0 0 0 4px #facc15"
+    : isRelated  ? "inset 0 0 0 3px rgba(250,204,21,0.85)"
+    : null;
+  const tileShadow = selected ? "inset 0 0 0 4px #22c55e"
+    : lineageBox || "none";
+
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      data-gallery-tile-url={item.url}
+      onMouseEnter={() => { setHovered(true); onLineageHover?.(item.url); }}
+      onMouseLeave={() => { setHovered(false); onLineageHover?.(null); }}
       onPointerDown={onTileDown}
       onPointerUp={onTileUp}
       style={{
@@ -8306,7 +8538,12 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
         overflow: "hidden",
         background: "#111",
         cursor: "zoom-in",
-        boxShadow: selected ? "inset 0 0 0 4px #22c55e" : "none",
+        boxShadow: tileShadow,
+        opacity: isDimmed ? 0.35 : 1,
+        // v1.10.117 — Alt+드래그로 타일별 오프셋 적용 (gallery_layout 에 영속).
+        transform: offset ? `translate(${offset.dx || 0}px, ${offset.dy || 0}px)` : undefined,
+        zIndex: offset ? 2 : "auto",
+        transition: "opacity 0.15s, box-shadow 0.12s",
       }}>
       <img
         src={item.url}
