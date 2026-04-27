@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.114";
+const APP_VERSION = "1.10.115";
 const CHANGELOG = [
+  {
+    version: "1.10.115",
+    date: "2026-04-27",
+    changes: [
+      "이미지 lightbox 우클릭 → '이미지 다른 이름으로 저장' 가능 — 이전엔 wrap onContextMenu 가 무조건 preventDefault + img pointer-events: none 으로 우클릭 메뉴 자체가 안 떴음. 우클릭이 실제로 패닝(이동) 으로 사용된 경우(>4px 이동) 에만 메뉴 차단, 정적 우클릭은 브라우저 기본 메뉴 허용. img pointer-events 를 auto 로 바꿔 contextmenu 의 target 이 이미지가 되도록",
+    ],
+  },
   {
     version: "1.10.114",
     date: "2026-04-27",
@@ -7478,6 +7485,10 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
     return () => wrap.removeEventListener("wheel", onWheel);
   }, [onWheel]);
 
+  // v1.10.115 — 우클릭이 실제로 패닝(이동) 으로 사용되었는지 추적해, 정적 우클릭일 땐
+  // 브라우저 컨텍스트 메뉴(이미지 다른 이름으로 저장 등) 를 허용.
+  const rightClickPanned = React.useRef(false);
+
   const onPointerDown = (e) => {
     // 좌(0)/휠(1)/우(2) 모두 패닝 — GalleryCanvas 와 동일.
     if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
@@ -7490,15 +7501,19 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
       onCommentDown(e);
       return;
     }
+    if (e.button === 2) rightClickPanned.current = false;
     e.preventDefault();
     setDragging(true);
-    panStart.current = { x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y };
+    panStart.current = { x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y, button: e.button };
     wrapRef.current?.setPointerCapture?.(e.pointerId);
   };
   const onPointerMove = (e) => {
     if (!panStart.current) return;
     const dx = e.clientX - panStart.current.x;
     const dy = e.clientY - panStart.current.y;
+    if (panStart.current.button === 2 && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      rightClickPanned.current = true;
+    }
     viewRef.current = { ...viewRef.current, x: panStart.current.vx + dx, y: panStart.current.vy + dy };
     apply();
   };
@@ -7538,7 +7553,13 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        // v1.10.115 — 우클릭이 패닝으로 사용된 경우만 메뉴 차단. 정적 우클릭은 브라우저 메뉴(이미지 저장 등) 허용.
+        if (rightClickPanned.current) {
+          e.preventDefault();
+          rightClickPanned.current = false;
+        }
+      }}
       style={{
         position: "fixed", inset: 0, zIndex,
         background: "rgba(0,0,0,0.92)", backdropFilter: "blur(6px)",
@@ -7560,7 +7581,10 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
           transformOrigin: "0 0",
           willChange: "transform",
           userSelect: "none",
-          pointerEvents: "none", // 클릭/드래그는 wrap 이 받음
+          // v1.10.115 — pointer-events: auto 로 변경 (이전: none).
+          // 우클릭 시 contextmenu 의 target 이 img 가 되어야 브라우저가 "이미지 다른 이름으로 저장" 메뉴를 띄움.
+          // 패닝은 이벤트 버블링으로 wrap 의 onPointerDown 이 받음.
+          pointerEvents: "auto",
         }}
       />
       {/* v1.10.60 — 그리기 캔버스 (이미지와 같은 transform). draw 모드일 때만 pointer 활성. */}
