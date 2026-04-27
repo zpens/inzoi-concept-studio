@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.115";
+const APP_VERSION = "1.10.116";
 const CHANGELOG = [
+  {
+    version: "1.10.116",
+    date: "2026-04-27",
+    changes: [
+      "갤러리 캔버스(F) 시안 hover 좌측 ◀/▶ 순서 이동 버튼 제거 — onMoveDesign prop, GalleryCanvas.moveDesign 함수, GalleryTile 의 hover 화살표 UI 모두 삭제. 시안 정렬은 DesignsPanel 의 정렬 모드(생성순/최신순/투표순) 로 일원화",
+    ],
+  },
   {
     version: "1.10.115",
     date: "2026-04-27",
@@ -6768,27 +6775,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       alert("🎯 참조 이미지에 추가됨. 다음 시안 생성에 반영됩니다.");
     } catch (e) { alert("참조 추가 실패: " + e.message); }
   };
-  // v1.10.69 — 시안 순서 변경 (designs 배열 swap). selected_design 도 새 인덱스로 동기.
-  const moveDesign = async (idx, dir) => {
-    const designs = Array.isArray(card.data?.designs) ? [...card.data.designs] : [];
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= designs.length) return;
-    [designs[idx], designs[newIdx]] = [designs[newIdx], designs[idx]];
-    let nextSelected = card.data?.selected_design;
-    if (nextSelected === idx) nextSelected = newIdx;
-    else if (nextSelected === newIdx) nextSelected = idx;
-    try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), designs, selected_design: nextSelected },
-          actor,
-        }),
-      });
-      await onSaved?.();
-    } catch (e) { alert("순서 변경 실패: " + e.message); }
-  };
+  // v1.10.116 — moveDesign 제거 (갤러리 화살표 이동 UI 삭제와 함께).
   const selectDesign = async (idx) => {
     try {
       const d = card.data?.designs?.[idx];
@@ -7103,7 +7090,6 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                     onToggleSelect={toggleSelect}
                     commentCount={commentCount}
                     designsCount={designsLen}
-                    onMoveDesign={moveDesign}
                     onImageLoad={onImageLoad}
                   />
                 );
@@ -8242,7 +8228,7 @@ function CompareOverlay({ urls, onClose, onOpenLightbox }) {
   );
 }
 
-function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, designsCount = 0, onMoveDesign, onImageLoad }) {
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, designsCount = 0, onImageLoad }) {
   // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
   // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
@@ -8424,47 +8410,7 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           }}
         >🎯 참조</button>
       )}
-      {/* v1.10.69 — 시안 순서 변경 ◀/▶ (design 타입 + 2개 이상일 때 hover) */}
-      {hovered && item.type === "design" && designsCount > 1 && onMoveDesign && (
-        <div style={{
-          position: "absolute", top: "50%", left: 6,
-          transform: `translateY(-50%) scale(${invScale})`, transformOrigin: "left center",
-          display: "flex", flexDirection: "column", gap: 4,
-        }}>
-          <button
-            data-action="move-prev"
-            onClick={(e) => { e.stopPropagation(); onMoveDesign(item.designIdx, -1); }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
-            disabled={item.designIdx === 0}
-            title="앞으로 이동"
-            style={{
-              width: 30, height: 30, borderRadius: 15, border: "none",
-              background: item.designIdx === 0 ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.7)",
-              color: item.designIdx === 0 ? "rgba(255,255,255,0.4)" : "#fff",
-              fontSize: 14, fontWeight: 800,
-              cursor: item.designIdx === 0 ? "not-allowed" : "pointer",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
-            }}
-          >◀</button>
-          <button
-            data-action="move-next"
-            onClick={(e) => { e.stopPropagation(); onMoveDesign(item.designIdx, +1); }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
-            disabled={item.designIdx === designsCount - 1}
-            title="뒤로 이동"
-            style={{
-              width: 30, height: 30, borderRadius: 15, border: "none",
-              background: item.designIdx === designsCount - 1 ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.7)",
-              color: item.designIdx === designsCount - 1 ? "rgba(255,255,255,0.4)" : "#fff",
-              fontSize: 14, fontWeight: 800,
-              cursor: item.designIdx === designsCount - 1 ? "not-allowed" : "pointer",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
-            }}
-          >▶</button>
-        </div>
-      )}
+      {/* v1.10.116 — 시안 순서 변경 ◀/▶ 버튼 제거. */}
     </div>
   );
 }
