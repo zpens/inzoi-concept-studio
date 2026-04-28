@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.124";
+const APP_VERSION = "1.10.125";
 const CHANGELOG = [
+  {
+    version: "1.10.125",
+    date: "2026-04-29",
+    changes: [
+      "유사 어셋 타일 좌상단 source 배지(📌 기준 / 🔗 시각) 제거 — 헤더 라벨이 source 종류 알려주므로 타일별 배지는 시각 노이즈. 아이콘 자체가 가리지 않게 깔끔.",
+    ],
+  },
   {
     version: "1.10.124",
     date: "2026-04-29",
@@ -4838,18 +4845,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                             position: "relative",
                             display: "flex", alignItems: "center", justifyContent: "center",
                           }}>
-                            {/* v1.10.119 — 매칭 source 배지: 📌 anchor (posmap top-1) / 🔗 visual (DINOv2) */}
-                            {(t.source === "anchor" || t.source === "visual") && (
-                              <div style={{
-                                position: "absolute", top: 2, left: 2, zIndex: 1,
-                                padding: "1px 4px", borderRadius: 4,
-                                background: t.source === "anchor" ? "rgba(7,110,232,0.85)" : "rgba(34,197,94,0.85)",
-                                color: "#fff", fontSize: 8, fontWeight: 800, lineHeight: 1.2,
-                                pointerEvents: "none",
-                              }}>
-                                {t.source === "anchor" ? "📌 기준" : "🔗 시각"}
-                              </div>
-                            )}
+                            {/* v1.10.125 — 좌상단 source 배지 제거 (사용자 요청). 헤더 라벨이 source 종류 알려줌. */}
                             <img
                               src={t.icon_url}
                               alt={t.name}
