@@ -539,10 +539,11 @@ app.get("/api/usage", (c) => {
 });
 
 // upstream fetch 에 5초 타임아웃 — :8080 이 꺼져있거나 느릴 때 요청이 무한 대기하지 않게.
-async function timedFetch(url, ms = 5000) {
+// v1.10.122 — POST 등 third arg (init) 도 전달 가능.
+async function timedFetch(url, ms = 5000, init = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
-  try { return await fetch(url, { signal: ctrl.signal }); }
+  try { return await fetch(url, { ...init, signal: ctrl.signal }); }
   finally { clearTimeout(t); }
 }
 
@@ -566,6 +567,58 @@ app.get("/api/object-icon/:id", async (c) => {
     });
   } catch (e) {
     return c.text(`proxy error: ${e.message}`, 502);
+  }
+});
+
+// v1.10.122 — /api/similar-by-image — inzoiObjectList 의 DINOv2 시각 매칭 프록시.
+//   POST body: { image_url? (절대/상대), image_b64?, topk?: 1~50 }
+//   response:  { topk, count, items: [{id, sim:0~1}], model }
+// 사내 inzoiObjectList:8080 의 /api/similar-by-image 를 그대로 전달.
+// 동일 오리진으로 호출되어 CORS 회피, 큰 모델은 inzoiObjectList 한 곳에만 로드.
+app.post("/api/similar-by-image", async (c) => {
+  const base = process.env.INZOI_OBJECT_LIST_URL || "http://localhost:8080";
+  let body = "{}";
+  try { body = await c.req.text(); } catch { /* ignore */ }
+  // image_url 이 상대 경로 (/data/images/xxx.png) 일 때 절대 URL 로 보정.
+  // inzoiObjectList 가 우리 서버를 직접 fetch 할 수 있게.
+  try {
+    const obj = JSON.parse(body || "{}");
+    if (typeof obj.image_url === "string" && obj.image_url.startsWith("/")) {
+      const proto = c.req.header("x-forwarded-proto") || "http";
+      const host = c.req.header("host");
+      if (host) {
+        obj.image_url = `${proto}://${host}${obj.image_url}`;
+        body = JSON.stringify(obj);
+      }
+    }
+  } catch { /* keep body as-is */ }
+  try {
+    const r = await timedFetch(`${base}/api/similar-by-image`, 60000, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    const text = await r.text();
+    return new Response(text, {
+      status: r.status,
+      headers: { "content-type": r.headers.get("content-type") || "application/json" },
+    });
+  } catch (err) {
+    return c.json({ error: `similar-by-image proxy failed: ${err.message}`, source: base }, 502);
+  }
+});
+
+app.get("/api/similar-by-image/health", async (c) => {
+  const base = process.env.INZOI_OBJECT_LIST_URL || "http://localhost:8080";
+  try {
+    const r = await timedFetch(`${base}/api/similar-by-image/health`, 5000);
+    const text = await r.text();
+    return new Response(text, {
+      status: r.status,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    return c.json({ error: err.message, source: base }, 502);
   }
 });
 

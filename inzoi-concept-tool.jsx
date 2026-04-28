@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.121";
+const APP_VERSION = "1.10.122";
 const CHANGELOG = [
+  {
+    version: "1.10.122",
+    date: "2026-04-28",
+    changes: [
+      "DINOv2 카드 이미지 직접 매칭 — 자동 분류 시 카드 reference 이미지를 inzoiObjectList:8080 의 /api/similar-by-image (DINOv2 사이드카) 로 보내 5,265 카탈로그 임베딩과 cosine similarity 비교, top-12 자산을 catalog_matches 에 캐시. 이전엔 posmap 태그 거리 기반 anchor 후 그 anchor 의 시각 유사를 가져오던 2단계 우회였는데, 이제 카드 이미지가 직접 임베딩되어 1단계로 정확한 시각 매칭",
+      "AssetInfoEditor 🤖 자동 분류 / DesignsPanel 사전·사후 자동 분류 3곳 모두 visual matching 병렬 호출. 실패 시 기존 posmap-based fallback 으로 자동 복귀 (DINOv2 사이드카 미가동 환경 호환)",
+      "catalog_matches 에 source 필드 추가 ('image' | 'visual' | 'posmap'). 그리드 헤더 라벨 자동 변경 — '🎯 유사 에셋 (DINOv2 카드 이미지 직접)' / '(DINOv2 시각 유사)' / '(posmap 매칭)'",
+      "server.js: /api/similar-by-image POST + /api/similar-by-image/health GET 프록시 추가. 상대 image_url 자동 절대 URL 보정 (inzoiObjectList 가 우리 서버를 직접 fetch 가능). timedFetch 가 init 옵션 받게 확장",
+      "client: findVisualMatchByImage(imageUrl, topK) 신규 헬퍼 — 결과를 POSMAP_SCORES 에서 보강(filter/lv1/lv2/icon/name) 후 catalog_matches 호환 shape 으로 반환. 표시 path 도 cm.source==='image' 면 캐시된 items 우선 사용 (재계산 X)",
+    ],
+  },
   {
     version: "1.10.121",
     date: "2026-04-28",
@@ -3228,6 +3239,46 @@ function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId, userLv1)
   return score;
 }
 
+// v1.10.122 — 카드 이미지를 직접 DINOv2 임베딩으로 카탈로그 매칭. inzoiObjectList:8080 의
+// /api/similar-by-image 를 우리 서버 프록시로 호출. 결과는 enrich 해서 catalog_matches 에 호환.
+// imageUrl 은 카드의 ref 또는 thumbnail 같은 이미지 (절대/상대 모두 가능).
+async function findVisualMatchByImage(imageUrl, topK = 12) {
+  if (!imageUrl) return null;
+  try {
+    const r = await fetch("/api/similar-by-image", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ image_url: imageUrl, topk: topK }),
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      console.warn(`[VisualMatch] HTTP ${r.status}: ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const d = await r.json();
+    if (!Array.isArray(d?.items) || d.items.length === 0) return null;
+    // POSMAP_SCORES 에서 자산별 메타(filter, lv1, lv2, icon, name) 보강.
+    const items = d.items.map((it) => {
+      const meta = POSMAP_SCORES[it.id] || {};
+      return {
+        id: it.id,
+        score: typeof it.sim === "number" ? it.sim : 0,
+        normalized: typeof it.sim === "number" ? it.sim : 0,
+        filter: meta.filter || null,
+        lv1: meta.lv1 || null,
+        lv2: meta.lv2 || null,
+        icon: meta.icon || null,
+        name: meta.name || null,
+        source: "image",
+      };
+    });
+    return { items, model: d.model || null, source: "image" };
+  } catch (e) {
+    console.warn("[VisualMatch] 호출 실패:", e.message);
+    return null;
+  }
+}
+
 // 사용자 feature 로 카탈로그 매칭 — v1.10.119 부터 anchor + DINOv2 시각 유사 하이브리드.
 //   1) POSMAP_SCORES 전수 스캔으로 anchor (top-1 posmap 매칭) 1개 결정
 //   2) SIMILAR_ASSETS[anchor.id] (inzoiObjectList 사전계산 DINOv2) 로 시각 유사 top N-1 확장
@@ -4377,15 +4428,20 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     setSuggesting(true);
     try {
       const existingPrompt = card.data?.prompt || card.description || "";
-      const [clsResult, promptResult] = await Promise.allSettled([
+      // v1.10.122 — DINOv2 이미지 직접 매칭도 병렬로 호출 (카탈로그 정확도 ↑).
+      const [clsResult, promptResult, visualResult] = await Promise.allSettled([
         classifyCategoryWithGemini(geminiApiKey, src),
         existingPrompt ? Promise.resolve(null) : generatePromptFromImage(geminiApiKey, src, card.title),
+        findVisualMatchByImage(src, 12),
       ]);
       const r = clsResult.status === "fulfilled" ? clsResult.value : null;
       const p = promptResult.status === "fulfilled" ? promptResult.value : null;
+      const visual = visualResult.status === "fulfilled" ? visualResult.value : null;
       // v1.10.92 — 실패 사유를 구분해 표시. console 에 더 자세한 정보.
       if (clsResult.status === "rejected") console.warn("[자동 분류] classify 거부:", clsResult.reason);
       if (promptResult.status === "rejected") console.warn("[자동 분류] prompt 거부:", promptResult.reason);
+      if (visualResult.status === "rejected") console.warn("[자동 분류] visual 거부:", visualResult.reason);
+      else if (visual) console.log(`[자동 분류] DINOv2 image-direct 매칭 ${visual.items.length}개 적용`);
       if (!r && !p) {
         const errMsg = clsResult.status === "rejected"
           ? `자동 분류 실패: ${clsResult.reason?.message || clsResult.reason}\n\n(F12 콘솔에서 상세 확인 가능)`
@@ -4419,25 +4475,45 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         };
       }
       // posmap features + 카탈로그 매칭 — 덮어씀.
+      // v1.10.122 — DINOv2 image-direct 매칭이 성공했으면 그것을 우선 사용 (정확도 ↑).
       if (r?.posmap_features) {
         patch.posmap_features = r.posmap_features;
-        if (Object.keys(POSMAP_SCORES).length > 0) {
-          const catId = r.category_id || card.data?.category;
-          const matches = findSimilarCatalogAssets(r.posmap_features, catId, 12);
-          if (matches.length > 0) {
-            patch.catalog_matches = {
-              features: r.posmap_features,
-              items: matches.map((m) => ({
-                id: m.id,
-                score: m.score,
-                normalized: m.normalized,
-                filter: m.filter,
-                lv1: m.lv1,
-                lv2: m.lv2,
-              })),
-              generated_at: new Date().toISOString(),
-            };
-          }
+      }
+      if (visual && visual.items?.length > 0) {
+        patch.catalog_matches = {
+          features: r?.posmap_features || card.data?.posmap_features || null,
+          items: visual.items.map((m) => ({
+            id: m.id,
+            score: m.score,
+            normalized: m.normalized,
+            filter: m.filter,
+            lv1: m.lv1,
+            lv2: m.lv2,
+            source: "image",
+          })),
+          source: "image",
+          model: visual.model || null,
+          generated_at: new Date().toISOString(),
+        };
+      } else if (r?.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+        // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
+        const catId = r.category_id || card.data?.category;
+        const matches = findSimilarCatalogAssets(r.posmap_features, catId, 12);
+        if (matches.length > 0) {
+          patch.catalog_matches = {
+            features: r.posmap_features,
+            items: matches.map((m) => ({
+              id: m.id,
+              score: m.score,
+              normalized: m.normalized,
+              filter: m.filter,
+              lv1: m.lv1,
+              lv2: m.lv2,
+              source: m.source,
+            })),
+            source: "posmap",
+            generated_at: new Date().toISOString(),
+          };
         }
       }
       // 프롬프트는 비어있을 때만 초안 추가 (사용자가 쓴 프롬프트는 존중).
@@ -4632,13 +4708,20 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               // v1.10.4: 저장된 features (card.data.catalog_matches.features 또는 posmap_features)
               // 가 있으면 매번 fresh 로 재계산 — 가중치 조정 후 기존 카드도 자동 반영.
               // features 없으면 spec.sample_thumbs (기본 카테고리 정렬) 로 fallback.
+              // v1.10.122 — DINOv2 image-direct 매칭 결과가 캐시되어 있으면 그것을 우선 사용.
               const cm = card.data?.catalog_matches;
+              const cachedImage = (cm?.source === "image" && Array.isArray(cm?.items) && cm.items.length > 0)
+                ? cm.items
+                : null;
               const features = cm?.features || card.data?.posmap_features;
-              const fresh = features && typeof features === "object"
-                ? findSimilarCatalogAssets(features, card.data?.category, 12)
-                : [];
+              const fresh = cachedImage
+                ? cachedImage
+                : (features && typeof features === "object"
+                    ? findSimilarCatalogAssets(features, card.data?.category, 12)
+                    : []);
               const useMatches = fresh.length > 0;
-              // v1.10.119 — 새 매칭은 anchor (posmap top-1) + visual (DINOv2 시각 유사) 하이브리드.
+              // v1.10.119 — anchor + visual / v1.10.122 — image-direct DINOv2.
+              const usingImage  = useMatches && fresh.some((m) => m.source === "image");
               const usingVisual = useMatches && fresh.some((m) => m.source === "visual");
               const items = useMatches
                 ? fresh.map((m) => {
@@ -4677,7 +4760,9 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                   <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>
                       {useMatches
-                        ? (usingVisual ? "🎯 유사 에셋 (DINOv2 시각 유사)" : "🎯 유사 에셋 (posmap 매칭)")
+                        ? (usingImage ? "🎯 유사 에셋 (DINOv2 카드 이미지 직접)"
+                          : usingVisual ? "🎯 유사 에셋 (DINOv2 시각 유사)"
+                          : "🎯 유사 에셋 (posmap 매칭)")
                         : "📦 기존 제작 에셋"}
                       <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> ({items.length}{useMatches ? "" : ` / ${spec.asset_count}`})</span>
                     </span>
@@ -9502,15 +9587,19 @@ function DesignsPanel({
       setProgress({ done: 0, total: count, label: "🤖 빈 어셋 정보 자동 채우는 중..." });
       try {
         // 필요한 호출만 — meta 빠지면 classify, prompt 빠지면 generatePrompt.
-        const [clsResult, promptResult] = await Promise.allSettled([
+        // v1.10.122 — DINOv2 image-direct 매칭도 병렬 호출.
+        const [clsResult, promptResult, visualResult] = await Promise.allSettled([
           missingMeta       ? classifyCategoryWithGemini(geminiApiKey, imgSrc)            : Promise.resolve(null),
           missingPromptOrig ? generatePromptFromImage(geminiApiKey, imgSrc, card.title)   : Promise.resolve(null),
+          findVisualMatchByImage(imgSrc, 12),
         ]);
-        const clsR = clsResult.status === "fulfilled" ? clsResult.value : null;
-        const p    = promptResult.status === "fulfilled" ? promptResult.value : null;
+        const clsR   = clsResult.status === "fulfilled" ? clsResult.value : null;
+        const p      = promptResult.status === "fulfilled" ? promptResult.value : null;
+        const visual = visualResult.status === "fulfilled" ? visualResult.value : null;
         console.log("[자동 분류 + 시안 생성]", {
           classify: clsResult.status, classifyResult: clsR,
           prompt: promptResult.status, promptValue: p ? p.slice(0, 80) + "..." : null,
+          visual: visual ? `${visual.items.length}개` : "(없음)",
         });
         const patch = {};
         const savedFields = [];
@@ -9535,8 +9624,20 @@ function DesignsPanel({
           basePrompt = p;
           savedFields.push("프롬프트");
         }
-        // 카탈로그 매칭은 posmap_features 가 새로 채워졌을 때만 계산.
-        if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+        // v1.10.122 — DINOv2 image-direct 매칭이 있으면 그것을 우선 사용.
+        if (visual && visual.items?.length > 0) {
+          patch.catalog_matches = {
+            features: patch.posmap_features || card.data?.posmap_features || null,
+            items: visual.items.map((m) => ({
+              id: m.id, score: m.score, normalized: m.normalized,
+              filter: m.filter, lv1: m.lv1, lv2: m.lv2, source: "image",
+            })),
+            source: "image",
+            model: visual.model || null,
+            generated_at: new Date().toISOString(),
+          };
+        } else if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+          // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
           const catId = patch.category || card.data?.category;
           const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 12);
           if (matches.length > 0) {
@@ -9544,8 +9645,9 @@ function DesignsPanel({
               features: patch.posmap_features,
               items: matches.map((m) => ({
                 id: m.id, score: m.score, normalized: m.normalized,
-                filter: m.filter, lv1: m.lv1, lv2: m.lv2,
+                filter: m.filter, lv1: m.lv1, lv2: m.lv2, source: m.source,
               })),
+              source: "posmap",
               generated_at: new Date().toISOString(),
             };
           }
@@ -9601,13 +9703,16 @@ function DesignsPanel({
         if (!needsAutoClassify && anyMissing && r.firstImageUrl) {
           setProgress({ done: count, total: count, label: "🤖 생성 결과로 빈 어셋 정보 자동 채우는 중..." });
           try {
-            const [clsResult, promptResult] = await Promise.allSettled([
+            // v1.10.122 — DINOv2 image-direct 매칭도 병렬 호출.
+            const [clsResult, promptResult, visualResult] = await Promise.allSettled([
               origMissingMeta   ? classifyCategoryWithGemini(geminiApiKey, r.firstImageUrl)         : Promise.resolve(null),
               origMissingPrompt ? generatePromptFromImage(geminiApiKey, r.firstImageUrl, card.title): Promise.resolve(null),
+              findVisualMatchByImage(r.firstImageUrl, 12),
             ]);
-            const clsR = clsResult.status === "fulfilled" ? clsResult.value : null;
-            const p    = promptResult.status === "fulfilled" ? promptResult.value : null;
-            console.log("[사후 자동분류]", { clsR, p: p ? p.slice(0, 80) + "..." : null });
+            const clsR   = clsResult.status === "fulfilled" ? clsResult.value : null;
+            const p      = promptResult.status === "fulfilled" ? promptResult.value : null;
+            const visual = visualResult.status === "fulfilled" ? visualResult.value : null;
+            console.log("[사후 자동분류]", { clsR, p: p ? p.slice(0, 80) + "..." : null, visual: visual ? `${visual.items.length}개` : "(없음)" });
             const patch = {};
             const savedFields = [];
             if (origMissingCategory && clsR?.category_id)     { patch.category = clsR.category_id;       savedFields.push("카테고리"); }
@@ -9626,8 +9731,20 @@ function DesignsPanel({
               savedFields.push("크기");
             }
             if (origMissingPrompt && p) { patch.prompt = p; savedFields.push("프롬프트"); }
-            // 카탈로그 매칭은 posmap_features 가 새로 채워졌을 때만 계산.
-            if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+            // v1.10.122 — DINOv2 image-direct 매칭이 있으면 그것을 우선 사용.
+            if (visual && visual.items?.length > 0) {
+              patch.catalog_matches = {
+                features: patch.posmap_features || card.data?.posmap_features || null,
+                items: visual.items.map((m) => ({
+                  id: m.id, score: m.score, normalized: m.normalized,
+                  filter: m.filter, lv1: m.lv1, lv2: m.lv2, source: "image",
+                })),
+                source: "image",
+                model: visual.model || null,
+                generated_at: new Date().toISOString(),
+              };
+            } else if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
+              // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
               const catId = patch.category || card.data?.category;
               const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 12);
               if (matches.length > 0) {
@@ -9635,8 +9752,9 @@ function DesignsPanel({
                   features: patch.posmap_features,
                   items: matches.map((m) => ({
                     id: m.id, score: m.score, normalized: m.normalized,
-                    filter: m.filter, lv1: m.lv1, lv2: m.lv2,
+                    filter: m.filter, lv1: m.lv1, lv2: m.lv2, source: m.source,
                   })),
+                  source: "posmap",
                   generated_at: new Date().toISOString(),
                 };
               }
