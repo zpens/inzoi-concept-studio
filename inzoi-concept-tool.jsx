@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.117";
+const APP_VERSION = "1.10.118";
 const CHANGELOG = [
+  {
+    version: "1.10.118",
+    date: "2026-04-28",
+    changes: [
+      "카드 상세의 카탈로그 iframe (CatalogDetailModal) 캐시 버스터 + 🔄 최신 카탈로그 버튼 — 카탈로그 측 5분 주기 git pull 로 업데이트되더라도 사용자 브라우저가 옛 HTML/JS 를 캐시해 stale 로 보이던 문제 해결. iframe src 에 ?v=<timestamp> 자동 부착(모달 오픈마다 새 값) + 헤더에 🔄 버튼으로 즉시 강제 reload (key 갱신으로 iframe 자체를 새 element 로 mount)",
+    ],
+  },
   {
     version: "1.10.117",
     date: "2026-04-27",
@@ -5095,11 +5102,17 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title", 
 
 // inzoiObjectList 에셋 상세 — 커스텀 렌더 대신 카탈로그의 상세 모달을 iframe 으로
 // 그대로 사용. 카탈로그 쪽 기능/데이터 업데이트가 자동으로 반영됨.
+// v1.10.118 — iframe URL 에 캐시 버스터(?v=…) 자동 부착 + 🔄 새로고침 버튼.
+//   카탈로그 측 5분 주기 git pull 로 업데이트되더라도 사용자 브라우저가 옛 HTML/JS
+//   를 캐시하면 stale. 캐시 버스터는 모달이 열릴 때마다 새 값으로 → 매번 fresh fetch.
 function CatalogDetailModal({ id, onClose }) {
   const base = typeof window !== "undefined"
     ? `${window.location.protocol}//${window.location.hostname}:8080`
     : "http://localhost:8080";
-  const src = id ? `${base}/#item=${encodeURIComponent(id)}` : `${base}/`;
+  const [reloadKey, setReloadKey] = React.useState(() => Date.now());
+  const src = id
+    ? `${base}/?v=${reloadKey}#item=${encodeURIComponent(id)}`
+    : `${base}/?v=${reloadKey}`;
 
   // ESC 로 닫기
   React.useEffect(() => {
@@ -5131,13 +5144,22 @@ function CatalogDetailModal({ id, onClose }) {
               {id}
             </span>
           )}
+          <button
+            onClick={() => setReloadKey(Date.now())}
+            title="카탈로그 강제 새로고침 (캐시 무시)"
+            style={{
+              marginLeft: "auto",
+              padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+              background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.3)",
+              color: "#15803d", cursor: "pointer",
+            }}
+          >🔄 최신 카탈로그</button>
           <a
             href={src}
             target="_blank"
             rel="noreferrer"
             title="새 탭에서 열기"
             style={{
-              marginLeft: "auto",
               padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
               background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
               color: "var(--primary)", textDecoration: "none",
@@ -5153,6 +5175,7 @@ function CatalogDetailModal({ id, onClose }) {
           >✕</button>
         </div>
         <iframe
+          key={reloadKey}
           src={src}
           title="inzoi 에셋 카탈로그 상세"
           style={{ flex: 1, width: "100%", border: "none", background: "#fff" }}
