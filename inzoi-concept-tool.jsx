@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.120";
+const APP_VERSION = "1.10.121";
 const CHANGELOG = [
+  {
+    version: "1.10.121",
+    date: "2026-04-28",
+    changes: [
+      "유사 어셋 그리드 = inzoiObjectList similar_assets 12개 그대로 사용 — anchor (posmap top-1) prefix 제거. 이제 그리드 12칸 모두 DINOv2 시각 유사 결과. anchor 는 어떤 자산의 시각 유사 목록을 참조할지 내부적으로 결정만 (그리드에 노출 X)",
+      "방어적 fallback 유지: 시각 유사 < topN (예: similar_assets 갱신 전 일부 자산이 10개) 인 경우 posmap 후순위로 채움",
+    ],
+  },
   {
     version: "1.10.120",
     date: "2026-04-28",
@@ -3241,23 +3249,15 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
   }
   entries.sort((a, b) => b.score - a.score);
 
-  // 2) 시각 유사 데이터가 있고 anchor 있으면 하이브리드 — anchor + 시각 유사 + posmap 후순위 채우기
+  // 2) 시각 유사 데이터가 있으면 그대로 사용 — v1.10.121 부터 inzoiObjectList 가 자산당 top-12 저장.
+  // anchor 는 posmap top-1 으로 어떤 카탈로그 자산의 시각 유사 목록을 참조할지 결정만 (그리드에 노출 X).
+  // 시각 유사 < topN 이면 posmap 후순위로 보강 (방어적).
   const anchor = entries[0] || null;
   const visuals = anchor ? SIMILAR_ASSETS[anchor.id] : null;
   if (anchor && Array.isArray(visuals) && visuals.length > 0) {
-    const result = [{
-      id: anchor.id,
-      score: anchor.score,
-      normalized: 1,
-      filter: anchor.filter,
-      lv1: anchor.lv1,
-      lv2: anchor.lv2,
-      icon: anchor.icon,
-      name: anchor.name,
-      source: "anchor",  // posmap top-1
-    }];
+    const result = [];
     for (const v of visuals) {
-      if (!v?.id || v.id === anchor.id) continue;
+      if (!v?.id) continue;
       const meta = POSMAP_SCORES[v.id] || {};
       result.push({
         id: v.id,
@@ -3281,12 +3281,10 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
       deduped.push(e);
       if (deduped.length >= topN) break;
     }
-    // v1.10.120 — similar_assets 가 자산당 top-10 만 가지고 있어 anchor + 10 = 11 으로 끝남.
-    // topN(12) 까지 채우기 위해 posmap 후순위 (entries[1..]) 로 보강.
+    // 방어적 보강 — 시각 유사가 topN 보다 적으면 posmap 후순위로 채움.
     if (deduped.length < topN) {
       const maxPos = entries.length ? entries[0].score : 1;
-      for (let i = 1; i < entries.length && deduped.length < topN; i += 1) {
-        const e = entries[i];
+      for (const e of entries) {
         const key = e.icon ? `icon:${e.icon}` : e.name ? `name:${e.name}` : `id:${e.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -3299,8 +3297,9 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
           lv2: e.lv2,
           icon: e.icon,
           name: e.name,
-          source: "posmap",  // 시각 유사 부족분 채움
+          source: "posmap",
         });
+        if (deduped.length >= topN) break;
       }
     }
     return deduped;
