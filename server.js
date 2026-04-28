@@ -853,6 +853,21 @@ app.get("/api/object-meta", async (c) => {
       ? similarAssets
       : {};
 
+    // v1.10.126 — 모든 자산의 id → {icon, name, filter, lv1, lv2} 매핑.
+    // posmap 분석 안 된 DEV/Crime 자산도 포함되어 DINOv2 매칭 결과에서 icon 누락 방지.
+    const assetMeta = {};
+    for (const o of objects) {
+      if (!o?.id) continue;
+      const f = o.filter || null;
+      assetMeta[o.id] = {
+        icon: o.icon || null,
+        name: o.name || null,
+        filter: f,
+        lv1: f ? (filterToLv1.get(f) || null) : null,
+        lv2: f ? (filterToLv2.get(f) || null) : null,
+      };
+    }
+
     const out = {
       categories, styles,
       source: base,
@@ -862,8 +877,10 @@ app.get("/api/object-meta", async (c) => {
       asset_count: objects.length,
       posmap_count: Object.keys(posmap).length,
       similar_count: Object.keys(similar).length,
+      asset_meta_count: Object.keys(assetMeta).length,
       posmap, // 전 에셋 ML feature — 클라이언트 유사도 매칭에 사용
       similar_assets: similar, // v1.10.119 — DINOv2 시각 유사 사전계산
+      asset_meta: assetMeta,   // v1.10.126 — 전 자산 id → icon/name/filter (icon 누락 fallback)
       has_specs: objects.length > 0,
     };
     _metaCache = { fetchedAt: now, data: out };

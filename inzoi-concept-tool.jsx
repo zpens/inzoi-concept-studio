@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.125";
+const APP_VERSION = "1.10.126";
 const CHANGELOG = [
+  {
+    version: "1.10.126",
+    date: "2026-04-29",
+    changes: [
+      "[버그 수정] DINOv2 매칭 결과의 일부 자산(DEV_*, Crime_HighLevel_* 등) 아이콘이 톱니 placeholder 로 표시되던 문제 — 이 자산들은 objects.json 의 icon 필드가 id 와 다른데 (예: DEV_WaterPurifier02 의 icon='WaterPurifier02'), POSMAP_SCORES 에 분석 entry 가 없어 fallback 으로 id 그대로 fetch 시도해 404",
+      "수정: 서버 /api/object-meta 응답에 asset_meta (전 자산 id → icon/name/filter/lv1/lv2 매핑) 필드 추가. 클라이언트가 POSMAP_SCORES 미스 시 ASSET_META 에서 icon 보강. 이제 DEV/Crime/Dev 류 자산도 올바른 아이콘으로 표시",
+    ],
+  },
   {
     version: "1.10.125",
     date: "2026-04-29",
@@ -2275,6 +2283,10 @@ let POSMAP_SCORES = {};
 // /api/object-meta 가 inzoiObjectList 의 similar_assets.json 을 가져와 채움.
 let SIMILAR_ASSETS = {};
 
+// v1.10.126 — 전 자산 id → {icon, name, filter, lv1, lv2} 매핑.
+// POSMAP_SCORES 에 없는 자산(DEV/Crime 등)도 icon 정보 가지므로 매칭 결과 icon 누락 방지.
+let ASSET_META = {};
+
 let STYLE_PRESETS = [
   { id: "modern",         label: "모던",         color: "#64748b" },
   { id: "contemporary",   label: "컨템포러리",   color: "#475569" },
@@ -3278,9 +3290,11 @@ async function findVisualMatchByImage(imageUrl, topK = 20) {
     }
     const d = await r.json();
     if (!Array.isArray(d?.items) || d.items.length === 0) return null;
-    // POSMAP_SCORES 에서 자산별 메타(filter, lv1, lv2, icon, name) 보강.
+    // POSMAP_SCORES 우선, 미스 시 ASSET_META 로 fallback (DEV/Crime 자산 등).
     const items = d.items.map((it) => {
-      const meta = POSMAP_SCORES[it.id] || {};
+      const pm = POSMAP_SCORES[it.id];
+      const am = ASSET_META[it.id];
+      const meta = pm || am || {};
       return {
         id: it.id,
         score: typeof it.sim === "number" ? it.sim : 0,
@@ -11121,6 +11135,11 @@ export default function InZOIConceptTool() {
         // v1.10.119 — DINOv2 시각 유사 사전계산.
         if (d.similar_assets && typeof d.similar_assets === "object") {
           SIMILAR_ASSETS = d.similar_assets;
+          changed = true;
+        }
+        // v1.10.126 — 전 자산 메타 (id → icon/name/filter). DEV/Crime 자산 icon 누락 방지.
+        if (d.asset_meta && typeof d.asset_meta === "object") {
+          ASSET_META = d.asset_meta;
           changed = true;
         }
         if (changed) setMetaVersion((v) => v + 1);
