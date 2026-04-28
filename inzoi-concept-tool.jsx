@@ -1,8 +1,21 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.118";
+const APP_VERSION = "1.10.119";
 const CHANGELOG = [
+  {
+    version: "1.10.119",
+    date: "2026-04-28",
+    changes: [
+      "카드 상세의 '🎯 유사 에셋' 매칭을 inzoiObjectList 의 DINOv2 시각 유사 데이터로 교체 — 이전엔 클라이언트가 직접 posmap 태그 거리 (스타일·재질·색상 enum) 로만 계산하던 것이, 이제 inzoiObjectList 가 사전 계산해둔 시각 임베딩 (5,265 어셋 × 768차) 기반 결과를 그대로 가져와 사용",
+      "하이브리드 알고리즘: posmap 으로 anchor (top-1) 만 결정 → SIMILAR_ASSETS[anchor.id] 의 시각 유사 N-1 개로 그리드 채움. 시각 유사 데이터 없으면 기존 posmap-only top-N 으로 자동 fallback",
+      "서버 /api/object-meta 가 /data/similar_assets.json 도 함께 fetch (1시간 캐시). 응답에 similar_assets 필드 추가",
+      "클라이언트 SIMILAR_ASSETS 모듈 변수 + 1시간 폴링 갱신",
+      "그리드 헤더 라벨이 source 에 따라 자동 변경: '🎯 유사 에셋 (DINOv2 시각 유사)' / '🎯 유사 에셋 (posmap 매칭)' / '📦 기존 제작 에셋'",
+      "각 타일 좌상단에 source 배지 노출: 📌 기준 (posmap anchor) / 🔗 시각 (DINOv2)",
+      "inzoiObjectList 가 시각 임베딩을 더 정확하게 갱신할 때 — 우리쪽 코드 수정 없이 자동으로 더 좋은 매칭 결과를 보게 됨",
+    ],
+  },
   {
     version: "1.10.118",
     date: "2026-04-28",
@@ -2211,6 +2224,10 @@ let FURNITURE_CATEGORIES = [
 // { id: { style, mood, size, colors[], materials[], posx, posy, filter } }
 let POSMAP_SCORES = {};
 
+// v1.10.119 — DINOv2 시각 유사 사전계산. { id: [{id, sim:0~1}, ...] }
+// /api/object-meta 가 inzoiObjectList 의 similar_assets.json 을 가져와 채움.
+let SIMILAR_ASSETS = {};
+
 let STYLE_PRESETS = [
   { id: "modern",         label: "모던",         color: "#64748b" },
   { id: "contemporary",   label: "컨템포러리",   color: "#475569" },
@@ -3196,11 +3213,15 @@ function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId, userLv1)
   return score;
 }
 
-// 사용자 feature 로 POSMAP_SCORES 전수 스캔해 top-N 유사 에셋 반환.
+// 사용자 feature 로 카탈로그 매칭 — v1.10.119 부터 anchor + DINOv2 시각 유사 하이브리드.
+//   1) POSMAP_SCORES 전수 스캔으로 anchor (top-1 posmap 매칭) 1개 결정
+//   2) SIMILAR_ASSETS[anchor.id] (inzoiObjectList 사전계산 DINOv2) 로 시각 유사 top N-1 확장
+//   3) SIMILAR_ASSETS 미로드 시 기존 posmap-only top-N 으로 fallback
+// 반환 항목 shape 은 기존과 호환: { id, score, normalized, filter, lv1, lv2, icon, name, source? }
 function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
-  // 사용자 카테고리로부터 lv1 파악 (FURNITURE_CATEGORIES 의 group 필드).
   const userCat = userCategoryId ? FURNITURE_CATEGORIES.find((c) => c.id === userCategoryId) : null;
   const userLv1 = userCat?.group || null;
+  // 1) posmap-only 후보 정렬
   const entries = [];
   for (const [id, score] of Object.entries(POSMAP_SCORES)) {
     const s = calcPosmapSimilarity(userFeatures, score, userCategoryId, userLv1);
@@ -3212,8 +3233,51 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
     });
   }
   entries.sort((a, b) => b.score - a.score);
-  // v1.10.56 — 같은 아이콘이 여러 카테고리에 복사되어 있을 때 중복 제거.
-  // 키 우선순위: icon (실제 이미지 파일) > name. 가장 높은 score 만 유지.
+
+  // 2) 시각 유사 데이터가 있고 anchor 있으면 하이브리드 — anchor 1개 + 시각 유사 N-1개
+  const anchor = entries[0] || null;
+  const visuals = anchor ? SIMILAR_ASSETS[anchor.id] : null;
+  if (anchor && Array.isArray(visuals) && visuals.length > 0) {
+    const result = [{
+      id: anchor.id,
+      score: anchor.score,
+      normalized: 1,
+      filter: anchor.filter,
+      lv1: anchor.lv1,
+      lv2: anchor.lv2,
+      icon: anchor.icon,
+      name: anchor.name,
+      source: "anchor",  // posmap top-1
+    }];
+    for (const v of visuals) {
+      if (!v?.id || v.id === anchor.id) continue;
+      const meta = POSMAP_SCORES[v.id] || {};
+      result.push({
+        id: v.id,
+        score: typeof v.sim === "number" ? v.sim : 0,
+        normalized: typeof v.sim === "number" ? v.sim : 0,  // similar_assets.sim 은 이미 0~1
+        filter: meta.filter || null,
+        lv1: meta.lv1 || null,
+        lv2: meta.lv2 || null,
+        icon: meta.icon || null,
+        name: meta.name || null,
+        source: "visual",  // DINOv2 시각 유사
+      });
+    }
+    // dedup (icon → name → id)
+    const seen = new Set();
+    const deduped = [];
+    for (const e of result) {
+      const key = e.icon ? `icon:${e.icon}` : e.name ? `name:${e.name}` : `id:${e.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(e);
+      if (deduped.length >= topN) break;
+    }
+    return deduped;
+  }
+
+  // 3) Fallback — 기존 posmap-only 결과
   const seen = new Set();
   const deduped = [];
   for (const e of entries) {
@@ -3233,6 +3297,7 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
     lv2: e.lv2,
     icon: e.icon,
     name: e.name,
+    source: "posmap",
   }));
 }
 
@@ -4545,6 +4610,8 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 ? findSimilarCatalogAssets(features, card.data?.category, 12)
                 : [];
               const useMatches = fresh.length > 0;
+              // v1.10.119 — 새 매칭은 anchor (posmap top-1) + visual (DINOv2 시각 유사) 하이브리드.
+              const usingVisual = useMatches && fresh.some((m) => m.source === "visual");
               const items = useMatches
                 ? fresh.map((m) => {
                     const fromSpec = spec.sample_thumbs?.find((s) => s.id === m.id);
@@ -4558,6 +4625,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                       filter: m.filter,
                       score: m.score,
                       normalized: m.normalized,
+                      source: m.source, // "anchor" | "visual" | "posmap"
                     };
                   })
                 : (() => {
@@ -4580,7 +4648,9 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 }}>
                   <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>
-                      {useMatches ? "🎯 유사 에셋 (posmap 매칭)" : "📦 기존 제작 에셋"}
+                      {useMatches
+                        ? (usingVisual ? "🎯 유사 에셋 (DINOv2 시각 유사)" : "🎯 유사 에셋 (posmap 매칭)")
+                        : "📦 기존 제작 에셋"}
                       <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> ({items.length}{useMatches ? "" : ` / ${spec.asset_count}`})</span>
                     </span>
                     {useMatches && cm?.features && (
@@ -4641,6 +4711,18 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                             position: "relative",
                             display: "flex", alignItems: "center", justifyContent: "center",
                           }}>
+                            {/* v1.10.119 — 매칭 source 배지: 📌 anchor (posmap top-1) / 🔗 visual (DINOv2) */}
+                            {(t.source === "anchor" || t.source === "visual") && (
+                              <div style={{
+                                position: "absolute", top: 2, left: 2, zIndex: 1,
+                                padding: "1px 4px", borderRadius: 4,
+                                background: t.source === "anchor" ? "rgba(7,110,232,0.85)" : "rgba(34,197,94,0.85)",
+                                color: "#fff", fontSize: 8, fontWeight: 800, lineHeight: 1.2,
+                                pointerEvents: "none",
+                              }}>
+                                {t.source === "anchor" ? "📌 기준" : "🔗 시각"}
+                              </div>
+                            )}
                             <img
                               src={t.icon_url}
                               alt={t.name}
@@ -10878,6 +10960,11 @@ export default function InZOIConceptTool() {
         }
         if (d.posmap && typeof d.posmap === "object") {
           POSMAP_SCORES = d.posmap;
+          changed = true;
+        }
+        // v1.10.119 — DINOv2 시각 유사 사전계산.
+        if (d.similar_assets && typeof d.similar_assets === "object") {
+          SIMILAR_ASSETS = d.similar_assets;
           changed = true;
         }
         if (changed) setMetaVersion((v) => v + 1);

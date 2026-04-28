@@ -596,10 +596,12 @@ app.get("/api/object-meta", async (c) => {
         return opts.fallback ?? null;
       }
     };
-    const [meta, objects, posmapScores] = await Promise.all([
+    const [meta, objects, posmapScores, similarAssets] = await Promise.all([
       safeJson("/data/meta.json"),
       safeJson("/data/objects.json", { fallback: [] }),
       safeJson("/data/posmap_scores.json", { fallback: {} }),
+      // v1.10.119 — DINOv2 시각 유사 어셋 사전 계산 결과. 카드 상세 매칭에 사용.
+      safeJson("/data/similar_assets.json", { fallback: {} }),
     ]);
     if (!meta) throw new Error("meta.json upstream unreachable");
 
@@ -792,6 +794,12 @@ app.get("/api/object-meta", async (c) => {
       };
     }
 
+    // v1.10.119 — DINOv2 시각 유사 (사전계산). { [assetId]: [{id, sim}, ...] } 형태 그대로 전달.
+    // 객체 검증만 하고 변환 없음 — 데이터 크기 ~수MB 이지만 1시간 캐시라 부담 적음.
+    const similar = (similarAssets && typeof similarAssets === "object" && !Array.isArray(similarAssets))
+      ? similarAssets
+      : {};
+
     const out = {
       categories, styles,
       source: base,
@@ -800,7 +808,9 @@ app.get("/api/object-meta", async (c) => {
       style_count: styles.length,
       asset_count: objects.length,
       posmap_count: Object.keys(posmap).length,
+      similar_count: Object.keys(similar).length,
       posmap, // 전 에셋 ML feature — 클라이언트 유사도 매칭에 사용
+      similar_assets: similar, // v1.10.119 — DINOv2 시각 유사 사전계산
       has_specs: objects.length > 0,
     };
     _metaCache = { fetchedAt: now, data: out };
