@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.127";
+const APP_VERSION = "1.10.128";
 const CHANGELOG = [
+  {
+    version: "1.10.128",
+    date: "2026-04-29",
+    changes: [
+      "/api/object-icon 404 응답에 cache-control:no-store 추가 — 이전엔 자산 icon 매핑 버그로 발생한 404 가 브라우저에 캐시되어 자산이 정상 추가된 후에도 빈 박스로 보이는 stale 캐시 문제. 사용자는 Ctrl+Shift+R 한 번 하면 즉시 정상화됨",
+    ],
+  },
   {
     version: "1.10.127",
     date: "2026-04-29",

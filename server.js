@@ -559,7 +559,14 @@ app.get("/api/object-icon/:id", async (c) => {
     let r = await timedFetch(`${base}/img/${id}.PNG`, 3000);
     if (!r.ok) r = await timedFetch(`${base}/img/${id}.png`, 3000);
     if (!r.ok) r = await timedFetch(`${base}/img/${id}.jpg`, 3000);
-    if (!r.ok) return c.text("not found", 404);
+    if (!r.ok) {
+      // v1.10.128 — 404 도 cache-control:no-store 로 — 자산이 나중에 추가되면 즉시 반영.
+      // 이전엔 브라우저가 404 응답을 임의로 캐시해 자산 추가 후에도 빈 박스로 보이던 문제 방지.
+      return new Response("not found", {
+        status: 404,
+        headers: { "content-type": "text/plain", "cache-control": "no-store" },
+      });
+    }
     const buf = await r.arrayBuffer();
     return c.body(buf, 200, {
       "content-type": r.headers.get("content-type") || "image/png",
