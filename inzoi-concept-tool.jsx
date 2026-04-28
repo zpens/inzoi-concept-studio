@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.119";
+const APP_VERSION = "1.10.120";
 const CHANGELOG = [
+  {
+    version: "1.10.120",
+    date: "2026-04-28",
+    changes: [
+      "유사 어셋 그리드가 12칸인데 11개만 채워지던 문제 — similar_assets.json 이 자산당 시각 유사 top-10 만 저장해 anchor 1 + visual 10 = 11 로 한 칸 빔. 부족분을 posmap 후순위(entries[1..]) 로 보강해 항상 topN 채움",
+    ],
+  },
   {
     version: "1.10.119",
     date: "2026-04-28",
@@ -3234,7 +3241,7 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
   }
   entries.sort((a, b) => b.score - a.score);
 
-  // 2) 시각 유사 데이터가 있고 anchor 있으면 하이브리드 — anchor 1개 + 시각 유사 N-1개
+  // 2) 시각 유사 데이터가 있고 anchor 있으면 하이브리드 — anchor + 시각 유사 + posmap 후순위 채우기
   const anchor = entries[0] || null;
   const visuals = anchor ? SIMILAR_ASSETS[anchor.id] : null;
   if (anchor && Array.isArray(visuals) && visuals.length > 0) {
@@ -3273,6 +3280,28 @@ function findSimilarCatalogAssets(userFeatures, userCategoryId, topN = 12) {
       seen.add(key);
       deduped.push(e);
       if (deduped.length >= topN) break;
+    }
+    // v1.10.120 — similar_assets 가 자산당 top-10 만 가지고 있어 anchor + 10 = 11 으로 끝남.
+    // topN(12) 까지 채우기 위해 posmap 후순위 (entries[1..]) 로 보강.
+    if (deduped.length < topN) {
+      const maxPos = entries.length ? entries[0].score : 1;
+      for (let i = 1; i < entries.length && deduped.length < topN; i += 1) {
+        const e = entries[i];
+        const key = e.icon ? `icon:${e.icon}` : e.name ? `name:${e.name}` : `id:${e.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push({
+          id: e.id,
+          score: e.score,
+          normalized: maxPos > 0 ? e.score / maxPos : 0,
+          filter: e.filter,
+          lv1: e.lv1,
+          lv2: e.lv2,
+          icon: e.icon,
+          name: e.name,
+          source: "posmap",  // 시각 유사 부족분 채움
+        });
+      }
     }
     return deduped;
   }
