@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.122";
+const APP_VERSION = "1.10.123";
 const CHANGELOG = [
+  {
+    version: "1.10.123",
+    date: "2026-04-29",
+    changes: [
+      "유사 어셋 표시 갯수 12 → 18로 확대 — inzoiObjectList v0.27.1 의 9×2 그리드(18개) 와 일치. findVisualMatchByImage 기본 topK / AssetInfoEditor 자동분류 / DesignsPanel 사전·사후 자동분류 / posmap fallback / 표시 재계산 모두 18로 통일",
+    ],
+  },
   {
     version: "1.10.122",
     date: "2026-04-28",
@@ -3242,7 +3249,7 @@ function calcPosmapSimilarity(userFeatures, assetScore, userCategoryId, userLv1)
 // v1.10.122 — 카드 이미지를 직접 DINOv2 임베딩으로 카탈로그 매칭. inzoiObjectList:8080 의
 // /api/similar-by-image 를 우리 서버 프록시로 호출. 결과는 enrich 해서 catalog_matches 에 호환.
 // imageUrl 은 카드의 ref 또는 thumbnail 같은 이미지 (절대/상대 모두 가능).
-async function findVisualMatchByImage(imageUrl, topK = 12) {
+async function findVisualMatchByImage(imageUrl, topK = 18) {
   if (!imageUrl) return null;
   try {
     const r = await fetch("/api/similar-by-image", {
@@ -4432,7 +4439,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       const [clsResult, promptResult, visualResult] = await Promise.allSettled([
         classifyCategoryWithGemini(geminiApiKey, src),
         existingPrompt ? Promise.resolve(null) : generatePromptFromImage(geminiApiKey, src, card.title),
-        findVisualMatchByImage(src, 12),
+        findVisualMatchByImage(src, 18),
       ]);
       const r = clsResult.status === "fulfilled" ? clsResult.value : null;
       const p = promptResult.status === "fulfilled" ? promptResult.value : null;
@@ -4498,7 +4505,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       } else if (r?.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
         // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
         const catId = r.category_id || card.data?.category;
-        const matches = findSimilarCatalogAssets(r.posmap_features, catId, 12);
+        const matches = findSimilarCatalogAssets(r.posmap_features, catId, 18);
         if (matches.length > 0) {
           patch.catalog_matches = {
             features: r.posmap_features,
@@ -4717,7 +4724,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               const fresh = cachedImage
                 ? cachedImage
                 : (features && typeof features === "object"
-                    ? findSimilarCatalogAssets(features, card.data?.category, 12)
+                    ? findSimilarCatalogAssets(features, card.data?.category, 18)
                     : []);
               const useMatches = fresh.length > 0;
               // v1.10.119 — anchor + visual / v1.10.122 — image-direct DINOv2.
@@ -9591,7 +9598,7 @@ function DesignsPanel({
         const [clsResult, promptResult, visualResult] = await Promise.allSettled([
           missingMeta       ? classifyCategoryWithGemini(geminiApiKey, imgSrc)            : Promise.resolve(null),
           missingPromptOrig ? generatePromptFromImage(geminiApiKey, imgSrc, card.title)   : Promise.resolve(null),
-          findVisualMatchByImage(imgSrc, 12),
+          findVisualMatchByImage(imgSrc, 18),
         ]);
         const clsR   = clsResult.status === "fulfilled" ? clsResult.value : null;
         const p      = promptResult.status === "fulfilled" ? promptResult.value : null;
@@ -9639,7 +9646,7 @@ function DesignsPanel({
         } else if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
           // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
           const catId = patch.category || card.data?.category;
-          const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 12);
+          const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 18);
           if (matches.length > 0) {
             patch.catalog_matches = {
               features: patch.posmap_features,
@@ -9707,7 +9714,7 @@ function DesignsPanel({
             const [clsResult, promptResult, visualResult] = await Promise.allSettled([
               origMissingMeta   ? classifyCategoryWithGemini(geminiApiKey, r.firstImageUrl)         : Promise.resolve(null),
               origMissingPrompt ? generatePromptFromImage(geminiApiKey, r.firstImageUrl, card.title): Promise.resolve(null),
-              findVisualMatchByImage(r.firstImageUrl, 12),
+              findVisualMatchByImage(r.firstImageUrl, 18),
             ]);
             const clsR   = clsResult.status === "fulfilled" ? clsResult.value : null;
             const p      = promptResult.status === "fulfilled" ? promptResult.value : null;
@@ -9746,7 +9753,7 @@ function DesignsPanel({
             } else if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
               // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
               const catId = patch.category || card.data?.category;
-              const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 12);
+              const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 18);
               if (matches.length > 0) {
                 patch.catalog_matches = {
                   features: patch.posmap_features,
