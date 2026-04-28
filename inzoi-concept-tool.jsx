@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.126";
+const APP_VERSION = "1.10.127";
 const CHANGELOG = [
+  {
+    version: "1.10.127",
+    date: "2026-04-29",
+    changes: [
+      "v1.10.126 의 icon fallback 이 캐시된 카드에선 적용 안 되던 문제 — 카드 상세의 catalog_matches 표시 path 가 cm.source==='image' 일 때 cached items 를 그대로 쓰는데, 그 cache 가 v1.10.126 이전에 저장되어 icon=null. 표시 시점에 ASSET_META 로 매번 보강해 기존 카드도 즉시 복구",
+    ],
+  },
   {
     version: "1.10.126",
     date: "2026-04-29",
@@ -4745,8 +4752,22 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
               // features 없으면 spec.sample_thumbs (기본 카테고리 정렬) 로 fallback.
               // v1.10.122 — DINOv2 image-direct 매칭 결과가 캐시되어 있으면 그것을 우선 사용.
               const cm = card.data?.catalog_matches;
+              // v1.10.127 — 캐시된 items 의 icon 이 비어있으면 ASSET_META 로 매번 매 렌더 보강.
+              // 이전 버전 카드도 자동 복구되며, 다음 자동분류 시 영구 저장.
               const cachedImage = (cm?.source === "image" && Array.isArray(cm?.items) && cm.items.length > 0)
-                ? cm.items
+                ? cm.items.map((m) => {
+                    if (m.icon) return m;
+                    const am = ASSET_META[m.id];
+                    if (!am) return m;
+                    return {
+                      ...m,
+                      icon: am.icon || m.icon || null,
+                      name: m.name || am.name || null,
+                      filter: m.filter || am.filter || null,
+                      lv1: m.lv1 || am.lv1 || null,
+                      lv2: m.lv2 || am.lv2 || null,
+                    };
+                  })
                 : null;
               const features = cm?.features || card.data?.posmap_features;
               const fresh = cachedImage
