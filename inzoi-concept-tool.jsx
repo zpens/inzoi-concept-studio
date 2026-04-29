@@ -1,8 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.128";
+const APP_VERSION = "1.10.129";
 const CHANGELOG = [
+  {
+    version: "1.10.129",
+    date: "2026-04-30",
+    changes: [
+      "3D 모델러 발주 사양서 페이지 신설 — /p/:slug/cards/:id/spec 별도 라우트. inZOI 가구 BP 표준(interactobject_production_spec.md) + 외주 발주 PPTX 양식(교도소프랍_*.pptx) 동시 반영",
+      "Claude Sonnet 4 가 카드 정보(제목·카테고리·posmap·치수) + 카탈로그 시각 유사 top-3 분석 후 JSON 사양 자동 생성: AssetName 영문 PascalCase 변환(예: '수감실 인터콤장치' → 'PrisonIntercom01'), Domain/Subcat 분류, Texture 슬롯 결정(BC/NM/OC/OMR/ID/EM 조합 + 해상도), 폴리곤 가이드(LOD0 tris), 가이드 메시 ID, 작업 지시 한글 3줄(BC/OC/NM)",
+      "사양서 8개 섹션: 자산 정보 / 납품 품목(SM·MI·T·SPP·PSD·BP 자동 조립) / 수정 이미지(선정 시안+참조) / ID 맵 가이드+작업 지시 / 직교 뷰+스케일 참조 / 카탈로그 시각 유사 top-3 / 검수 체크리스트 / 공통 가이드",
+      "card.data.spec_sheet 에 결과 캐시. 카드 상세 SheetPanel 헤더에 '📄 3D 사양서' 버튼 → 새 탭으로 사양서 페이지 열기. 처음 진입 시 자동 Claude 호출, 이후엔 캐시 사용. 헤더 '🤖 재생성' 으로 다시 생성 가능",
+      "인쇄 친화 CSS (@media print) — 헤더/버튼 자동 숨김, page-break 제어. 사용자가 Ctrl+P → PDF 저장 (PDF 라이브러리 0)",
+    ],
+  },
   {
     version: "1.10.128",
     date: "2026-04-29",
@@ -4225,6 +4236,159 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   };
 }
 
+// v1.10.129 — 3D 모델러 발주 사양서 생성. inZOI 가구 BP 표준 (interactobject_production_spec.md) +
+// 외주 발주 PPTX 양식 (교도소프랍_*.pptx) 기반. Claude Sonnet 4 가 카드/카탈로그 정보 분석하여
+// AssetName 영문화 + Domain/Subcat 분류 + Texture 슬롯 결정 + 폴리곤 가이드 + 작업 지시를 한 번에 출력.
+async function generateSpecSheetWithClaude({ card, catalogTop3 }) {
+  const personalClaudeKey = (() => { try { return localStorage.getItem("claude_api_key") || ""; } catch { return ""; } })();
+  const headers = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (personalClaudeKey) headers["X-Personal-Claude-Key"] = personalClaudeKey;
+  try {
+    const actor = localStorage.getItem("inzoi_actor_name");
+    if (actor) headers["X-Actor-Name"] = encodeURIComponent(actor);
+  } catch { /* ignore */ }
+
+  const catInfo = card.data?.category ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category) : null;
+  const styleInfo = card.data?.style_preset ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset) : null;
+  const pf = card.data?.posmap_features || {};
+  const si = card.data?.size_info || {};
+  const userPrompt = card.data?.prompt || card.description || "";
+
+  const ctxLines = [];
+  ctxLines.push(`Card title: ${card.title || "(no title)"}`);
+  if (catInfo) ctxLines.push(`Category: ${catInfo.label} / preset: ${catInfo.preset || ""} / group: ${catInfo.group || "?"} / room: ${catInfo.room || "?"}`);
+  if (styleInfo) ctxLines.push(`Style: ${styleInfo.label} (${styleInfo.id})`);
+  if (pf.style) ctxLines.push(`posmap.style: ${pf.style}`);
+  if (pf.mood) ctxLines.push(`posmap.mood: ${pf.mood}`);
+  if (pf.size) ctxLines.push(`posmap.size: ${pf.size}`);
+  if (pf.shape?.length) ctxLines.push(`posmap.shape: ${pf.shape.join(", ")}`);
+  if (pf.colors?.length) ctxLines.push(`posmap.colors: ${pf.colors.join(", ")}`);
+  if (pf.materials?.length) ctxLines.push(`posmap.materials: ${pf.materials.join(", ")}`);
+  if (pf.keywords?.length) ctxLines.push(`posmap.keywords: ${pf.keywords.join(", ")}`);
+  if (si.width_cm || si.depth_cm || si.height_cm) {
+    ctxLines.push(`Dimensions: W${si.width_cm || "?"} × D${si.depth_cm || "?"} × H${si.height_cm || "?"} cm`);
+  }
+  if (userPrompt) ctxLines.push(`User description: ${userPrompt.slice(0, 300)}`);
+  if (Array.isArray(catalogTop3) && catalogTop3.length > 0) {
+    ctxLines.push("Catalog top 3 visually similar (DINOv2):");
+    for (const m of catalogTop3.slice(0, 3)) {
+      ctxLines.push(`  - ${m.id} (${m.name || ""}, sim ${typeof m.score === "number" ? m.score.toFixed(2) : "?"})`);
+    }
+  }
+
+  const systemPrompt = `You are a senior production specification writer for inZOI furniture/prop assets.
+You generate the JSON spec a contractor needs to start work — naming, polygon target, texture slot list, work instructions — following the inZOI internal standard.
+
+inZOI naming standard:
+- Team is always "HS"
+- Domain: "FN" for furniture (default), "Cook" for kitchen utensils, "Window" for windows, "FS" for floor stations, "PR" for props. 99%+ are FN.
+- Subcat: a single letter "A"~"F" (alphabet group). Pick one consistent with the catalog reference assets.
+- AssetName: PascalCase English noun + 2-digit number (e.g. "Chair01", "PrisonIntercom01", "WallTV01"). Translate the Korean title to a concise English noun. If the card looks like a known catalog asset variation, use the same base name with "_v02"... suffix. Otherwise pick a fresh "01" name.
+- File patterns:
+  SM_HS_FN_{AssetName}[_vNN]
+  MI_HS_FN_{AssetName}[_vNN]
+  T_HS_FN_{AssetName}[_vNN]_{BC|NM|OC|OMR|ID|EM}
+  BP_{AssetName}[_vNN]
+  BP_{AssetName}_Template (parent)
+- Folder: /Game/BG/HS/{Domain}/{Subcat}/{AssetName}/
+- Parent MI: "MI_HS_Prop_Master" by default. "MI_HS_Prop_Emissive_Master" if the asset has light/LED/screen/glow. "MI_GlassThin_Master" for glass.
+
+Polygon target heuristic (LOD0, Nanite Enabled):
+- Small accessory (lamp, bottle, book, decor, < 30cm): 500–1500
+- General furniture (chair, side table, drawer): 1000–2000
+- Large furniture (bed, sofa, wardrobe, dining table): 2000–5000
+- Complex / detail asset (vehicle, machine): 5000–10000
+- Default cap: 5000 (over needs justification)
+
+Texture slot rules — pick the minimal set required, with resolutions:
+- Glow / LED / display / screen / signal:  BC + NM + OMR + ID + OC  (full set, 512² each, BC sometimes 1024²)
+- Outdoor pole / camera / device (no tile texture available):  BC + NM + OMR (1024² for BC, 512² OMR)
+- Indoor furniture using engine tile material:  ID + NM + OC (512² each, no BC, no OMR)
+- Mirror / glass / TV (relies on tile/screen material):  ID + NM + OC (512² each)
+
+Guide mesh ID heuristic:
+- Wall lamp / wall mount: GUIDE08
+- Locker / cabinet / storage box: GUIDE03
+- Mirror: GUIDE05
+- Wall TV / monitor / panel: GUIDE07
+- Lighting / pendant / chandelier: GUIDE11
+- Stool / bar stool / chair small: GUIDE15
+- Speaker / horn / siren: GUIDE02
+- Pole / column / tower: GUIDE01
+- If unsure: empty string ""
+
+Work instructions — three Korean sentences in this exact pattern:
+1. BC instruction. Pick ONE based on texture slots:
+   - has BC + ID:    "전체 BC 작업해 주시고, ID 는 가이드 이미지처럼 나눠주세요."
+   - has BC, no ID:  "전체 BC 작업해 주세요."
+   - has BC partial: "조명 부분 BC 작업 필요합니다. ID 작업도 필요합니다."
+   - no BC (tile):   "내부 타일 텍스처 사용가능해서 BC 작업은 안 해주셔도 됩니다."
+2. OC always: "OC 맵 만들어 주세요."
+3. NM always: "오브젝트의 디테일한 쉐입은 노멀 텍스쳐를 이용해 주세요."
+
+Output STRICT JSON only (no markdown, no commentary):
+{
+  "asset_name": "PascalCaseName01",
+  "domain": "FN",
+  "subcat": "A",
+  "parent_mi": "MI_HS_Prop_Master",
+  "polygon_target": 1500,
+  "polygon_note": "벽걸이 디테일 포함 권장 (LOD0)",
+  "texture_slots": [
+    {"suffix":"BC","resolution":"512*512","note":""},
+    {"suffix":"NM","resolution":"512*512","note":""},
+    {"suffix":"OMR","resolution":"512*512","note":""},
+    {"suffix":"ID","resolution":"512*512","note":""},
+    {"suffix":"OC","resolution":"512*512","note":""}
+  ],
+  "guide_mesh": "GUIDE08",
+  "work_instructions": [
+    "전체 BC 작업해 주시고, ID 는 가이드 이미지처럼 나눠주세요.",
+    "OC 맵 만들어 주세요.",
+    "오브젝트의 디테일한 쉐입은 노멀 텍스쳐를 이용해 주세요."
+  ],
+  "size_note": "벽 부착, 좌우 대칭, 설치 높이 ~150cm",
+  "notes": ""
+}`;
+
+  const userMsg = `Card context:
+${ctxLines.join("\n")}
+
+Generate the production spec JSON now. Choose AssetName by translating the Korean title to a concise English PascalCase noun + "01" (e.g. "수감실 인터콤장치" → "PrisonIntercom01", "복도용 비디오 초인종" → "VideoDoorbell01"). Pick Subcat consistent with the catalog reference assets if shown.`;
+
+  try {
+    const r = await fetch("/api/ai/claude/v1/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMsg }],
+      }),
+    });
+    if (!r.ok) {
+      console.warn(`[SpecSheet] HTTP ${r.status}`);
+      return null;
+    }
+    const data = await r.json();
+    const text = data?.content?.[0]?.text || "";
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) {
+      console.warn("[SpecSheet] no JSON in response", text.slice(0, 200));
+      return null;
+    }
+    const obj = JSON.parse(m[0]);
+    return obj;
+  } catch (e) {
+    console.warn("[SpecSheet] 호출 실패:", e.message);
+    return null;
+  }
+}
+
 // dataURL 을 서버에 업로드하고 /data/images/... URL 을 반환.
 // 이미 URL 이거나 업로드 실패 시 원본 반환 (fallback 으로 dataURL 유지).
 async function uploadDataUrl(dataUrl) {
@@ -5081,6 +5245,19 @@ function SheetPanel({
             </div>
           )}
           <div style={{ flex: 1 }} />
+          {/* v1.10.129 — 3D 모델러 발주 사양서 페이지 */}
+          <a
+            href={`/p/${projectSlug}/cards/${encodeURIComponent(card.id)}/spec`}
+            target="_blank"
+            rel="noreferrer"
+            title="외주 모델러 발주용 사양서 (새 탭)"
+            style={{
+              padding: "6px 12px", borderRadius: 8,
+              background: "rgba(7,110,232,0.1)", border: "1px solid rgba(7,110,232,0.3)",
+              color: "var(--primary)", fontSize: 11, fontWeight: 700,
+              textDecoration: "none", whiteSpace: "nowrap",
+            }}
+          >📄 3D 사양서</a>
           <button
             onClick={makeSheet}
             disabled={busy || !canMakeSheet}
@@ -11027,7 +11204,322 @@ function ProfilePicker({ profiles, current, onChange, onCreate, onEdit }) {
 }
 
 // ─── Main App ───
+// v1.10.129 — 3D 모델러 발주 사양서 별도 페이지.
+// URL: /p/:slug/cards/:id/spec
+// 인쇄 친화 (Ctrl+P → PDF), 외주 발주 PPTX 양식 (교도소프랍_*.pptx) 모방한 3섹션 레이아웃.
+// 같은 페이지에서 처음 진입 시 자동으로 Claude 가 사양 생성, card.data.spec_sheet 에 캐시.
+function SpecSheetPage() {
+  const m = location.pathname.match(/^\/p\/([^/]+)\/cards\/([^/]+)\/spec/);
+  const slug = m ? m[1] : null;
+  const cardId = m ? decodeURIComponent(m[2]) : null;
+  const [card, setCard] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [assetMeta, setAssetMeta] = useState({});
+
+  // 카드 + asset_meta 로드
+  useEffect(() => {
+    if (!slug || !cardId) return;
+    (async () => {
+      try {
+        const [cR, mR] = await Promise.all([
+          fetch(`/api/projects/${slug}/cards/${cardId}`).then((r) => r.json()),
+          fetch("/api/object-meta").then((r) => r.json()).catch(() => ({})),
+        ]);
+        setCard(cR);
+        setAssetMeta(mR.asset_meta || {});
+      } catch (e) { setErr(e.message); }
+    })();
+  }, [slug, cardId]);
+
+  const spec = card?.data?.spec_sheet || null;
+  const generate = useCallback(async () => {
+    if (!card) return;
+    setBusy(true); setErr(null);
+    try {
+      const cm = card.data?.catalog_matches;
+      const top3 = (Array.isArray(cm?.items) ? cm.items.slice(0, 3) : []).map((it) => ({
+        id: it.id, name: it.name, score: it.score,
+      }));
+      const result = await generateSpecSheetWithClaude({ card, catalogTop3: top3 });
+      if (!result) throw new Error("Claude 응답 없음 (F12 콘솔의 [SpecSheet] 로그 확인)");
+      const newData = {
+        ...(card.data || {}),
+        spec_sheet: {
+          ...result,
+          generated_at: new Date().toISOString(),
+          model: "claude-sonnet-4-20250514",
+        },
+      };
+      const r = await fetch(`/api/projects/${slug}/cards/${cardId}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: newData, actor: "spec-sheet" }),
+      });
+      if (!r.ok) throw new Error(`PATCH ${r.status}`);
+      const fresh = await r.json();
+      setCard(fresh);
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  }, [card, slug, cardId]);
+
+  // 첫 진입 시 spec 없으면 자동 생성
+  useEffect(() => {
+    if (card && !card.data?.spec_sheet && !busy && !err) {
+      generate();
+    }
+  }, [card, busy, err, generate]);
+
+  if (err) return <div style={{ padding: 40, color: "#ef4444" }}>오류: {err}</div>;
+  if (!card) return <div style={{ padding: 40, color: "#666" }}>로딩 중…</div>;
+
+  // 시각 자료 모음
+  const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+  const cover = card.thumbnail_url;
+  const designs = Array.isArray(card.data?.designs) ? card.data.designs.filter((d) => d?.imageUrl) : [];
+  const selectedDesign = (card.data?.selected_design != null) ? designs[card.data.selected_design] : null;
+  const sourceImage = selectedDesign?.imageUrl || designs[0]?.imageUrl || cover;
+  const views = card.data?.concept_sheet_views || {};
+  const orthoViews = SHEET_VIEWS.filter((v) => views[v.id]).map((v) => ({ id: v.id, label: v.label, url: views[v.id] }));
+  const scaleView = views.scale || null;
+
+  // 카탈로그 매칭 top 3
+  const cm = card.data?.catalog_matches;
+  const top3 = (Array.isArray(cm?.items) ? cm.items : []).slice(0, 3).map((it) => ({
+    ...it,
+    icon: it.icon || assetMeta[it.id]?.icon || it.id,
+    name: it.name || assetMeta[it.id]?.name || it.id,
+  }));
+
+  // 파일명 자동 조립
+  const sname = spec ? `${spec.asset_name}` : "";
+  const sm  = sname ? `SM_HS_${spec.domain}_${sname}` : "";
+  const mi  = sname ? `MI_HS_${spec.domain}_${sname}` : "";
+  const tex = sname ? `T_HS_${spec.domain}_${sname}` : "";
+  const spp = sname ? `SPP_HS_${spec.domain}_${sname}` : "";
+  const psd = sname ? `PSD_HS_${spec.domain}_${sname}` : "";
+  const bp  = sname ? `BP_${sname}` : "";
+  const bpTpl = sname ? `BP_${sname}_Template` : "";
+  const folder = sname ? `/Game/BG/HS/${spec.domain}/${spec.subcat}/${sname}/` : "";
+  const fbxRaw = sname ? `//bluehole/fileshare/Project_inZOI/BLUE_ART/Environment/ArtRaw/BG/HS/${spec.domain}/${spec.subcat}/${sname}/Mesh/` : "";
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="spec-page" style={{
+      maxWidth: 980, margin: "0 auto", padding: "32px 32px 80px",
+      background: "#fff", color: "#111", fontFamily: "Pretendard, system-ui, sans-serif",
+      lineHeight: 1.55, fontSize: 13,
+    }}>
+      <style>{`
+        @media print {
+          body { background: white !important; }
+          .no-print { display: none !important; }
+          .spec-page { padding: 0 !important; max-width: none !important; }
+          .spec-section { page-break-inside: avoid; }
+          .spec-images { page-break-inside: avoid; }
+        }
+        .spec-page h1 { font-size: 22px; margin: 0 0 4px; }
+        .spec-page h2 { font-size: 16px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e5e7eb; }
+        .spec-page table { border-collapse: collapse; width: 100%; margin: 6px 0 12px; font-size: 12px; }
+        .spec-page td, .spec-page th { border: 1px solid #d1d5db; padding: 5px 8px; vertical-align: top; }
+        .spec-page th { background: #f3f4f6; text-align: left; font-weight: 700; }
+        .spec-page code { font-family: "Space Mono", "Consolas", monospace; font-size: 11px; background: #f3f4f6; padding: 1px 4px; border-radius: 3px; }
+        .spec-images { display: grid; gap: 8px; margin: 6px 0 12px; }
+        .spec-images img { width: 100%; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
+        .spec-tile-label { font-size: 10px; color: #6b7280; text-align: center; margin-top: 2px; }
+      `}</style>
+
+      {/* ============ Header ============ */}
+      <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 18, padding: "10px 14px", borderRadius: 8, background: "#f9fafb", border: "1px solid #e5e7eb", alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#076ee8" }}>📄 3D 모델 발주 사양서</span>
+        <span style={{ flex: 1 }} />
+        <button onClick={generate} disabled={busy} style={{
+          padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+          background: busy ? "#e5e7eb" : "#fff", border: "1px solid #d1d5db",
+          color: busy ? "#9ca3af" : "#111", cursor: busy ? "wait" : "pointer",
+        }}>{busy ? "생성 중…" : (spec ? "🔄 재생성" : "🤖 생성")}</button>
+        <button onClick={() => window.print()} style={{
+          padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+          background: "#076ee8", border: "none", color: "#fff", cursor: "pointer",
+        }}>🖨 인쇄 / PDF 저장 (Ctrl+P)</button>
+      </div>
+
+      <h1>{card.title}</h1>
+      <div style={{ color: "#6b7280", fontSize: 11, fontFamily: "Space Mono, monospace", marginBottom: 14 }}>
+        Card ID: {card.id} · 발주일자: {todayStr} · {spec ? `사양 생성: ${(spec.generated_at || "").slice(0, 10)}` : "사양 미생성"}
+      </div>
+
+      {!spec ? (
+        <div style={{ padding: 40, textAlign: "center", color: "#6b7280", border: "1px dashed #d1d5db", borderRadius: 8 }}>
+          {busy ? "Claude 가 사양 생성 중…" : "사양 데이터가 없습니다. '🤖 생성' 버튼을 눌러주세요."}
+        </div>
+      ) : (
+        <>
+          {/* ============ 1. 자산 정보 ============ */}
+          <section className="spec-section">
+            <h2>1. 자산 정보</h2>
+            <table>
+              <tbody>
+                <tr><th style={{width: 140}}>AssetName</th><td><code>{spec.asset_name}</code></td></tr>
+                <tr><th>Domain / Subcat</th><td>{spec.domain} / {spec.subcat}</td></tr>
+                <tr><th>카테고리</th><td>{(card.data?.category && FURNITURE_CATEGORIES.find((c) => c.id === card.data.category)?.label) || "-"}</td></tr>
+                <tr><th>스타일</th><td>{(card.data?.style_preset && STYLE_PRESETS.find((s) => s.id === card.data.style_preset)?.label) || "-"}</td></tr>
+                <tr><th>치수 (cm)</th><td>{[card.data?.size_info?.width_cm, card.data?.size_info?.depth_cm, card.data?.size_info?.height_cm].map((v) => v || "?").join(" × ")} {spec.size_note ? `· ${spec.size_note}` : ""}</td></tr>
+                <tr><th>폴더 경로</th><td><code>{folder}</code></td></tr>
+                <tr><th>FBX 원본</th><td style={{wordBreak:"break-all"}}><code>{fbxRaw}</code></td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          {/* ============ 2. 납품 품목 (PPTX 슬라이드 A) ============ */}
+          <section className="spec-section">
+            <h2>2. 납품 품목 [프랍명: <code>{sm}</code>]</h2>
+            <table>
+              <tbody>
+                <tr><th style={{width: 100}}>FBX</th><td><code>{sm}.FBX</code></td></tr>
+                <tr><th>TGA (텍스쳐)</th><td>
+                  {(spec.texture_slots || []).map((t, i) => (
+                    <div key={i}><code>{tex}_{t.suffix}</code> ({t.resolution}){t.note ? ` — ${t.note}` : ""}</div>
+                  ))}
+                </td></tr>
+                <tr><th>SPP</th><td><code>{spp}</code></td></tr>
+                <tr><th>PSD</th><td><code>{psd}</code></td></tr>
+                <tr><th>BP</th><td><code>{bp}</code> (parent: <code>{bpTpl}</code>)</td></tr>
+                <tr><th>MI parent</th><td><code>{spec.parent_mi}</code></td></tr>
+                <tr><th>폴리곤 (LOD0)</th><td>{spec.polygon_target?.toLocaleString()} tris {spec.polygon_note ? `· ${spec.polygon_note}` : ""}<br/><span style={{ color: "#6b7280", fontSize: 11 }}>※ Nanite Enabled, LOD 1 단계</span></td></tr>
+                <tr><th>비고</th><td>* Max나 Maya, Blender 중 사용하신 툴 넣어주세요.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          {/* ============ 3. 수정 이미지 (PPTX 슬라이드 B) ============ */}
+          <section className="spec-section spec-images">
+            <h2>3. 내부 수정 이미지</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {sourceImage && (
+                <div>
+                  <img src={sourceImage} alt="대표/시안" />
+                  <div className="spec-tile-label">⭐ 대표 / 선정 시안</div>
+                </div>
+              )}
+              {refs.slice(0, 3).map((u, i) => (
+                <div key={i}>
+                  <img src={u} alt={`참조 ${i+1}`} />
+                  <div className="spec-tile-label">참조 #{i+1}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              내부 수정 이미지를 따라서 제작해주시길 바랍니다.
+            </div>
+          </section>
+
+          {/* ============ 4. ID 맵 가이드 + 작업 지시 (PPTX 슬라이드 C) ============ */}
+          <section className="spec-section">
+            <h2>4. ID 맵 가이드 + 작업 지시</h2>
+            <table>
+              <tbody>
+                <tr><th style={{width: 140}}>가이드 메시</th><td>{spec.guide_mesh ? <code>{spec.guide_mesh}</code> : "(없음)"}</td></tr>
+                <tr><th>작업 지시</th><td>
+                  {(spec.work_instructions || []).map((line, i) => (
+                    <div key={i}>{i+1}. {line}</div>
+                  ))}
+                </td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          {/* ============ 5. 직교 뷰 + 스케일 참조 ============ */}
+          {(orthoViews.length > 0 || scaleView) && (
+            <section className="spec-section spec-images">
+              <h2>5. 직교 뷰 / 스케일 참조</h2>
+              {orthoViews.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(orthoViews.length, 4)}, 1fr)`, gap: 6 }}>
+                  {orthoViews.map((v) => (
+                    <div key={v.id}>
+                      <img src={v.url} alt={v.label} style={{ aspectRatio: "1/1", objectFit: "contain" }} />
+                      <div className="spec-tile-label">{v.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {scaleView && (
+                <div style={{ marginTop: 8 }}>
+                  <img src={scaleView} alt="스케일 참조" />
+                  <div className="spec-tile-label">📏 스케일 참조 (인체 실루엣 180cm + 10cm 그리드)</div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ============ 6. 카탈로그 시각 유사 자산 ============ */}
+          {top3.length > 0 && (
+            <section className="spec-section">
+              <h2>6. 카탈로그 시각 유사 자산 (DINOv2 top 3)</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                {top3.map((it) => (
+                  <div key={it.id} style={{ textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 6, padding: 8 }}>
+                    <img src={`/api/object-icon/${encodeURIComponent(it.icon)}`} alt={it.name} style={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", background: "#fafafa" }} />
+                    <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4 }}>{it.name}</div>
+                    <div style={{ fontSize: 10, color: "#6b7280" }}><code>{it.id}</code> · sim {(it.score || 0).toFixed(2)}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                위 자산의 토폴로지/머티리얼 구조를 참고하면 작업 시간 단축 가능.
+              </div>
+            </section>
+          )}
+
+          {/* ============ 7. 검증 체크리스트 ============ */}
+          <section className="spec-section">
+            <h2>7. 검수 체크리스트</h2>
+            <div style={{ fontSize: 12, lineHeight: 2 }}>
+              <div>□ 폴더 구조: <code>Mesh/</code>, <code>MI/</code>, <code>Tex/</code> 분리</div>
+              <div>□ 파일명 prefix (SM_/MI_/T_/BP_) 정상</div>
+              <div>□ Texture suffix (BC/NM/OC/OMR/ID/EM) 일관</div>
+              <div>□ BP 가 <code>{bpTpl}</code> 상속</div>
+              <div>□ StaticMesh: Nanite Enabled, LOD 1</div>
+              <div>□ StaticMesh: Material 슬롯 1개</div>
+              <div>□ StaticMesh: Tris ≤ {(spec.polygon_target * 1.5).toFixed(0).toLocaleString()} (예외 시 사유)</div>
+              <div>□ MI Parent: <code>{spec.parent_mi}</code></div>
+              <div>□ MI Slot Name = MI 파일명</div>
+              <div>□ BC 텍스쳐만 sRGB=True, 그 외 False</div>
+              <div>□ Normal 은 TC_NORMALMAP + WORLD_NORMAL_MAP 그룹</div>
+              <div>□ Variant 텍스쳐는 32~128px 저해상도</div>
+              <div>□ UV 한 방향 / 동일 크기 / 같은 재질 한 곳에 모음</div>
+              <div>□ NM·OC 맵은 PSD 기준 한 단계 높은 해상도</div>
+            </div>
+          </section>
+
+          {/* ============ 8. 공통 가이드 ============ */}
+          <section className="spec-section">
+            <h2>8. 공통 가이드</h2>
+            <ol style={{ paddingLeft: 20, fontSize: 12 }}>
+              <li>재질 타일 커스터마이징이 가능하도록 UV 는 한 방향 및 동일 크기로 펴주세요.</li>
+              <li>같은 재질의 UV 는 한 곳에 모아서 배치해주세요.</li>
+              <li>오브젝트 사이즈 규격을 참고해주세요.</li>
+              <li>NM 맵과 OC 맵은 PSD 기준 한 단계 높은 해상도로 부탁 드립니다.</li>
+            </ol>
+          </section>
+
+          {spec.notes && (
+            <section className="spec-section">
+              <h2>9. 추가 메모</h2>
+              <div style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{spec.notes}</div>
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function InZOIConceptTool() {
+  // v1.10.129 — URL 이 /spec 으로 끝나면 3D 사양서 페이지로 분기 (별도 인쇄 친화 페이지).
+  if (typeof location !== "undefined" && /\/p\/[^/]+\/cards\/[^/]+\/spec\/?$/.test(location.pathname)) {
+    return <SpecSheetPage />;
+  }
   // ─── Per-job state ──────────────────────────────────────────────
   // Each in-flight concept generation is a job. All the step-specific
   // state (step, category, prompt, designs, voting, conceptSheet, ...)
