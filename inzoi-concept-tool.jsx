@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.137";
+const APP_VERSION = "1.10.138";
 const CHANGELOG = [
+  {
+    version: "1.10.138",
+    date: "2026-05-01",
+    changes: [
+      "[버그 수정] 어셋명 추천 + 자동 분류 동시 실행 시 마지막 PATCH 가 다른 작업 결과를 덮어쓰던 race — 두 작업 모두 함수 시작 시점의 stale card.data snapshot 으로 PATCH 빌드. 늦게 끝나는 쪽이 일찍 끝난 쪽 결과를 잃음.",
+      "수정: patchCardMerged(slug, cardId, dataPatch, actor, topLevelPatch) 헬퍼 신설 — PATCH 직전 서버에서 최신 card 재로드 후 dataPatch 만 머지. AssetNameSuggester runSuggest / pickCandidate, AssetInfoEditor save 3곳 모두 적용",
+      "이제 두 작업이 동시에 끝나도 서로의 변경 보존 (name_suggestions / picked_name / category / style / posmap_features / size_info / catalog_matches 가 한 카드에 다 모임)",
+    ],
+  },
   {
     version: "1.10.137",
     date: "2026-05-01",
@@ -4136,6 +4145,23 @@ async function fetchCardDetail(slug, cardId) {
   return r.json();
 }
 
+// v1.10.138 — race-safe PATCH: 서버에서 최신 card 재로드 후 dataPatch 만 머지.
+// 동시에 실행되는 다른 작업이 PATCH 한 필드들이 stale snapshot 으로 덮어쓰이지 않게.
+// topLevelPatch — title / description / thumbnail_url 같은 카드 레벨 필드 (data 외).
+async function patchCardMerged(slug, cardId, dataPatch, actor, topLevelPatch = {}) {
+  const fresh = await fetchCardDetail(slug, cardId);
+  const baseData = fresh?.data || {};
+  const body = { actor, ...topLevelPatch };
+  if (dataPatch) body.data = { ...baseData, ...dataPatch };
+  const r = await fetch(`/api/projects/${slug}/cards/${cardId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`PATCH ${r.status}`);
+  return r.json();
+}
+
 async function patchCard(slug, cardId, patch) {
   const r = await fetch(`/api/projects/${slug}/cards/${cardId}`, {
     method: "PATCH",
@@ -4873,19 +4899,15 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
         alert("이름 추천 실패 — F12 콘솔 [이름 추천] 로그 확인");
         return;
       }
-      const newSugg = { ...(ns), [stage]: {
+      // v1.10.138 — race-safe: 최신 card.name_suggestions 위에 이번 stage 만 머지.
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      const baseSugg = (fresh?.data?.name_suggestions && typeof fresh.data.name_suggestions === "object") ? fresh.data.name_suggestions : ns;
+      const newSugg = { ...baseSugg, [stage]: {
         generated_at: new Date().toISOString(),
         source_image: stageImage,
         candidates,
       }};
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), name_suggestions: newSugg },
-          actor,
-        }),
-      });
+      await patchCardMerged(projectSlug, card.id, { name_suggestions: newSugg }, actor);
       await onRefresh?.();
     } catch (e) {
       alert("이름 추천 오류: " + e.message);
@@ -4897,32 +4919,28 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
 
   const pickCandidate = async (cand) => {
     if (disabled) return;
-    const existingDesc = card.description || "";
-    // 기존 설명에 desc 가 이미 포함되어 있지 않으면 끝에 추가.
-    let nextDesc = existingDesc;
-    if (cand.desc && !existingDesc.includes(cand.desc)) {
-      nextDesc = existingDesc ? `${existingDesc.trim()}\n${cand.desc}` : cand.desc;
-    }
+    // v1.10.138 — race-safe: 최신 card 재로드 후 description 도 latest 기준으로 append.
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: cand.name_ko,
-          description: nextDesc,
-          data: {
-            ...(card.data || {}),
-            picked_name: {
-              ko: cand.name_ko,
-              en: cand.name_en,
-              desc: cand.desc,
-              picked_at: new Date().toISOString(),
-              stage,
-            },
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      const existingDesc = (fresh?.description ?? card.description) || "";
+      let nextDesc = existingDesc;
+      if (cand.desc && !existingDesc.includes(cand.desc)) {
+        nextDesc = existingDesc ? `${existingDesc.trim()}\n${cand.desc}` : cand.desc;
+      }
+      await patchCardMerged(
+        projectSlug, card.id,
+        {
+          picked_name: {
+            ko: cand.name_ko,
+            en: cand.name_en,
+            desc: cand.desc,
+            picked_at: new Date().toISOString(),
+            stage,
           },
-          actor,
-        }),
-      });
+        },
+        actor,
+        { title: cand.name_ko, description: nextDesc }
+      );
       await onRefresh?.();
     } catch (e) {
       alert("채택 저장 실패: " + e.message);
@@ -5243,14 +5261,8 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     if (disabled) return;
     setSaving(true);
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), ...patchFields },
-          actor,
-        }),
-      });
+      // v1.10.138 — race-safe: 자동분류·이름추천 등 동시 작업이 PATCH 한 필드를 stale 로 덮어쓰지 않게.
+      await patchCardMerged(projectSlug, card.id, patchFields, actor);
       await onRefresh();
     } catch (e) { console.warn("어셋 정보 저장 실패:", e); }
     finally { setSaving(false); }
