@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.131";
+const APP_VERSION = "1.10.132";
 const CHANGELOG = [
+  {
+    version: "1.10.132",
+    date: "2026-05-01",
+    changes: [
+      "상세 모달 좌측 정리 — 업데이트 일정 + 우선순위가 별도 박스 2개로 길게 차지하던 것을 chip 한 줄로 통합. TargetUpdateField / PriorityField 에 compact prop 추가, padding/font 작게 + flex-row 배치. 좌측 약 50% 단축",
+      "🏷 자산 이름 추천을 어셋 정보 박스에서 분리해 별도 강조 박스로 위로 이동. 채택된 이름이 크게 표시되고, 5개 후보는 'details ▼ 후보 보기' 안에 접힘 기본 — 채택 후엔 거의 클릭 없이 정체성 한눈에",
+      "AssetNameSuggester 에 standalone prop 추가 — 강조 박스 모드(채택 이름 위, 후보 details 안) / 인라인 모드(이전 동작) 둘 다 지원",
+    ],
+  },
   {
     version: "1.10.131",
     date: "2026-05-01",
@@ -4747,7 +4756,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
 // v1.10.130 — 단계별 자산 이름 추천 + 채택. 어셋 정보 패널 상단에 위치.
 // 단계: ref (참조 이미지 단계) / draft (시안 단계) / final (시트·완료 단계)
 // 결과는 card.data.name_suggestions[stage] 캐시 + picked_name 으로 채택 저장.
-function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, onRefresh }) {
+function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, onRefresh, standalone = false }) {
   // 단계별 사용 가능 이미지 결정.
   const refImage = (Array.isArray(card.data?.ref_images) && card.data.ref_images[0]) || card.thumbnail_url || null;
   const designs = Array.isArray(card.data?.designs) ? card.data.designs.filter((d) => d?.imageUrl) : [];
@@ -4875,6 +4884,123 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
     >{label}</button>
   );
 
+  // v1.10.132 standalone 모드 — 좌측 별도 박스로 강조: 채택된 이름이 위, 후보는 details 접힘.
+  // 후보 리스트 렌더 헬퍼.
+  const renderCandidates = () => stageSugg ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {(stageSugg.candidates || []).map((c, i) => {
+        const isPicked = picked && picked.ko === c.name_ko && picked.en === c.name_en;
+        return (
+          <div key={i} style={{
+            padding: 6, borderRadius: 6,
+            background: isPicked ? "rgba(34,197,94,0.06)" : "#fff",
+            border: `1px solid ${isPicked ? "rgba(34,197,94,0.4)" : "var(--surface-border)"}`,
+            display: "flex", alignItems: "flex-start", gap: 6,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>
+                {c.name_ko}
+                <code style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", background: "rgba(0,0,0,0.04)", borderRadius: 3, fontFamily: "Space Mono, monospace", color: "var(--text-lighter)" }}>{c.name_en}</code>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-lighter)", marginTop: 2 }}>{c.desc}</div>
+            </div>
+            {!disabled && (
+              <button
+                onClick={() => pickCandidate(c)}
+                disabled={isPicked}
+                style={{
+                  padding: "3px 8px", borderRadius: 5, border: "none",
+                  background: isPicked ? "rgba(34,197,94,0.15)" : "var(--primary)",
+                  color: isPicked ? "#15803d" : "#fff",
+                  fontSize: 10, fontWeight: 700,
+                  cursor: isPicked ? "default" : "pointer",
+                  whiteSpace: "nowrap", flexShrink: 0,
+                }}
+              >{isPicked ? "✓ 채택됨" : "✓ 채택"}</button>
+            )}
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+        생성: {stageSugg.generated_at?.slice(0, 16).replace("T", " ")} · 채택 시 카드 제목/설명 갱신
+      </div>
+    </div>
+  ) : (
+    <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "6px 0" }}>
+      {availability[stage]
+        ? "이 단계의 이름 추천을 받지 않았습니다. '🤖 추천 받기' 클릭."
+        : `이 단계의 이미지가 아직 없습니다 (${stage === "draft" ? "시안 생성 필요" : stage === "final" ? "시트 생성 필요" : "참조 이미지 추가 필요"}).`}
+    </div>
+  );
+
+  // standalone: 채택된 이름이 위로 강조, 후보는 details 접힘 기본 (펼치고 싶을 때만).
+  if (standalone) {
+    const cardCount = stageSugg?.candidates?.length || 0;
+    return (
+      <div style={{
+        marginBottom: 14, padding: "12px 14px", borderRadius: 12,
+        background: "rgba(34,197,94,0.04)", border: "1px solid rgba(34,197,94,0.25)",
+      }}>
+        {/* 헤더 + 단계 세그먼트 + 추천 받기 버튼 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: picked ? 10 : 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "#15803d" }}>🏷 이 자산의 이름</span>
+          <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 6, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
+            {stageBtn("ref", "참조", availability.ref)}
+            {stageBtn("draft", "시안", availability.draft)}
+            {stageBtn("final", "최종", availability.final)}
+          </div>
+          <div style={{ flex: 1 }} />
+          {!disabled && (
+            <button
+              onClick={runSuggest}
+              disabled={loading || (!stageImage && stage !== "ref")}
+              title="Gemini 가 단계별 이미지를 분석해 한글명+영문명+짧은 설명 5개 추천"
+              style={{
+                padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: loading ? "rgba(0,0,0,0.06)" : "rgba(34,197,94,0.12)",
+                border: "1px solid rgba(34,197,94,0.4)",
+                color: loading ? "var(--text-muted)" : "#15803d",
+                cursor: loading ? "wait" : "pointer",
+              }}
+            >
+              {loading ? "⏳ 추천 중…" : (stageSugg ? "🔄 다시 추천" : "🤖 추천 받기")}
+            </button>
+          )}
+        </div>
+
+        {/* 채택된 이름 — 강조 (있으면) */}
+        {picked ? (
+          <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ color: "#15803d", fontSize: 11, fontWeight: 800 }}>✓</span>
+              <strong style={{ fontSize: 14 }}>{picked.ko}</strong>
+              <code style={{ fontSize: 11, padding: "2px 6px", background: "rgba(0,0,0,0.06)", borderRadius: 4, fontFamily: "Space Mono, monospace" }}>{picked.en}</code>
+              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>· {picked.stage} · {picked.picked_at?.slice(0, 10)}</span>
+            </div>
+            {picked.desc && (
+              <div style={{ marginTop: 4, color: "var(--text-lighter)", fontSize: 12, lineHeight: 1.5 }}>{picked.desc}</div>
+            )}
+          </div>
+        ) : (
+          <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12 }}>
+            아직 채택된 이름이 없습니다. 단계 선택 후 '🤖 추천 받기'.
+          </div>
+        )}
+
+        {/* 후보 리스트 — details 안에 접힘 기본 (있을 때만 노출) */}
+        {stageSugg && cardCount > 0 && (
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", padding: "4px 0" }}>
+              ▼ 후보 보기 ({cardCount}{picked ? " · 다른 이름으로 변경" : ""})
+            </summary>
+            <div style={{ marginTop: 6 }}>{renderCandidates()}</div>
+          </details>
+        )}
+      </div>
+    );
+  }
+
+  // 기본 모드 (standalone=false) — 어셋 정보 안 인라인 (이전 동작 유지).
   return (
     <div style={{
       marginBottom: 12, padding: 10, borderRadius: 8,
@@ -4905,8 +5031,6 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
           </button>
         )}
       </div>
-
-      {/* 채택된 이름 */}
       {picked && (
         <div style={{ marginBottom: 8, padding: 6, borderRadius: 6, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.3)", fontSize: 11 }}>
           <span style={{ fontWeight: 700, color: "#15803d" }}>✓ 채택:</span>{" "}
@@ -4916,54 +5040,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
           {picked.desc && (<div style={{ marginTop: 3, color: "var(--text-lighter)", fontSize: 11 }}>{picked.desc}</div>)}
         </div>
       )}
-
-      {/* 후보 리스트 */}
-      {stageSugg ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {(stageSugg.candidates || []).map((c, i) => {
-            const isPicked = picked && picked.ko === c.name_ko && picked.en === c.name_en;
-            return (
-              <div key={i} style={{
-                padding: 6, borderRadius: 6,
-                background: isPicked ? "rgba(34,197,94,0.06)" : "#fff",
-                border: `1px solid ${isPicked ? "rgba(34,197,94,0.4)" : "var(--surface-border)"}`,
-                display: "flex", alignItems: "flex-start", gap: 6,
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700 }}>
-                    {c.name_ko}
-                    <code style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", background: "rgba(0,0,0,0.04)", borderRadius: 3, fontFamily: "Space Mono, monospace", color: "var(--text-lighter)" }}>{c.name_en}</code>
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text-lighter)", marginTop: 2 }}>{c.desc}</div>
-                </div>
-                {!disabled && (
-                  <button
-                    onClick={() => pickCandidate(c)}
-                    disabled={isPicked}
-                    style={{
-                      padding: "3px 8px", borderRadius: 5, border: "none",
-                      background: isPicked ? "rgba(34,197,94,0.15)" : "var(--primary)",
-                      color: isPicked ? "#15803d" : "#fff",
-                      fontSize: 10, fontWeight: 700,
-                      cursor: isPicked ? "default" : "pointer",
-                      whiteSpace: "nowrap", flexShrink: 0,
-                    }}
-                  >{isPicked ? "✓ 채택됨" : "✓ 채택"}</button>
-                )}
-              </div>
-            );
-          })}
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-            생성: {stageSugg.generated_at?.slice(0, 16).replace("T", " ")} · 채택 시 카드 제목/설명 갱신
-          </div>
-        </div>
-      ) : (
-        <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "6px 0" }}>
-          {availability[stage]
-            ? "이 단계의 이름 추천을 받지 않았습니다. '🤖 추천 받기' 클릭."
-            : `이 단계의 이미지가 아직 없습니다 (${stage === "draft" ? "시안 생성 필요" : stage === "final" ? "시트 생성 필요" : "참조 이미지 추가 필요"}).`}
-        </div>
-      )}
+      {renderCandidates()}
     </div>
   );
 }
@@ -5178,15 +5255,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
         })()}
       </div>
 
-      {/* v1.10.130 — 자산 이름 추천 (참조/시안/최종 단계별, 한글+영문+짧은 설명) */}
-      <AssetNameSuggester
-        card={card}
-        projectSlug={projectSlug}
-        actor={actor}
-        disabled={disabled}
-        geminiApiKey={geminiApiKey}
-        onRefresh={onRefresh}
-      />
+      {/* v1.10.132 — 이름 추천은 좌측 프레임 별도 박스로 분리 (어셋 정보 위) */}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
@@ -5985,7 +6054,7 @@ function priorityBadgeStyle(p) {
 // 로컬 optimistic state 로 클릭 즉시 active 하이라이트 반영 (부모 re-fetch 기다리지 않음).
 // onSaved(nextCard) 로 서버 응답을 부모에 전달해 detailCard 동기화 — 다른 필드와의 stale
 // card.data race (업데이트 일정이 금방 지워지는 현상 등) 방지.
-function PriorityField({ card, projectSlug, actor, disabled, onSaved }) {
+function PriorityField({ card, projectSlug, actor, disabled, onSaved, compact = false }) {
   const serverValue = getCardPriority(card);
   const [optimistic, setOptimistic] = React.useState(serverValue);
   // 다른 카드로 전환 or 서버 값이 바뀌면 local 도 동기화.
@@ -6012,14 +6081,21 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved }) {
   };
   return (
     <div style={{
-      marginBottom: 14, padding: "10px 14px", borderRadius: 10,
+      marginBottom: compact ? 0 : 14,
+      padding: compact ? "6px 10px" : "10px 14px",
+      borderRadius: 10,
       background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.22)",
+      flex: compact ? "1 1 auto" : undefined,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "#dc2626", minWidth: 130 }}>
-          🔥 우선순위
+      <div style={{ display: "flex", alignItems: "center", gap: compact ? 6 : 8, flexWrap: "wrap" }}>
+        <span style={{
+          fontSize: compact ? 11 : 13,
+          fontWeight: 800, color: "#dc2626",
+          minWidth: compact ? "auto" : 130,
+        }}>
+          🔥 {compact ? "" : "우선순위"}
         </span>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: compact ? 3 : 6, flexWrap: "wrap" }}>
           {PRIORITY_OPTIONS.map((p) => {
             const active = current === p;
             const s = priorityBadgeStyle(p);
@@ -6029,12 +6105,13 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved }) {
                 disabled={disabled}
                 onClick={() => { if (!disabled && p !== current) save(p); }}
                 style={{
-                  padding: "5px 12px", borderRadius: 8,
+                  padding: compact ? "2px 8px" : "5px 12px",
+                  borderRadius: compact ? 5 : 8,
                   background: active ? s.fg : s.bg,
                   color: active ? "#fff" : s.fg,
                   border: `1px solid ${active ? s.fg : s.border}`,
-                  fontSize: 12, fontWeight: 700, cursor: disabled ? "default" : "pointer",
-                  minWidth: 40, transition: "all 0.15s",
+                  fontSize: compact ? 11 : 12, fontWeight: 700, cursor: disabled ? "default" : "pointer",
+                  minWidth: compact ? 28 : 40, transition: "all 0.15s",
                   boxShadow: active ? "0 1px 4px rgba(0,0,0,0.12)" : "none",
                 }}
               >{p}</button>
@@ -6049,7 +6126,7 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved }) {
 // 업데이트 일정 필드 — 어셋 정보 섹션 위에 별도로 노출. 자유 입력 + datalist.
 // onSaved(nextCard) 로 서버 응답을 부모에 전달해 detailCard 동기화 — 다른 필드와의 stale
 // card.data race 방지 (다른 필드 저장이 target_update 를 덮어써 금방 지워지던 현상).
-function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdates = [], onSaved }) {
+function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdates = [], onSaved, compact = false }) {
   // v1.10.46 — 팝오버 피커 방식: 배지 클릭 시 기존 태그 pill 리스트 + 새 태그 입력 팝업이 열림.
   // 목록이 많아도 스크롤. 기입된 값도 동일하게 변경 가능.
   const [open, setOpen] = React.useState(false);
@@ -6086,28 +6163,39 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
 
   return (
     <div ref={wrapRef} style={{
-      marginBottom: 14, padding: "10px 14px", borderRadius: 10,
+      marginBottom: compact ? 0 : 14,
+      padding: compact ? "6px 10px" : "10px 14px",
+      borderRadius: 10,
       background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)",
       position: "relative",
+      flex: compact ? "1 1 auto" : undefined,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "#b45309", minWidth: 130 }}>
-          🗓️ 업데이트 일정
+      <div style={{ display: "flex", alignItems: "center", gap: compact ? 6 : 8 }}>
+        <span style={{
+          fontSize: compact ? 11 : 13,
+          fontWeight: 800, color: "#b45309",
+          minWidth: compact ? "auto" : 130,
+          whiteSpace: "nowrap",
+        }}>
+          🗓️ {compact ? "" : "업데이트 일정"}
         </span>
         <button
           onClick={() => !disabled && setOpen((v) => !v)}
           disabled={disabled}
           title={disabled ? "잠긴 카드는 수정 불가" : "클릭해서 변경"}
           style={{
-            flex: 1, padding: "8px 12px", borderRadius: 8,
+            flex: 1, padding: compact ? "3px 8px" : "8px 12px",
+            borderRadius: compact ? 5 : 8,
             border: "1px solid rgba(234,179,8,0.3)",
             background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
-            fontSize: 13, color: current ? "#b45309" : "var(--text-muted)",
+            fontSize: compact ? 11 : 13, color: current ? "#b45309" : "var(--text-muted)",
             fontWeight: current ? 700 : 400,
             textAlign: "left", cursor: disabled ? "not-allowed" : "pointer",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            minWidth: 0,
           }}
         >
-          {current ? `🗓️ ${current}` : "미지정 — 클릭해서 설정"}
+          {current ? `${current}` : (compact ? "미지정" : "미지정 — 클릭해서 설정")}
         </button>
       </div>
       {open && !disabled && (
@@ -15869,28 +15957,46 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
 
               {/* Body — v1.10.78: 우측이 시안 그리드 1열 더 수용하도록 1fr → 1.3fr 비율 (좌 ≈ 696, 우 ≈ 904). */}
               <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 0 }}>
-                {/* 왼쪽: 업데이트 일정 · 우선순위 · 대표이미지 · 어셋정보 (v1.10.7) */}
+                {/* 왼쪽: 메타 chip · 이름 · 대표이미지 · 어셋정보 (v1.10.132 정리) */}
                 <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
-                  {/* 1) 업데이트 일정 */}
-                  <TargetUpdateField
-                    card={card}
-                    projectSlug={projectSlug}
-                    actor={actorName}
-                    disabled={confirmed}
-                    availableUpdates={availableUpdates}
-                    onSaved={(d) => {
-                      setDetailCard(d);
-                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                    }}
-                  />
+                  {/* 1) 메타 chip 한 줄 — 일정 + 우선순위 (v1.10.132) */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+                    <TargetUpdateField
+                      card={card}
+                      projectSlug={projectSlug}
+                      actor={actorName}
+                      disabled={confirmed}
+                      availableUpdates={availableUpdates}
+                      compact
+                      onSaved={(d) => {
+                        setDetailCard(d);
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      }}
+                    />
+                    <PriorityField
+                      card={card}
+                      projectSlug={projectSlug}
+                      actor={actorName}
+                      disabled={confirmed}
+                      compact
+                      onSaved={(d) => {
+                        setDetailCard(d);
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      }}
+                    />
+                  </div>
 
-                  {/* 2) 우선순위 */}
-                  <PriorityField
+                  {/* 2) 🏷 자산 이름 — 별도 강조 박스 (v1.10.132, AssetInfoEditor 에서 분리) */}
+                  <AssetNameSuggester
                     card={card}
                     projectSlug={projectSlug}
                     actor={actorName}
                     disabled={confirmed}
-                    onSaved={(d) => {
+                    geminiApiKey={geminiApiKey}
+                    standalone
+                    onRefresh={async () => {
+                      const d = await fetchCardDetail(projectSlug, card.id);
+                      if (!d) return;
                       setDetailCard(d);
                       setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
                     }}
