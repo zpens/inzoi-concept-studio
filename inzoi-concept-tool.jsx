@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.133";
+const APP_VERSION = "1.10.134";
 const CHANGELOG = [
+  {
+    version: "1.10.134",
+    date: "2026-05-01",
+    changes: [
+      "업데이트 일정 popover 폭 확장 — 좁은 chip 안에 갇혀 태그 단어가 줄바뀜되던 문제. left: 142 / right: 14 안 → left: 0 + minWidth: 520 / maxWidth: 800 으로 변경. 태그 pill 에 white-space: nowrap 추가해 단어 단위로도 안 잘림",
+    ],
+  },
   {
     version: "1.10.133",
     date: "2026-05-01",
@@ -6238,8 +6245,10 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
       </div>
       {open && !disabled && (
         <div style={{
-          position: "absolute", top: "calc(100% + 4px)", left: 142, right: 14,
-          zIndex: 50, padding: 10, borderRadius: 10, maxHeight: 320, overflowY: "auto",
+          // v1.10.134 — popover 폭 확장. 태그 단어가 줄바뀜되지 않도록 minWidth 크게 + maxWidth 넉넉히.
+          position: "absolute", top: "calc(100% + 4px)", left: 0,
+          minWidth: 520, maxWidth: 800,
+          zIndex: 50, padding: 10, borderRadius: 10, maxHeight: 360, overflowY: "auto",
           background: "#fff", border: "1px solid var(--surface-border)",
           boxShadow: "0 8px 28px rgba(0,0,0,0.16)",
         }}>
@@ -6259,6 +6268,7 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
                         color: active ? "#fff" : "#b45309",
                         border: `1px solid ${active ? "#b45309" : "rgba(180,83,9,0.3)"}`,
                         fontSize: 12, fontWeight: 600, cursor: "pointer",
+                        whiteSpace: "nowrap",  // v1.10.134 — pill 안 단어 줄바뀜 방지
                       }}
                     >🗓️ {u}</button>
                   );
