@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.138";
+const APP_VERSION = "1.10.139";
 const CHANGELOG = [
+  {
+    version: "1.10.139",
+    date: "2026-05-01",
+    changes: [
+      "[정리] 호출 0건 dead code 제거 — estimateSizeWithGemini (classifyCategoryWithGemini 가 size 도 함께 반환해 중복), completedToDbPayload, wishlistToDbPayload, getSlugFromUrl, LoadingOverlay (작업 큐가 그 역할 대체). 약 130줄 감소, 기능 변경 없음",
+      "Phase 1 정리 시작 — 17,626 → ~17,490줄. legacy job 시스템 잔재(generateConceptSheetCanvas, drawViewSlot) 는 line 14573 버튼에서 여전히 호출되어 보존",
+    ],
+  },
   {
     version: "1.10.138",
     date: "2026-05-01",
@@ -2993,52 +3001,7 @@ function DesignCard({ design, selected, onClick, index }) {
   );
 }
 
-function LoadingOverlay({ message, progress }) {
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 1000,
-      background: "radial-gradient(circle at center, rgba(255, 255, 255, 0.9) 0%, rgba(240, 242, 245, 0.97) 100%)",
-      display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
-      backdropFilter: "blur(12px)",
-      WebkitBackdropFilter: "blur(12px)",
-      animation: "fadeIn 0.3s ease",
-    }}>
-      <div style={{ position: "relative", width: 100, height: 100 }}>
-        <div style={{
-          position: "absolute", inset: 0, borderRadius: "50%",
-          border: "3px solid rgba(0,0,0,0.04)",
-        }} />
-        <div style={{
-          position: "absolute", inset: 0, borderRadius: "50%",
-          border: "3px solid transparent",
-          borderTopColor: "var(--accent)",
-          borderRightColor: "var(--primary)",
-          animation: "spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite",
-        }} />
-        <div style={{
-          position: "absolute", inset: 12, borderRadius: "50%",
-          background: "rgba(7,110,232,0.1)",
-          boxShadow: "0 0 30px var(--primary-glow)",
-          animation: "pulseGlow 2s infinite",
-        }} />
-      </div>
-      <div className="text-gradient" style={{ marginTop: 32, fontSize: 22, fontWeight: 700, letterSpacing: "0.02em" }}>
-        {message}
-      </div>
-      {progress !== undefined && (
-        <div style={{ width: 320, height: 6, background: "rgba(0,0,0,0.08)", borderRadius: 3, marginTop: 20, overflow: "hidden", border: "1px solid rgba(0,0,0,0.04)" }}>
-          <div style={{
-            width: `${progress}%`, height: "100%",
-            background: "linear-gradient(90deg, var(--primary), var(--accent))",
-            borderRadius: 3, transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
-            boxShadow: "0 0 10px var(--primary-glow)",
-          }} />
-        </div>
-      )}
-    </div>
-  );
-}
+// v1.10.139 — LoadingOverlay 제거 (JSX 사용 0건). 작업 큐(generatingCards) 가 그 역할 대체.
 
 // ─── Gemini Image Generation API Helper ───
 // dataURL 또는 /data/images/... URL 을 base64+mime 으로 변환.
@@ -3891,58 +3854,7 @@ async function generateConceptSheetViews({ apiKey, sourceImageUrl, model, card, 
   };
 }
 
-// 이미지에서 대략적 실제 크기(cm)를 추정. 카테고리 라벨을 context 로 준다.
-async function estimateSizeWithGemini(apiKey, imageUrl, categoryLabel) {
-  const part = await fetchImagePart(imageUrl);
-  if (!part) throw new Error("이미지 로드 실패");
-
-  const prompt = `이 이미지에 보이는 ${categoryLabel || "가구"}의 실제 크기를 추정해주세요.
-반드시 JSON 만 응답:
-{"width_cm": <정수>, "depth_cm": <정수>, "height_cm": <정수>, "confidence": 0.0~1.0, "reason": "<짧은 근거>"}
-
-규칙:
-- width: 정면 기준 좌우 길이 (cm)
-- depth: 정면 기준 앞뒤 길이 (cm)
-- height: 바닥에서 꼭대기까지 높이 (cm)
-- ${categoryLabel || "해당 가구"} 의 일반적 크기 범위를 기준으로 판단
-- 이미지에서 판단 어려우면 confidence 0.5 미만`;
-
-  const response = await fetch(
-    `/api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent`,
-    {
-      method: "POST",
-      headers: geminiProxyHeaders(apiKey),
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { inline_data: { mime_type: part.mime, data: part.base64 } },
-            { text: prompt },
-          ],
-        }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-      }),
-    }
-  );
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(`gemini ${response.status}: ${errBody.slice(0, 120)}`);
-  }
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return null;
-  try {
-    const obj = JSON.parse(m[0]);
-    const pick = (v) => typeof v === "number" && v > 0 && v < 2000 ? Math.round(v) : null;
-    return {
-      width_cm: pick(obj.width_cm ?? obj.w),
-      depth_cm: pick(obj.depth_cm ?? obj.d),
-      height_cm: pick(obj.height_cm ?? obj.h),
-      confidence: typeof obj.confidence === "number" ? obj.confidence : 0.5,
-      reason: typeof obj.reason === "string" ? obj.reason.slice(0, 200) : null,
-    };
-  } catch { return null; }
-}
+// v1.10.139 — estimateSizeWithGemini 제거. classifyCategoryWithGemini 가 size 도 함께 반환하므로 중복.
 
 // ─── List available Gemini image models ───
 async function listGeminiImageModels(apiKey) {
@@ -4069,28 +3981,7 @@ function dbRowToCompleted(row) {
   };
 }
 
-function completedToDbPayload(item) {
-  return {
-    id: String(item.id),
-    job_id: item.jobId ?? null,
-    asset_code: item.assetCode ?? null,
-    category: item.category,
-    category_label: item.categoryLabel,
-    category_icon: item.categoryIcon,
-    style: item.style,
-    prompt: item.prompt,
-    seed: item.seed,
-    colors: item.colors || [],
-    gradient: item.gradient,
-    image_url: trimForDb(item.imageUrl, "completed.imageUrl"),
-    concept_sheet_url: trimForDb(item.conceptSheetUrl, "completed.conceptSheetUrl"),
-    voters: item.voters,
-    winner: item.winner,
-    pipeline_status: item.pipelineStatus,
-    designer: item.designer,
-    completed_at: item.completedAt,
-  };
-}
+// v1.10.139 — completedToDbPayload 제거 (호출처 0건, legacy job 시스템 잔재).
 
 function dbRowToWishlist(row) {
   return {
@@ -4103,22 +3994,7 @@ function dbRowToWishlist(row) {
   };
 }
 
-function wishlistToDbPayload(item) {
-  return {
-    id: String(item.id),
-    title: item.title,
-    note: item.note,
-    image_url: trimForDb(item.imageUrl, "wishlist.imageUrl"),
-    gradient: item.gradient,
-    created_at: item.createdAt,
-  };
-}
-
-function getSlugFromUrl() {
-  if (typeof location === "undefined") return null;
-  const m = location.pathname.match(/^\/p\/([A-Za-z0-9]+)/);
-  return m ? m[1] : null;
-}
+// v1.10.139 — wishlistToDbPayload / getSlugFromUrl 제거 (호출처 0건).
 
 // URL 의 /cards/:id 부분에서 cardId 추출 (v1.10.24 — 딥링크 공유용).
 function getCardIdFromUrl() {
