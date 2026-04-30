@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.135";
+const APP_VERSION = "1.10.136";
 const CHANGELOG = [
+  {
+    version: "1.10.136",
+    date: "2026-05-01",
+    changes: [
+      "상세 모달 좌측 박스 제목 '🏷 이 자산의 이름' → '🏷 어셋명' 으로 단축",
+    ],
+  },
   {
     version: "1.10.135",
     date: "2026-05-01",
@@ -4985,7 +4992,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
       }}>
         {/* 헤더 + 단계 세그먼트 + 추천 받기 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: picked ? 10 : 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: "#15803d" }}>🏷 이 자산의 이름</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: "#15803d" }}>🏷 어셋명</span>
           <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 6, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
             {stageBtn("ref", "참조", availability.ref)}
             {stageBtn("draft", "시안", availability.draft)}
