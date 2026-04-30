@@ -1,8 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.129";
+const APP_VERSION = "1.10.130";
 const CHANGELOG = [
+  {
+    version: "1.10.130",
+    date: "2026-05-01",
+    changes: [
+      "자산 이름 추천 — 단계별(참조/시안/최종) 한글명 + 영문 PascalCase + 짧은 설명 5개 후보. 어셋 정보 패널 상단에 🏷 이름 추천 섹션, 단계 세그먼트 [참조][시안][최종], 채택 시 카드 제목/설명/picked_name 자동 갱신",
+      "Gemini suggestAssetNames helper — 단계별 이미지 + 카드 메타 + 카탈로그 자산명 충돌 회피로 5개 후보 JSON 생성. 단계 별 추천 톤 차이: 참조=일반명/카테고리 정체성, 시안=실제 형태 반영, 최종=카탈로그 출시명 정식 표현",
+      "단계별 결과는 card.data.name_suggestions[stage] 캐시 (재방문 시 재호출 X). picked_name = {ko, en, desc, picked_at, stage} 으로 채택 추적",
+      "카드 상세 헤더 제목 옆에 🏷 영문명 배지 — picked_name.en 이 있을 때만 노출. 호버 시 단계/채택일 툴팁",
+    ],
+  },
   {
     version: "1.10.129",
     date: "2026-04-30",
@@ -3106,6 +3116,99 @@ async function generatePromptFromImage(apiKey, imageUrl, titleHint) {
   } catch { return null; }
 }
 
+// v1.10.130 — 자산 이름 + 짧은 설명 5개 추천 (단계별).
+// stage: "ref" (참조) / "draft" (시안) / "final" (시트/완료)
+// imageUrl: 단계별 대표 이미지 (없으면 텍스트만 기반)
+// catInfo / styleInfo / posmap: 카드 메타 (선택)
+// conflictNames: 카탈로그 기존 자산명 한글/영문 set — 정확 일치 회피
+async function suggestAssetNames({ apiKey, imageUrl, stage, cardTitle, catInfo, styleInfo, pf = {}, si = {}, conflictNames }) {
+  const stageLabel = stage === "ref" ? "참조 이미지 단계 — 카드의 핵심 컨셉 파악"
+    : stage === "draft" ? "시안 단계 — 시안 이미지의 구체적 형태 반영"
+    : stage === "final" ? "최종/시트 단계 — 카탈로그 출시용 정식 명"
+    : "초기 단계";
+
+  const ctxLines = [];
+  if (cardTitle) ctxLines.push(`카드 제목: ${cardTitle}`);
+  if (catInfo) ctxLines.push(`카테고리: ${catInfo.label} (room: ${catInfo.room || "?"}, group: ${catInfo.group || "?"})`);
+  if (styleInfo) ctxLines.push(`스타일: ${styleInfo.label}`);
+  if (pf.style) ctxLines.push(`posmap.style: ${pf.style}`);
+  if (pf.mood) ctxLines.push(`posmap.mood: ${pf.mood}`);
+  if (pf.size) ctxLines.push(`posmap.size: ${pf.size}`);
+  if (pf.shape?.length) ctxLines.push(`posmap.shape: ${pf.shape.join(", ")}`);
+  if (pf.colors?.length) ctxLines.push(`posmap.colors: ${pf.colors.join(", ")}`);
+  if (pf.materials?.length) ctxLines.push(`posmap.materials: ${pf.materials.join(", ")}`);
+  if (si.width_cm || si.depth_cm || si.height_cm) {
+    ctxLines.push(`치수: ${si.width_cm || "?"}×${si.depth_cm || "?"}×${si.height_cm || "?"} cm`);
+  }
+  // 충돌 회피 — Gemini 에 가장 흔한 한글명 일부만 제공 (전체는 너무 큼)
+  let conflictHint = "";
+  if (conflictNames && conflictNames.length > 0) {
+    const sampleSize = Math.min(conflictNames.length, 30);
+    conflictHint = `\n다음 카탈로그 기존 자산명 과 정확히 같은 이름은 피하세요 (샘플 ${sampleSize}개): ${conflictNames.slice(0, sampleSize).join(", ")}`;
+  }
+
+  const prompt = `이 ${imageUrl ? "이미지의 자산" : "카드"}에 어울리는 한국 가구/소품 이름 5개를 추천하세요.
+
+단계: ${stageLabel}
+
+카드 컨텍스트:
+${ctxLines.join("\n") || "(없음)"}${conflictHint}
+
+각 후보는 아래 3가지를 모두 포함:
+- name_ko: 한국어 자산 이름 (자연스러운 명사구, 8~16자)
+- name_en: 영문 PascalCase + 2자리 번호 (예: PrisonIntercom01, WallTV03). 카탈로그 자산명 prefix 컨벤션과 일관 (예: Bed/Sofa/Chair/Table/Desk/Door/Window/Lighting/Speaker/Locker 등)
+- desc: 한국어 25~50자 짧은 설명. 재질/형태/용도 중 가장 특징적인 1~2 가지
+
+규칙:
+- 5개 후보는 서로 다른 시각으로 (예: 형태 중심, 용도 중심, 분위기 중심, 디테일 중심, 일반명)
+- ${stage === "final" ? "final 단계: 게임 카탈로그 출시명에 어울리는 정식·간결한 표현 우선" : stage === "draft" ? "draft 단계: 시안 이미지의 실제 모습을 반영해 형태/색감 까지 묘사" : "ref 단계: 카테고리 정체성 파악에 도움되는 명확한 일반명"}
+- 영문명은 단어 사이 공백 없이 PascalCase. 끝에 두 자리 번호 (01, 02...) 필수
+- 한글명은 따옴표·괄호 사용 금지. 자연스러운 명사구
+
+반드시 JSON 만 응답:
+{ "candidates": [
+  {"name_ko":"...", "name_en":"...01", "desc":"..."},
+  ...총 5개
+] }`;
+
+  const parts = [];
+  if (imageUrl) {
+    const part = await fetchImagePart(imageUrl);
+    if (part) parts.push({ inline_data: { mime_type: part.mime, data: part.base64 } });
+  }
+  parts.push({ text: prompt });
+
+  const response = await fetch(
+    `/api/ai/gemini/v1beta/models/gemini-2.5-flash:generateContent`,
+    {
+      method: "POST",
+      headers: geminiProxyHeaders(apiKey),
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
+      }),
+    }
+  );
+  if (!response.ok) throw new Error(`Gemini ${response.status}`);
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  try {
+    const obj = JSON.parse(text);
+    const list = Array.isArray(obj?.candidates) ? obj.candidates : [];
+    return list
+      .map((c) => ({
+        name_ko: typeof c.name_ko === "string" ? c.name_ko.trim() : "",
+        name_en: typeof c.name_en === "string" ? c.name_en.trim() : "",
+        desc:    typeof c.desc === "string" ? c.desc.trim() : "",
+      }))
+      .filter((c) => c.name_ko && c.name_en)
+      .slice(0, 5);
+  } catch (e) {
+    console.warn("[이름 추천] JSON 파싱 실패:", e.message, text.slice(0, 200));
+    return [];
+  }
+}
+
 async function classifyCategoryWithGemini(apiKey, imageUrl) {
   const part = await fetchImagePart(imageUrl);
   if (!part) throw new Error("이미지 로드 실패");
@@ -4624,6 +4727,230 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
 
 // 카테고리 / 스타일 필드 자동 저장 (v1.10.9 — 프롬프트 + 참조는 PromptRefEditor 로 분리).
 // 카드 생성은 최소 정보(제목)로, 어셋 정보는 여기서 점진적으로 채운다.
+// v1.10.130 — 단계별 자산 이름 추천 + 채택. 어셋 정보 패널 상단에 위치.
+// 단계: ref (참조 이미지 단계) / draft (시안 단계) / final (시트·완료 단계)
+// 결과는 card.data.name_suggestions[stage] 캐시 + picked_name 으로 채택 저장.
+function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, onRefresh }) {
+  // 단계별 사용 가능 이미지 결정.
+  const refImage = (Array.isArray(card.data?.ref_images) && card.data.ref_images[0]) || card.thumbnail_url || null;
+  const designs = Array.isArray(card.data?.designs) ? card.data.designs.filter((d) => d?.imageUrl) : [];
+  const selIdx = card.data?.selected_design;
+  const draftImage = (selIdx != null && designs[selIdx]?.imageUrl) || designs[0]?.imageUrl || null;
+  const views = card.data?.concept_sheet_views || {};
+  const finalImage = views.front || views.scale || null;
+
+  const availability = {
+    ref: !!refImage,
+    draft: !!draftImage,
+    final: !!finalImage,
+  };
+
+  // 기본 단계 = 가장 진행된 단계 (final > draft > ref).
+  const defaultStage = availability.final ? "final" : availability.draft ? "draft" : "ref";
+  const [stage, setStage] = React.useState(defaultStage);
+  const [loading, setLoading] = React.useState(false);
+
+  // card 변경 시 (다른 카드로 전환) 기본 단계 재설정.
+  React.useEffect(() => {
+    setStage(availability.final ? "final" : availability.draft ? "draft" : "ref");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id]);
+
+  const stageImage = stage === "ref" ? refImage : stage === "draft" ? draftImage : finalImage;
+  const ns = card.data?.name_suggestions || {};
+  const stageSugg = ns[stage] || null;
+  const picked = card.data?.picked_name || null;
+
+  const runSuggest = async () => {
+    if (!geminiApiKey) { alert("Gemini API 키가 필요합니다 (우측 상단 API 설정)"); return; }
+    if (!stageImage && stage !== "ref") {
+      alert("이 단계의 이미지가 없습니다.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const catInfo = card.data?.category ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category) : null;
+      const styleInfo = card.data?.style_preset ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset) : null;
+      // 카탈로그 자산명 충돌 회피 — ASSET_META 의 한글 이름 일부.
+      const conflicts = Object.values(ASSET_META || {}).map((m) => m?.name).filter(Boolean);
+      const candidates = await suggestAssetNames({
+        apiKey: geminiApiKey,
+        imageUrl: stageImage,
+        stage,
+        cardTitle: card.title,
+        catInfo, styleInfo,
+        pf: card.data?.posmap_features || {},
+        si: card.data?.size_info || {},
+        conflictNames: conflicts,
+      });
+      if (candidates.length === 0) {
+        alert("이름 추천 실패 — F12 콘솔 [이름 추천] 로그 확인");
+        return;
+      }
+      const newSugg = { ...(ns), [stage]: {
+        generated_at: new Date().toISOString(),
+        source_image: stageImage,
+        candidates,
+      }};
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { ...(card.data || {}), name_suggestions: newSugg },
+          actor,
+        }),
+      });
+      await onRefresh?.();
+    } catch (e) {
+      alert("이름 추천 오류: " + e.message);
+    } finally { setLoading(false); }
+  };
+
+  const pickCandidate = async (cand) => {
+    if (disabled) return;
+    const existingDesc = card.description || "";
+    // 기존 설명에 desc 가 이미 포함되어 있지 않으면 끝에 추가.
+    let nextDesc = existingDesc;
+    if (cand.desc && !existingDesc.includes(cand.desc)) {
+      nextDesc = existingDesc ? `${existingDesc.trim()}\n${cand.desc}` : cand.desc;
+    }
+    try {
+      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: cand.name_ko,
+          description: nextDesc,
+          data: {
+            ...(card.data || {}),
+            picked_name: {
+              ko: cand.name_ko,
+              en: cand.name_en,
+              desc: cand.desc,
+              picked_at: new Date().toISOString(),
+              stage,
+            },
+          },
+          actor,
+        }),
+      });
+      await onRefresh?.();
+    } catch (e) {
+      alert("채택 저장 실패: " + e.message);
+    }
+  };
+
+  // 스타일 헬퍼.
+  const stageBtn = (id, label, available) => (
+    <button
+      key={id}
+      onClick={() => setStage(id)}
+      disabled={!available}
+      title={!available ? "이 단계의 이미지가 아직 없습니다" : ""}
+      style={{
+        padding: "3px 9px", borderRadius: 6, border: "none",
+        background: stage === id ? "rgba(7,110,232,0.12)" : "transparent",
+        color: !available ? "var(--text-muted)" : (stage === id ? "var(--primary)" : "var(--text-main)"),
+        fontSize: 11, fontWeight: 700,
+        cursor: available ? "pointer" : "not-allowed",
+        opacity: available ? 1 : 0.5,
+      }}
+    >{label}</button>
+  );
+
+  return (
+    <div style={{
+      marginBottom: 12, padding: 10, borderRadius: 8,
+      background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.25)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: "#d97706" }}>🏷 이름 추천</span>
+        <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 6, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
+          {stageBtn("ref", "참조", availability.ref)}
+          {stageBtn("draft", "시안", availability.draft)}
+          {stageBtn("final", "최종", availability.final)}
+        </div>
+        <div style={{ flex: 1 }} />
+        {!disabled && (
+          <button
+            onClick={runSuggest}
+            disabled={loading || (!stageImage && stage !== "ref")}
+            title="Gemini 가 단계별 이미지를 분석해 한글명+영문명+짧은 설명 5개 추천"
+            style={{
+              padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+              background: loading ? "rgba(0,0,0,0.06)" : "rgba(245,158,11,0.12)",
+              border: "1px solid rgba(245,158,11,0.4)",
+              color: loading ? "var(--text-muted)" : "#92400e",
+              cursor: loading ? "wait" : "pointer",
+            }}
+          >
+            {loading ? "⏳ 추천 중…" : (stageSugg ? "🔄 다시 추천" : "🤖 추천 받기")}
+          </button>
+        )}
+      </div>
+
+      {/* 채택된 이름 */}
+      {picked && (
+        <div style={{ marginBottom: 8, padding: 6, borderRadius: 6, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.3)", fontSize: 11 }}>
+          <span style={{ fontWeight: 700, color: "#15803d" }}>✓ 채택:</span>{" "}
+          <strong>{picked.ko}</strong>{" "}
+          <code style={{ fontSize: 10, padding: "1px 5px", background: "rgba(0,0,0,0.06)", borderRadius: 3, fontFamily: "Space Mono, monospace" }}>{picked.en}</code>{" "}
+          <span style={{ color: "var(--text-muted)", fontSize: 10 }}>· {picked.stage} · {picked.picked_at?.slice(0, 10)}</span>
+          {picked.desc && (<div style={{ marginTop: 3, color: "var(--text-lighter)", fontSize: 11 }}>{picked.desc}</div>)}
+        </div>
+      )}
+
+      {/* 후보 리스트 */}
+      {stageSugg ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {(stageSugg.candidates || []).map((c, i) => {
+            const isPicked = picked && picked.ko === c.name_ko && picked.en === c.name_en;
+            return (
+              <div key={i} style={{
+                padding: 6, borderRadius: 6,
+                background: isPicked ? "rgba(34,197,94,0.06)" : "#fff",
+                border: `1px solid ${isPicked ? "rgba(34,197,94,0.4)" : "var(--surface-border)"}`,
+                display: "flex", alignItems: "flex-start", gap: 6,
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>
+                    {c.name_ko}
+                    <code style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", background: "rgba(0,0,0,0.04)", borderRadius: 3, fontFamily: "Space Mono, monospace", color: "var(--text-lighter)" }}>{c.name_en}</code>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-lighter)", marginTop: 2 }}>{c.desc}</div>
+                </div>
+                {!disabled && (
+                  <button
+                    onClick={() => pickCandidate(c)}
+                    disabled={isPicked}
+                    style={{
+                      padding: "3px 8px", borderRadius: 5, border: "none",
+                      background: isPicked ? "rgba(34,197,94,0.15)" : "var(--primary)",
+                      color: isPicked ? "#15803d" : "#fff",
+                      fontSize: 10, fontWeight: 700,
+                      cursor: isPicked ? "default" : "pointer",
+                      whiteSpace: "nowrap", flexShrink: 0,
+                    }}
+                  >{isPicked ? "✓ 채택됨" : "✓ 채택"}</button>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+            생성: {stageSugg.generated_at?.slice(0, 16).replace("T", " ")} · 채택 시 카드 제목/설명 갱신
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "6px 0" }}>
+          {availability[stage]
+            ? "이 단계의 이름 추천을 받지 않았습니다. '🤖 추천 받기' 클릭."
+            : `이 단계의 이미지가 아직 없습니다 (${stage === "draft" ? "시안 생성 필요" : stage === "final" ? "시트 생성 필요" : "참조 이미지 추가 필요"}).`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, onOpenCatalog, geminiApiKey, availableUpdates = [] }) {
   const [category, setCategory] = React.useState(card.data?.category || "");
   const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
@@ -4833,6 +5160,16 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
           );
         })()}
       </div>
+
+      {/* v1.10.130 — 자산 이름 추천 (참조/시안/최종 단계별, 한글+영문+짧은 설명) */}
+      <AssetNameSuggester
+        card={card}
+        projectSlug={projectSlug}
+        actor={actor}
+        disabled={disabled}
+        geminiApiKey={geminiApiKey}
+        onRefresh={onRefresh}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
@@ -15324,6 +15661,19 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         }
                       }}
                     />
+                    {/* v1.10.130 — 채택된 영문 자산명 배지 (있을 때만) */}
+                    {card.data?.picked_name?.en && (
+                      <span
+                        title={`${card.data.picked_name.stage} 단계에서 채택 · ${card.data.picked_name.picked_at?.slice(0, 10)}`}
+                        style={{
+                          padding: "2px 7px", borderRadius: 5,
+                          background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)",
+                          color: "#15803d", fontSize: 10, fontWeight: 700,
+                          fontFamily: "Space Mono, monospace",
+                          whiteSpace: "nowrap",
+                        }}
+                      >🏷 {card.data.picked_name.en}</span>
+                    )}
                     {confirmed && <span style={{ fontSize: 11, color: "#22c55e", whiteSpace: "nowrap" }}>🔒 잠김</span>}
                     {/* 카드 딥링크 복사 (v1.10.24) — 제목 옆 아주 작게 */}
                     <CardShareLink slug={projectSlug} cardId={card.id} />
