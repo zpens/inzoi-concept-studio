@@ -1,8 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.134";
+const APP_VERSION = "1.10.135";
 const CHANGELOG = [
+  {
+    version: "1.10.135",
+    date: "2026-05-01",
+    changes: [
+      "API 사용량 패널에 👥 전체 사용량 한 줄 추가 — 모든 사용자 합산 (cost / 호출 수 / 사용자 수). 기간 토글에 연동, 선택된 프로필 합계 줄 바로 아래 표시. 회색 배경으로 시각 구분",
+    ],
+  },
   {
     version: "1.10.134",
     date: "2026-05-01",
@@ -9599,6 +9606,7 @@ function ApiUsagePanel({ currentActor, profiles = [] }) {
   const [data, setData] = React.useState(null);
   const [leaderboard, setLeaderboard] = React.useState(null);
   const [daily, setDaily] = React.useState(null);
+  const [totalAll, setTotalAll] = React.useState(null); // v1.10.135 — 모든 사용자 합산 (선택 기간)
   const [loading, setLoading] = React.useState(false);
 
   const periodToDays = (p) => p === "today" ? 1 : p === "week" ? 7 : p === "month" ? 30 : 90;
@@ -9633,8 +9641,25 @@ function ApiUsagePanel({ currentActor, profiles = [] }) {
     } catch { /* ignore */ }
   }, [selectedActor, period]);
 
+  // v1.10.135 — 전체(모든 사용자) 합산 — 선택 기간 기준.
+  const reloadTotalAll = React.useCallback(async () => {
+    try {
+      const days = periodToDays(period);
+      const r = await fetch(`/api/usage?actor=*&days=${days}`);
+      if (r.ok) {
+        const j = await r.json();
+        const rows = j.rows || [];
+        const totalCost = rows.reduce((s, x) => s + (Number(x.cost_usd) || 0), 0);
+        const totalCalls = rows.reduce((s, x) => s + (Number(x.calls) || 0), 0);
+        const userCount = rows.length;
+        setTotalAll({ totalCost, totalCalls, userCount });
+      }
+    } catch { /* ignore */ }
+  }, [period]);
+
   React.useEffect(() => { reloadActor(); }, [reloadActor]);
   React.useEffect(() => { reloadLeaderboard(); }, [reloadLeaderboard]);
+  React.useEffect(() => { reloadTotalAll(); }, [reloadTotalAll]);
   React.useEffect(() => { if (view === "daily") reloadDaily(); }, [view, reloadDaily]);
 
   const fmtCost = (n) => "$" + (Number(n) || 0).toFixed(4);
@@ -9662,7 +9687,7 @@ function ApiUsagePanel({ currentActor, profiles = [] }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-main)" }}>📊 API 사용량</span>
         <button
-          onClick={() => { reloadActor(); reloadLeaderboard(); reloadDaily(); }}
+          onClick={() => { reloadActor(); reloadLeaderboard(); reloadDaily(); reloadTotalAll(); }}
           disabled={loading}
           title="새로고침"
           style={{
@@ -9771,17 +9796,31 @@ function ApiUsagePanel({ currentActor, profiles = [] }) {
         </div>
       </div>
 
-      {/* 합계 한 줄 */}
+      {/* 합계 한 줄 — 선택된 프로필 */}
       {data && periodRows && period !== "90d" && (
         <div style={{
           display: "flex", alignItems: "center", gap: 12,
-          padding: "8px 12px", borderRadius: 8, marginBottom: 10,
+          padding: "8px 12px", borderRadius: 8, marginBottom: 6,
           background: "linear-gradient(135deg, rgba(7,110,232,0.06), rgba(139,92,246,0.04))",
           border: "1px solid rgba(7,110,232,0.18)",
         }}>
           <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{periodLabel(period)}:</span>
           <span style={{ fontSize: 18, fontWeight: 800, color: "var(--primary)" }}>{fmtCost(sumCost(periodRows))}</span>
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{sumCalls(periodRows)}회 호출</span>
+        </div>
+      )}
+
+      {/* v1.10.135 — 전체 사용량 한 줄 (모든 사용자, 선택 기간) */}
+      {totalAll && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "8px 12px", borderRadius: 8, marginBottom: 10,
+          background: "rgba(0,0,0,0.03)",
+          border: "1px solid var(--surface-border)",
+        }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>👥 전체 ({periodLabel(period)}):</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text-main)" }}>{fmtCost(totalAll.totalCost)}</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{totalAll.totalCalls.toLocaleString()}회 · {totalAll.userCount}명</span>
         </div>
       )}
       {period === "90d" && daily && (
