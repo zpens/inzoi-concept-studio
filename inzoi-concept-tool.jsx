@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.136";
+const APP_VERSION = "1.10.137";
 const CHANGELOG = [
+  {
+    version: "1.10.137",
+    date: "2026-05-01",
+    changes: [
+      "어셋명 추천 / 자동 분류가 모달을 닫아도 백그라운드로 계속 진행 — 작업 큐(우하단 fixed) 에 등록되어 진행 상황이 모달 외부에서도 보임. 'lass=🏷 이름 추천 중… (시안)' 같은 라벨로 작업 종류 구분",
+      "기술적: AssetNameSuggester / AssetInfoEditor 에 onGenerateProgress / onGenerateEnd props 추가 — App 의 setGeneratingCards 와 연결. 작업 큐 렌더러가 info.label 을 우선 표시 (없으면 진행률%)",
+      "이미 fetch promise 는 component unmount 후에도 실행되므로 PATCH 자체는 항상 완료 — 이번 수정은 사용자에게 진행 상황을 알리는 시각적 피드백 추가",
+    ],
+  },
   {
     version: "1.10.136",
     date: "2026-05-01",
@@ -4805,7 +4814,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
 // v1.10.130 — 단계별 자산 이름 추천 + 채택. 어셋 정보 패널 상단에 위치.
 // 단계: ref (참조 이미지 단계) / draft (시안 단계) / final (시트·완료 단계)
 // 결과는 card.data.name_suggestions[stage] 캐시 + picked_name 으로 채택 저장.
-function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, onRefresh, standalone = false }) {
+function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, onRefresh, standalone = false, onGenerateProgress, onGenerateEnd }) {
   // 단계별 사용 가능 이미지 결정.
   const refImage = (Array.isArray(card.data?.ref_images) && card.data.ref_images[0]) || card.thumbnail_url || null;
   const designs = Array.isArray(card.data?.designs) ? card.data.designs.filter((d) => d?.imageUrl) : [];
@@ -4843,6 +4852,8 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
       return;
     }
     setLoading(true);
+    // v1.10.137 — 작업 큐에 등록 (모달 닫혀도 백그라운드 진행 표시).
+    onGenerateProgress?.(card, 0, 1, `🏷 이름 추천 중… (${stage === "ref" ? "참조" : stage === "draft" ? "시안" : "최종"})`);
     try {
       const catInfo = card.data?.category ? FURNITURE_CATEGORIES.find((c) => c.id === card.data.category) : null;
       const styleInfo = card.data?.style_preset ? STYLE_PRESETS.find((s) => s.id === card.data.style_preset) : null;
@@ -4878,7 +4889,10 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
       await onRefresh?.();
     } catch (e) {
       alert("이름 추천 오류: " + e.message);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+      onGenerateEnd?.(card);
+    }
   };
 
   const pickCandidate = async (cand) => {
@@ -5094,7 +5108,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
   );
 }
 
-function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, onOpenCatalog, geminiApiKey, availableUpdates = [] }) {
+function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpenImage, onOpenCatalog, geminiApiKey, availableUpdates = [], onGenerateProgress, onGenerateEnd }) {
   const [category, setCategory] = React.useState(card.data?.category || "");
   const [stylePreset, setStylePreset] = React.useState(card.data?.style_preset || "");
   const [saving, setSaving] = React.useState(false);
@@ -5109,6 +5123,8 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
     const src = refs[0] || card.thumbnail_url;
     if (!src) { alert("참조 이미지를 먼저 추가해주세요"); return; }
     setSuggesting(true);
+    // v1.10.137 — 작업 큐에 등록 (모달 닫혀도 백그라운드 진행 표시).
+    onGenerateProgress?.(card, 0, 1, "🤖 자동 분류 중…");
     try {
       const existingPrompt = card.data?.prompt || card.description || "";
       // v1.10.122 — DINOv2 이미지 직접 매칭도 병렬로 호출 (카탈로그 정확도 ↑).
@@ -5213,6 +5229,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       alert("자동 분류 실패: " + e.message);
     } finally {
       setSuggesting(false);
+      onGenerateEnd?.(card);
     }
   };
 
@@ -16088,11 +16105,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     disabled={confirmed}
                     geminiApiKey={geminiApiKey}
                     standalone
+                    // v1.10.137 — 모달 닫혀도 백그라운드 진행 표시. label 로 작업 종류 노출.
+                    onGenerateProgress={(c, done, total, label) => setGeneratingCards((prev) => ({
+                      ...prev,
+                      [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total, completed: false, label },
+                    }))}
+                    onGenerateEnd={(c) => setGeneratingCards((prev) => {
+                      const cur = prev[c.id];
+                      if (!cur) return prev;
+                      return { ...prev, [c.id]: { ...cur, completed: true, done: cur.total } };
+                    })}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
                       if (!d) return;
-                      setDetailCard(d);
                       setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
                     }}
                   />
 
@@ -16131,12 +16158,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     onOpenCatalog={setCatalogItemId}
                     geminiApiKey={geminiApiKey}
                     availableUpdates={availableUpdates}
+                    // v1.10.137 — 모달 닫혀도 자동분류 백그라운드 진행 표시.
+                    onGenerateProgress={(c, done, total, label) => setGeneratingCards((prev) => ({
+                      ...prev,
+                      [c.id]: { title: c.title, thumb: c.thumbnail_url, done, total, completed: false, label },
+                    }))}
+                    onGenerateEnd={(c) => setGeneratingCards((prev) => {
+                      const cur = prev[c.id];
+                      if (!cur) return prev;
+                      return { ...prev, [c.id]: { ...cur, completed: true, done: cur.total } };
+                    })}
                     onRefresh={async () => {
                       const d = await fetchCardDetail(projectSlug, card.id);
-                      if (d) {
-                        setDetailCard(d);
-                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
-                      }
+                      if (!d) return;
+                      setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev);
                     }}
                   />
 
@@ -17378,7 +17414,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           {info.title || "(제목 없음)"}
                         </div>
                         <div style={{ fontSize: 10, color: done ? "#15803d" : "var(--text-muted)", fontWeight: done ? 700 : 500 }}>
-                          {done ? `✓ 완료 · 클릭해서 열기` : `${info.done}/${info.total} · ${pct}%`}
+                          {done ? `✓ 완료 · 클릭해서 열기` : (info.label || `${info.done}/${info.total} · ${pct}%`)}
                         </div>
                       </div>
                       {done && (
