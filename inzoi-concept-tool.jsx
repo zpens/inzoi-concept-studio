@@ -1,8 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.132";
+const APP_VERSION = "1.10.133";
 const CHANGELOG = [
+  {
+    version: "1.10.133",
+    date: "2026-05-01",
+    changes: [
+      "참조 이미지 갯수 제한 (4장) 제거 — 무제한 추가 가능. 라벨도 (N/4) → (N) 으로 변경",
+      "[버그 수정] 시안 생성 중 (~30초) 사용자가 참조 이미지를 추가하면 시안 끝나고 그 참조가 사라지던 race — generateCardVariants 가 함수 시작 시점의 stale card.data snapshot 으로 PATCH 빌드해 사용자의 후속 변경을 덮어쓰던 문제. PATCH 직전에 서버에서 latest card 재로드 후 그 위에 prompt/designs 만 머지",
+      "[버그 수정] 같은 race 가 시트 생성 (30~60초) 에도 있어 참조/posmap 등이 사라질 수 있었음. SheetPanel.makeSheet 도 latest card 재로드 후 머지하도록 동일 수정",
+    ],
+  },
   {
     version: "1.10.132",
     date: "2026-05-01",
@@ -4335,9 +4344,27 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   });
   const results = await runWithConcurrencyLimit(tasks, 4, onProgress);
   const valid = results.filter((r) => r && r.imageUrl);
-  const existing = Array.isArray(card.data?.designs) ? card.data.designs : [];
+  // v1.10.133 — race 수정: 시안 생성은 ~30초 걸리는데 그 동안 사용자가 ref_images / posmap_features /
+  // 기타 필드를 PATCH 했을 수 있다. 함수 시작 시점의 stale card.data 를 base 로 PATCH 하면 그 변경이 사라짐.
+  // (특히 "시안 생성 중 참조 이미지 추가했더니 시안 끝나고 보니 사라져있음" 사례.)
+  // 해결: PATCH 직전에 서버에서 최신 card 재로드, 그 위에 prompt / designs 만 머지.
+  let baseData = card.data || {};
+  let baseThumb = card.thumbnail_url;
+  let baseSource = card.data?.source;
+  try {
+    const r = await fetch(`/api/projects/${slug}/cards/${card.id}`);
+    if (r.ok) {
+      const fresh = await r.json();
+      if (fresh && typeof fresh.data === "object") {
+        baseData = fresh.data;
+        baseThumb = fresh.thumbnail_url ?? baseThumb;
+        baseSource = fresh.data?.source ?? baseSource;
+      }
+    }
+  } catch (e) { console.warn("[generateCardVariants] latest fetch 실패, snapshot 사용:", e.message); }
+  const existing = Array.isArray(baseData.designs) ? baseData.designs : [];
   const nextData = {
-    ...(card.data || {}),
+    ...baseData,
     prompt,
     enhanced_prompt: enhancedPrompt,
     designs: [...existing, ...valid],
@@ -4347,7 +4374,7 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   };
   // 첫 시안 생성이면 썸네일 갱신 (참조 이미지가 아닌 생성된 결과로).
   const patch = { data: nextData, actor };
-  if (valid[0]?.imageUrl && (card.data?.source === "wishlist" || !card.thumbnail_url)) {
+  if (valid[0]?.imageUrl && (baseSource === "wishlist" || !baseThumb)) {
     patch.thumbnail_url = valid[0].imageUrl;
   }
   await fetch(`/api/projects/${slug}/cards/${card.id}`, {
@@ -4644,7 +4671,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
       </div>
 
       <div>
-        <div style={fieldLabel}>🖼️ 참조 이미지 ({refImages.length}/4) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal · Ctrl+V 로 붙여넣기)</span></div>
+        <div style={fieldLabel}>🖼️ 참조 이미지 ({refImages.length}) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal · Ctrl+V 로 붙여넣기)</span></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {refImages.map((url, i) => {
             const isCover = card.thumbnail_url === url;
@@ -4726,7 +4753,8 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
               </div>
             );
           })}
-          {!disabled && refImages.length < 4 && (
+          {/* v1.10.133 — 참조 이미지 갯수 제한 제거 (이전: 4장). */}
+          {!disabled && (
             <>
               <input
                 ref={fileRef}
@@ -5609,8 +5637,18 @@ function SheetPanel({
           return;
         }
         // 재생성 시 기존 시트를 history 에 보존.
-        const existingViews = card.data?.concept_sheet_views || null;
-        const prevHistory = Array.isArray(card.data?.concept_sheet_history) ? card.data.concept_sheet_history : [];
+        // v1.10.133 — race 수정: 시트 생성 30~60초 동안 사용자가 다른 필드 (참조 이미지 / posmap 등)
+        // 변경했을 수 있으니 PATCH 직전에 latest card 재로드 후 그 위에 시트 결과만 머지.
+        let baseData2 = card.data || {};
+        try {
+          const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`);
+          if (r.ok) {
+            const fresh = await r.json();
+            if (fresh && typeof fresh.data === "object") baseData2 = fresh.data;
+          }
+        } catch (e) { console.warn("[makeSheet] latest fetch 실패, snapshot 사용:", e.message); }
+        const existingViews = baseData2.concept_sheet_views || null;
+        const prevHistory = Array.isArray(baseData2.concept_sheet_history) ? baseData2.concept_sheet_history : [];
         const nextHistory = existingViews ? [existingViews, ...prevHistory] : prevHistory;
         const frontUrl = result.views.front || null;
         await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
@@ -5618,7 +5656,7 @@ function SheetPanel({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             data: {
-              ...(card.data || {}),
+              ...baseData2,
               concept_sheet_views: {
                 ...result.views,                  // { front, side?, back?, top?, scale }
                 view_decision: result.viewDecision || null,
