@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.145";
+const APP_VERSION = "1.10.146";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -5927,6 +5927,40 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       return { natW, natH };
     };
 
+    // v1.10.146 — Columns 모드: 좌→우 3구역 (참조 / 시안 / 시트).
+    // 워크플로우 (참조 → 시안 → 시트) 와 좌→우 흐름 일치. lineage 곡선이 자연스럽게 펼쳐짐.
+    if (layoutMode === "columns") {
+      const refItems = (groups.find((g) => g.key === "refs")?.items) || [];
+      const designItems = (groups.find((g) => g.key === "designs")?.items) || [];
+      // 시트는 현재 + 이전 모두 합쳐 한 컬럼. 각 노드의 item.label / item.meta.kind 가 구분 정보 가짐.
+      const sheetItems = groups.filter((g) => g.key === "sheet-current" || g.key.startsWith("sheet-history-"))
+        .flatMap((g) => g.items);
+      const COL_W = 760;
+      const COL_GAP = 120;
+      const ITEM_GAP = 6;
+      const HEADER_H = 56;
+      const build = (items) => items.map((item) => {
+        const a = aspectOf(item.url);
+        const w = COL_W;
+        const h = Math.max(120, w / a); // 너무 가는 건 최소 높이 보장
+        const { natW, natH } = naturalOf(item.url);
+        return { item, width: w, height: h, naturalImgW: natW, naturalImgH: natH };
+      });
+      return {
+        isColumns: true,
+        columns: [
+          { key: "refs",    title: `📌 참조 (${refItems.length})`,    color: "#3b82f6", items: build(refItems),    emptyText: "참조 이미지가 없습니다" },
+          { key: "designs", title: `🎨 시안 (${designItems.length})`, color: "#10b981", items: build(designItems), emptyText: "아직 시안이 없습니다" },
+          { key: "sheets",  title: `📑 시트 (${sheetItems.length})`,  color: "#a855f7", items: build(sheetItems),  emptyText: "아직 시트가 없습니다" },
+        ],
+        columnWidth: COL_W,
+        columnGap: COL_GAP,
+        itemGap: ITEM_GAP,
+        headerHeight: HEADER_H,
+        containerWidth: COL_W * 3 + COL_GAP * 2,
+      };
+    }
+
     // v1.10.69 — 균등 그리드: 모든 타일 동일 크기.
     if (layoutMode === "grid") {
       const SIZE = 360;
@@ -6082,9 +6116,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               >✕ 해제</button>
             </>
           )}
-          {/* v1.10.69 — 레이아웃 모드 토글 (justified / 균등 / 타임라인) */}
+          {/* v1.10.146 — 레이아웃 모드 토글. Columns (참조/시안/시트 3구역) 가 맨 앞 */}
           <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)" }}>
             {[
+              { id: "columns",   icon: "📊", title: "컬럼 (참조 → 시안 → 시트)" },
               { id: "justified", icon: "🧱", title: "Justified (자유 배치)" },
               { id: "grid",      icon: "▦",  title: "균등 그리드" },
               { id: "timeline",  icon: "⏱",  title: "타임라인 (시간순 1열)" },
@@ -6452,50 +6487,122 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               </div>
             );
           })()}
-          {LAYOUT.rows.map((row, ri) => (
-            <div key={ri} style={{
-              display: "flex", gap: LAYOUT.gap,
-              height: row.height,
-            }}>
-              {row.items.map(({ item, width, naturalImgW, naturalImgH }, ii) => {
-                const cmts = card?.data?.point_comments?.[item.url];
-                const commentCount = Array.isArray(cmts) ? cmts.length : 0;
-                const designsLen = Array.isArray(card?.data?.designs) ? card.data.designs.length : 0;
-                const isHovered = hoveredUrl === item.url;
-                const isRelated = relatedUrls?.has(item.url) || false;
-                const isDimmed = !!relatedUrls && !isHovered && !isRelated;
-                const offset = customLayout[item.url];
-                return (
-                  <GalleryTile
-                    key={`${ri}-${ii}`}
-                    item={item}
-                    width={width}
-                    height={row.height}
-                    naturalImgW={naturalImgW}
-                    naturalImgH={naturalImgH}
-                    scale={scale}
-                    onSetCover={setCover}
-                    onCopyToRef={copyToRef}
-                    onOpenLightbox={(url) => setLightboxSrc(url)}
-                    selected={selectedUrls.has(item.url)}
-                    onToggleSelect={toggleSelect}
-                    commentCount={commentCount}
-                    designsCount={designsLen}
-                    onImageLoad={onImageLoad}
-                    onLineageHover={(u) => setHoveredUrl(u)}
-                    isHovered={isHovered}
-                    isRelated={isRelated}
-                    isDimmed={isDimmed}
-                    offset={offset}
-                    onStartTileDrag={startTileDrag}
-                    isExpanded={expandedUrl === item.url}
-                    onToggleExpand={toggleExpand}
-                    cardPrompt={card?.data?.prompt || ""}
-                  />
-                );
-              })}
+          {LAYOUT.isColumns ? (
+            // v1.10.146 — Columns 모드: 좌(참조) / 중(시안) / 우(시트). 각 컬럼은 세로 스택.
+            <div style={{ display: "flex", flexDirection: "row", gap: LAYOUT.columnGap, alignItems: "flex-start" }}>
+              {LAYOUT.columns.map((col) => (
+                <div key={col.key} style={{
+                  width: LAYOUT.columnWidth,
+                  display: "flex", flexDirection: "column", gap: LAYOUT.itemGap,
+                }}>
+                  {/* 컬럼 헤더 — type 별 컬러 배경 */}
+                  <div style={{
+                    height: LAYOUT.headerHeight,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: `${col.color}1f`,
+                    border: `1px solid ${col.color}55`,
+                    borderRadius: 12,
+                    color: col.color,
+                    fontSize: 22, fontWeight: 800,
+                    letterSpacing: 0.2,
+                  }}>
+                    {col.title}
+                  </div>
+                  {col.items.length === 0 ? (
+                    <div style={{
+                      padding: 40, textAlign: "center",
+                      color: "rgba(255,255,255,0.4)",
+                      fontSize: 16, fontStyle: "italic",
+                      border: `1px dashed ${col.color}33`,
+                      borderRadius: 10,
+                      background: "rgba(255,255,255,0.02)",
+                    }}>{col.emptyText}</div>
+                  ) : col.items.map(({ item, width, height, naturalImgW, naturalImgH }, ii) => {
+                    const cmts = card?.data?.point_comments?.[item.url];
+                    const commentCount = Array.isArray(cmts) ? cmts.length : 0;
+                    const designsLen = Array.isArray(card?.data?.designs) ? card.data.designs.length : 0;
+                    const isHovered = hoveredUrl === item.url;
+                    const isRelated = relatedUrls?.has(item.url) || false;
+                    const isDimmed = !!relatedUrls && !isHovered && !isRelated;
+                    const offset = customLayout[item.url];
+                    return (
+                      <GalleryTile
+                        key={`${col.key}-${ii}`}
+                        item={item}
+                        width={width}
+                        height={height}
+                        naturalImgW={naturalImgW}
+                        naturalImgH={naturalImgH}
+                        scale={scale}
+                        onSetCover={setCover}
+                        onCopyToRef={copyToRef}
+                        onOpenLightbox={(url) => setLightboxSrc(url)}
+                        selected={selectedUrls.has(item.url)}
+                        onToggleSelect={toggleSelect}
+                        commentCount={commentCount}
+                        designsCount={designsLen}
+                        onImageLoad={onImageLoad}
+                        onLineageHover={(u) => setHoveredUrl(u)}
+                        isHovered={isHovered}
+                        isRelated={isRelated}
+                        isDimmed={isDimmed}
+                        offset={offset}
+                        onStartTileDrag={startTileDrag}
+                        isExpanded={expandedUrl === item.url}
+                        onToggleExpand={toggleExpand}
+                        cardPrompt={card?.data?.prompt || ""}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
             </div>
-          ))}
+          ) : (
+            LAYOUT.rows.map((row, ri) => (
+              <div key={ri} style={{
+                display: "flex", gap: LAYOUT.gap,
+                height: row.height,
+              }}>
+                {row.items.map(({ item, width, naturalImgW, naturalImgH }, ii) => {
+                  const cmts = card?.data?.point_comments?.[item.url];
+                  const commentCount = Array.isArray(cmts) ? cmts.length : 0;
+                  const designsLen = Array.isArray(card?.data?.designs) ? card.data.designs.length : 0;
+                  const isHovered = hoveredUrl === item.url;
+                  const isRelated = relatedUrls?.has(item.url) || false;
+                  const isDimmed = !!relatedUrls && !isHovered && !isRelated;
+                  const offset = customLayout[item.url];
+                  return (
+                    <GalleryTile
+                      key={`${ri}-${ii}`}
+                      item={item}
+                      width={width}
+                      height={row.height}
+                      naturalImgW={naturalImgW}
+                      naturalImgH={naturalImgH}
+                      scale={scale}
+                      onSetCover={setCover}
+                      onCopyToRef={copyToRef}
+                      onOpenLightbox={(url) => setLightboxSrc(url)}
+                      selected={selectedUrls.has(item.url)}
+                      onToggleSelect={toggleSelect}
+                      commentCount={commentCount}
+                      designsCount={designsLen}
+                      onImageLoad={onImageLoad}
+                      onLineageHover={(u) => setHoveredUrl(u)}
+                      isHovered={isHovered}
+                      isRelated={isRelated}
+                      isDimmed={isDimmed}
+                      offset={offset}
+                      onStartTileDrag={startTileDrag}
+                      isExpanded={expandedUrl === item.url}
+                      onToggleExpand={toggleExpand}
+                      cardPrompt={card?.data?.prompt || ""}
+                    />
+                  );
+                })}
+              </div>
+            ))
+          )}
         </div>
       </div>
       {/* v1.10.63 — 타일 클릭 시 ImageLightbox (zIndex 1100 으로 갤러리 위에). */}
