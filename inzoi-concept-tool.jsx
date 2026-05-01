@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.148";
+const APP_VERSION = "1.10.149";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -5915,15 +5915,11 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     } catch (e) { alert("참조 추가 실패: " + e.message); }
   };
   // v1.10.116 — moveDesign 제거 (갤러리 화살표 이동 UI 삭제와 함께).
+  // v1.10.149 — 시안 선정과 대표 이미지(thumbnail_url) 분리. 자동 갱신 제거.
+  // 대표 변경은 사용자가 ⭐ 버튼으로 명시적으로 수행.
   const selectDesign = async (idx) => {
     try {
-      const d = card.data?.designs?.[idx];
-      await patchCardMerged(
-        projectSlug, card.id,
-        { selected_design: idx },
-        actor,
-        { thumbnail_url: d?.imageUrl || card.thumbnail_url },
-      );
+      await patchCardMerged(projectSlug, card.id, { selected_design: idx }, actor);
       await onSaved?.();
     } catch (e) { alert("선정 실패: " + e.message); }
   };
@@ -8566,6 +8562,11 @@ function DesignsPanel({
   React.useEffect(() => {
     try { localStorage.setItem("gemini_variation_mode", variation || ""); } catch {}
   }, [variation]);
+  // v1.10.150 — 시안 생성 큐. 사용자가 빠르게 여러 번 누르면 작업이 큐에 쌓여 순차 실행.
+  // 각 작업은 enqueue 시점의 count/variation/extra 스냅샷 사용.
+  const queueRef = React.useRef([]);
+  const workingRef = React.useRef(false);
+  const [queueLen, setQueueLen] = React.useState(0);
   // v1.10.58 — 시안 정렬 (생성순 / 최신순 / 투표순). 카드 단위 메모리.
   const [sortMode, setSortMode] = React.useState("created");
   // 카드 변경 시 추가 프롬프트 / 정렬 초기화.
@@ -8686,15 +8687,12 @@ function DesignsPanel({
     return () => window.removeEventListener("paste", onPaste, true);
   }, [disabled, panelActive, card.id]);
 
+  // v1.10.149 — 시안 선정과 대표 이미지(thumbnail_url) 분리. 자동 갱신 제거.
+  // 대표 변경은 사용자가 ⭐ 버튼으로 명시적으로 수행.
   const selectDesign = async (idx) => {
     if (disabled) return;
-    const d = displayDesigns[idx];
-    // 업로드/AI 시안을 선정하면 카드 썸네일도 같이 갱신.
-    // v1.10.58 — 단계 자동 이동(drafting → sheet) 제거. 별도 패널 하단 버튼으로 분리.
-    const extraPatch = {};
-    if (d?.imageUrl) extraPatch.thumbnail_url = d.imageUrl;
     try {
-      await patchCardMerged(projectSlug, card.id, { selected_design: idx }, actor, extraPatch);
+      await patchCardMerged(projectSlug, card.id, { selected_design: idx }, actor);
       await onRefresh?.();
     } catch (e) { alert("선정 실패: " + e.message); }
   };
@@ -8717,33 +8715,70 @@ function DesignsPanel({
 
   // v1.10.57 — 시안 생성 (구 CardActionPanel.doGenerate 흡수). drafting 단계에서만 노출.
   // v1.10.96 — 어셋 정보(prompt) 가 비어있고 이미지가 있으면 자동 분류부터 실행 후 그 결과로 생성.
-  const doGenerate = async () => {
+  // v1.10.150 — 큐 패턴으로 변경. doGenerate 가 enqueue 만 하고 processQueue 가 순차 실행.
+  //   각 큐 작업 시작 시 fetchCardDetail 로 fresh card 받아 stale 방지.
+  const doGenerate = () => {
     if (!geminiApiKey) { onOpenApiSettings?.(); return; }
+    // 현재 입력값 스냅샷을 큐에 push.
+    const job = { count, variation, extra: extraPrompt.trim() };
+    queueRef.current.push(job);
+    setQueueLen(queueRef.current.length);
+    processQueue();
+  };
+
+  const processQueue = async () => {
+    if (workingRef.current) return; // 이미 처리 중
+    if (queueRef.current.length === 0) return;
+    workingRef.current = true;
     setBusy(true);
-    onGenerateProgress?.(card, 0, count);
+    while (queueRef.current.length > 0) {
+      const job = queueRef.current.shift();
+      setQueueLen(queueRef.current.length);
+      try {
+        await runGenerateJob(job);
+      } catch (e) {
+        console.warn("[시안 생성 큐] 작업 실패:", e);
+      }
+    }
+    workingRef.current = false;
+    setBusy(false);
+    setProgress(null);
+    onGenerateEnd?.(card);
+  };
+
+  const runGenerateJob = async (job) => {
+    const jobCount = job.count;
+    const jobVariation = job.variation;
+    const jobExtra = job.extra;
+    onGenerateProgress?.(card, 0, jobCount);
+    // 큐 두 번째 작업부터는 prop 의 card 가 stale — fresh fetch 로 시작.
+    let workingCard = card;
+    try {
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      if (fresh) workingCard = fresh;
+    } catch { /* fallback to prop */ }
 
     // 1) 자동 분류 선행 — 이미지가 있고 비어있는 필드가 하나라도 있으면 그 필드만 채움.
     // v1.10.108 — 필드별 게이트. 사용자가 미리 입력한 값은 절대 덮어쓰지 않음.
-    let workingCard = card;
-    let basePrompt = card.data?.prompt || card.description || card.title;
+    let basePrompt = workingCard.data?.prompt || workingCard.description || workingCard.title;
     let autoNotice = null;
-    const refs = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
-    const imgSrc = refs[0] || card.thumbnail_url;
-    const missingPromptOrig = !card.data?.prompt && !card.description;
-    const missingCategory = !card.data?.category;
-    const missingStyle    = !card.data?.style_preset;
-    const missingSize     = !card.data?.size_info;
-    const missingPosmap   = !card.data?.posmap_features;
+    const refs = Array.isArray(workingCard.data?.ref_images) ? workingCard.data.ref_images : [];
+    const imgSrc = refs[0] || workingCard.thumbnail_url;
+    const missingPromptOrig = !workingCard.data?.prompt && !workingCard.description;
+    const missingCategory = !workingCard.data?.category;
+    const missingStyle    = !workingCard.data?.style_preset;
+    const missingSize     = !workingCard.data?.size_info;
+    const missingPosmap   = !workingCard.data?.posmap_features;
     const missingMeta     = missingCategory || missingStyle || missingSize || missingPosmap;
     const needsAutoClassify = !!imgSrc && (missingPromptOrig || missingMeta);
     if (needsAutoClassify) {
-      setProgress({ done: 0, total: count, label: "🤖 빈 어셋 정보 자동 채우는 중..." });
+      setProgress({ done: 0, total: jobCount, label: "🤖 빈 어셋 정보 자동 채우는 중..." });
       try {
         // 필요한 호출만 — meta 빠지면 classify, prompt 빠지면 generatePrompt.
         // v1.10.122 — DINOv2 image-direct 매칭도 병렬 호출.
         const [clsResult, promptResult, visualResult] = await Promise.allSettled([
-          missingMeta       ? classifyCategoryWithGemini(geminiApiKey, imgSrc)            : Promise.resolve(null),
-          missingPromptOrig ? generatePromptFromImage(geminiApiKey, imgSrc, card.title)   : Promise.resolve(null),
+          missingMeta       ? classifyCategoryWithGemini(geminiApiKey, imgSrc)                 : Promise.resolve(null),
+          missingPromptOrig ? generatePromptFromImage(geminiApiKey, imgSrc, workingCard.title) : Promise.resolve(null),
           findVisualMatchByImage(imgSrc, 20),
         ]);
         const clsR   = clsResult.status === "fulfilled" ? clsResult.value : null;
@@ -8780,7 +8815,7 @@ function DesignsPanel({
         // v1.10.122 — DINOv2 image-direct 매칭이 있으면 그것을 우선 사용.
         if (visual && visual.items?.length > 0) {
           patch.catalog_matches = {
-            features: patch.posmap_features || card.data?.posmap_features || null,
+            features: patch.posmap_features || workingCard.data?.posmap_features || null,
             items: visual.items.map((m) => ({
               id: m.id, score: m.score, normalized: m.normalized,
               filter: m.filter, lv1: m.lv1, lv2: m.lv2, source: "image",
@@ -8791,7 +8826,7 @@ function DesignsPanel({
           };
         } else if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
           // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
-          const catId = patch.category || card.data?.category;
+          const catId = patch.category || workingCard.data?.category;
           const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 20);
           if (matches.length > 0) {
             patch.catalog_matches = {
@@ -8808,7 +8843,7 @@ function DesignsPanel({
         if (Object.keys(patch).length > 0) {
           // v1.10.141 — save() 가 server fresh card 반환. workingCard 도 fresh 기반으로 동기화.
           const updated = await save(patch);
-          workingCard = updated || { ...card, data: { ...(card.data || {}), ...patch } };
+          workingCard = updated || { ...workingCard, data: { ...(workingCard.data || {}), ...patch } };
           console.log("[자동 분류 + 시안 생성] 저장됨:", savedFields.join(", "));
         } else {
           console.log("[자동 분류 + 시안 생성] 채울 필드 없음 또는 응답 부족 — 스킵");
@@ -8821,47 +8856,44 @@ function DesignsPanel({
 
     // 2) prompt 검증
     if (!basePrompt) {
-      setBusy(false);
-      setProgress(null);
-      onGenerateEnd?.(card);
       alert("시안 생성을 위해 프롬프트, 설명, 또는 이미지가 필요합니다.");
       return;
     }
 
     // 3) 시안 생성
-    const extra = extraPrompt.trim();
+    const extra = jobExtra;
     const prompt = extra ? `${basePrompt}. Additionally apply: ${extra}` : basePrompt;
-    setProgress({ done: 0, total: count });
+    setProgress({ done: 0, total: jobCount });
     try {
       const r = await generateCardVariants({
-        card: workingCard, count, prompt, geminiApiKey, selectedModel,
+        card: workingCard, count: jobCount, prompt, geminiApiKey, selectedModel,
         slug: projectSlug, actor,
         extraPromptToSave: extra,
-        variation, // v1.10.147
+        variation: jobVariation, // v1.10.147
         onProgress: (done, total) => {
           setProgress({ done, total });
           onGenerateProgress?.(card, done, total);
         },
       });
       if (r.added === 0) {
-        alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
+        alert(`생성 실패 (시도 ${jobCount}개, 실패 ${r.failed}개)`);
       } else {
         // v1.10.108 — 사전 분류가 실행되지 못한 경우 (이미지 없었음), 첫 시안 이미지로 빈 필드만 채움.
         // 사용자가 미리 입력한 필드는 덮어쓰지 않음.
-        const origMissingPrompt   = !card.data?.prompt && !card.description;
-        const origMissingCategory = !card.data?.category;
-        const origMissingStyle    = !card.data?.style_preset;
-        const origMissingSize     = !card.data?.size_info;
-        const origMissingPosmap   = !card.data?.posmap_features;
+        const origMissingPrompt   = !workingCard.data?.prompt && !workingCard.description;
+        const origMissingCategory = !workingCard.data?.category;
+        const origMissingStyle    = !workingCard.data?.style_preset;
+        const origMissingSize     = !workingCard.data?.size_info;
+        const origMissingPosmap   = !workingCard.data?.posmap_features;
         const origMissingMeta     = origMissingCategory || origMissingStyle || origMissingSize || origMissingPosmap;
         const anyMissing = origMissingPrompt || origMissingMeta;
         if (!needsAutoClassify && anyMissing && r.firstImageUrl) {
-          setProgress({ done: count, total: count, label: "🤖 생성 결과로 빈 어셋 정보 자동 채우는 중..." });
+          setProgress({ done: jobCount, total: jobCount, label: "🤖 생성 결과로 빈 어셋 정보 자동 채우는 중..." });
           try {
             // v1.10.122 — DINOv2 image-direct 매칭도 병렬 호출.
             const [clsResult, promptResult, visualResult] = await Promise.allSettled([
-              origMissingMeta   ? classifyCategoryWithGemini(geminiApiKey, r.firstImageUrl)         : Promise.resolve(null),
-              origMissingPrompt ? generatePromptFromImage(geminiApiKey, r.firstImageUrl, card.title): Promise.resolve(null),
+              origMissingMeta   ? classifyCategoryWithGemini(geminiApiKey, r.firstImageUrl)               : Promise.resolve(null),
+              origMissingPrompt ? generatePromptFromImage(geminiApiKey, r.firstImageUrl, workingCard.title): Promise.resolve(null),
               findVisualMatchByImage(r.firstImageUrl, 20),
             ]);
             const clsR   = clsResult.status === "fulfilled" ? clsResult.value : null;
@@ -8889,7 +8921,7 @@ function DesignsPanel({
             // v1.10.122 — DINOv2 image-direct 매칭이 있으면 그것을 우선 사용.
             if (visual && visual.items?.length > 0) {
               patch.catalog_matches = {
-                features: patch.posmap_features || card.data?.posmap_features || null,
+                features: patch.posmap_features || workingCard.data?.posmap_features || null,
                 items: visual.items.map((m) => ({
                   id: m.id, score: m.score, normalized: m.normalized,
                   filter: m.filter, lv1: m.lv1, lv2: m.lv2, source: "image",
@@ -8900,7 +8932,7 @@ function DesignsPanel({
               };
             } else if (patch.posmap_features && Object.keys(POSMAP_SCORES).length > 0) {
               // Fallback — DINOv2 미작동 시 기존 posmap-based 매칭.
-              const catId = patch.category || card.data?.category;
+              const catId = patch.category || workingCard.data?.category;
               const matches = findSimilarCatalogAssets(patch.posmap_features, catId, 20);
               if (matches.length > 0) {
                 patch.catalog_matches = {
@@ -8937,11 +8969,7 @@ function DesignsPanel({
       }
       await onRefresh?.();
     } catch (e) { alert("생성 실패: " + e.message); }
-    finally {
-      setBusy(false);
-      setProgress(null);
-      onGenerateEnd?.(card);
-    }
+    // v1.10.150 — busy/progress/onGenerateEnd 는 processQueue 가 큐 비울 때 한 번 정리.
   };
 
   // v1.10.114 — moveSelectedToSheet 제거. 시트는 SheetPanel 에서 단계 무관하게 항상 가능,
@@ -9245,6 +9273,7 @@ function DesignsPanel({
             );
           })()}
           {/* v1.10.147 — 변형 칩 행. 갯수 행 위에 별도 한 줄. 모델이 seed 미지원이라 prompt-level 다양성 확보 수단. */}
+          {/* v1.10.150 — busy 중에도 변경 가능 (다음 큐 push 부터 적용). */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>변형:</span>
             {[
@@ -9259,14 +9288,13 @@ function DesignsPanel({
                 <button
                   key={v.id || "none"}
                   onClick={() => setVariation(v.id)}
-                  disabled={busy}
                   title={v.id ? VARIATION_HINTS[v.id] : "변형 hint 없이 카드 prompt 그대로 N장 생성"}
                   style={{
                     padding: "3px 9px", borderRadius: 12,
                     background: active ? "rgba(7,110,232,0.12)" : "rgba(0,0,0,0.03)",
                     border: active ? "1px solid var(--primary)" : "1px solid var(--surface-border)",
                     color: active ? "var(--primary)" : "var(--text-muted)",
-                    fontSize: 11, fontWeight: active ? 800 : 600, cursor: busy ? "not-allowed" : "pointer",
+                    fontSize: 11, fontWeight: active ? 800 : 600, cursor: "pointer",
                     whiteSpace: "nowrap",
                   }}
                 >{v.label}</button>
@@ -9278,34 +9306,37 @@ function DesignsPanel({
               <button
                 key={n}
                 onClick={() => setCount(n)}
-                disabled={busy}
                 style={{
                   padding: "5px 11px", borderRadius: 7,
                   background: count === n ? "var(--primary)" : "rgba(0,0,0,0.04)",
                   border: count === n ? "none" : "1px solid var(--surface-border)",
                   color: count === n ? "#fff" : "var(--text-muted)",
-                  fontSize: 12, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
+                  fontSize: 12, fontWeight: 700, cursor: "pointer",
                 }}
               >{n}</button>
             ))}
             <button
               onClick={doGenerate}
-              disabled={busy}
               style={{
                 marginLeft: "auto", padding: "7px 14px", borderRadius: 9,
-                background: busy ? "rgba(0,0,0,0.08)" : "linear-gradient(135deg, var(--primary), var(--secondary))",
+                background: "linear-gradient(135deg, var(--primary), var(--secondary))",
                 border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
-                cursor: busy ? "not-allowed" : "pointer",
+                cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
             >
-              {busy
-                ? (progress?.label
-                    ? progress.label
-                    : `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
-                : `🎨 ${count}개 생성${variation ? ` (${VARIATION_LABELS[variation].replace(/^.\s*/, "")})` : ""}`}
+              {`🎨 ${count}개 생성${variation ? ` (${VARIATION_LABELS[variation].replace(/^.\s*/, "")})` : ""}${queueLen > 0 ? ` · 대기 ${queueLen}` : ""}`}
             </button>
           </div>
+          {/* v1.10.150 — 진행 표시 별도 줄. busy 중에 현재 작업 progress + 큐 잔량 노출. */}
+          {busy && (
+            <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+              {progress?.label
+                ? progress.label
+                : `🎨 생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`}
+              {queueLen > 0 ? ` · 대기열 ${queueLen}건` : ""}
+            </div>
+          )}
         </div>
       )}
 

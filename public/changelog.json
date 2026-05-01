@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.149",
+    "date": "2026-05-01",
+    "changes": [
+      "시안 생성 큐 + 시안 선정 시 대표 자동 변경 제거 — (1) DesignsPanel 의 생성 버튼이 busy 중에도 항상 활성. 누를 때마다 현재 입력값 (count / variation / extraPrompt) 스냅샷이 큐에 push 되고 단일 worker 가 순차 처리. 변형=색재질 + 4장 누른 뒤 변형=없음 + 2장 누르는 식으로 작업 쌓아두고 다른 일 보다가 결과만 받기 가능. 큐 길이는 생성 버튼 라벨 (... · 대기 N) 과 진행 표시 줄 (대기열 N건) 양쪽에 노출. count / variation 칩 disabled 도 풀려 큐에 쌓는 동안 다음 작업의 파라미터 자유 변경 가능. 큐 작업 시작 시 fetchCardDetail 로 fresh card 받아 stale 방지. (2) 시안 선정 시 카드 대표 이미지 (thumbnail_url) 가 자동으로 바뀌던 동작 제거. 선정은 selected_design 만 갱신, 대표 변경은 사용자가 ⭐ 버튼으로 명시적으로 수행. DesignsPanel.selectDesign 과 GalleryCanvas.selectDesign 양쪽 모두 일관 적용. 시안 첫 생성 시 wishlist→drafting 첫 진입에서 thumbnail 비어있으면 첫 시안으로 자동 설정하는 동작은 그대로 유지 (의도적 첫 진입 케이스)"
+    ]
+  },
+  {
     "version": "1.10.148",
     "date": "2026-05-01",
     "changes": [
