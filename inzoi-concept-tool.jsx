@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.151";
+const APP_VERSION = "1.10.152";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -2357,11 +2357,13 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   // (특히 "시안 생성 중 참조 이미지 추가했더니 시안 끝나고 보니 사라져있음" 사례.)
   // 해결: PATCH 직전에 서버에서 최신 card 재로드, 그 위에 prompt / designs 만 머지.
   let baseData = card.data || {};
+  let baseThumb = card.thumbnail_url;
   try {
     const r = await fetch(`/api/projects/${slug}/cards/${card.id}`);
     if (r.ok) {
       const fresh = await r.json();
       if (fresh && typeof fresh.data === "object") baseData = fresh.data;
+      if (fresh && fresh.thumbnail_url !== undefined) baseThumb = fresh.thumbnail_url;
     }
   } catch (e) { console.warn("[generateCardVariants] latest fetch 실패, snapshot 사용:", e.message); }
   const existing = Array.isArray(baseData.designs) ? baseData.designs : [];
@@ -2376,7 +2378,11 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   };
   // v1.10.151 — 시안 생성 시 대표 이미지 자동 등록 제거. 사용자가 시안 선정 또는
   // ⭐ 버튼으로 명시적으로 대표를 지정. (시안 선정 자체는 thumbnail 자동 갱신 유지.)
+  // v1.10.152 — 단, 카드에 썸네일이 아예 없을 때만 첫 시안을 자동 대표로 등록.
   const patch = { data: nextData, actor };
+  if (!baseThumb && valid[0]?.imageUrl) {
+    patch.thumbnail_url = valid[0].imageUrl;
+  }
   await fetch(`/api/projects/${slug}/cards/${card.id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
