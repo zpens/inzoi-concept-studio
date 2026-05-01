@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.142";
+const APP_VERSION = "1.10.143";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -5618,6 +5618,15 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     return new Set([...n.sources, ...n.targets]);
   }, [lineageOn, hoveredUrl, lineageMap]);
 
+  // v1.10.143 — 「흐름선 항상 보기」 토글. 켜면 lineageMap 의 모든 edge 를 옅은 곡선으로 표시.
+  // 호버 중인 노드와 연결된 edge 는 이 모드와 무관하게 항상 강조.
+  const [showAllLines, setShowAllLines] = React.useState(() => {
+    try { return localStorage.getItem("gallery_show_all_lines") === "1"; } catch { return false; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem("gallery_show_all_lines", showAllLines ? "1" : "0"); } catch {}
+  }, [showAllLines]);
+
   // v1.10.117 — 자유 배치: Alt+드래그로 타일별 오프셋 적용. card.data.gallery_layout 에 영속.
   const [customLayout, setCustomLayout] = React.useState(() => {
     const v = card?.data?.gallery_layout;
@@ -5642,6 +5651,86 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     setCustomLayout({});
     await persistLayout({});
   }, [customLayout, persistLayout]);
+
+  // v1.10.143 — 타일 좌표 측정 (lineage 흐름선 SVG 오버레이용).
+  // contentRef 안의 각 [data-gallery-tile-url] 의 누적 offsetLeft/offsetTop 으로 unscaled 좌표 계산.
+  // transform (zoom/pan) 영향 없는 layout-time 좌표 — SVG 가 contentRef 자식이라 transform 자동 적용.
+  // customLayout dx/dy 는 별도로 더함.
+  const [tilePositions, setTilePositions] = React.useState({});
+  const tilePositionsRef = React.useRef({});
+  const measureTiles = React.useCallback(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const tiles = content.querySelectorAll("[data-gallery-tile-url]");
+    const next = {};
+    tiles.forEach((el) => {
+      const url = el.getAttribute("data-gallery-tile-url");
+      if (!url) return;
+      let x = 0, y = 0;
+      let cur = el;
+      while (cur && cur !== content) {
+        x += cur.offsetLeft;
+        y += cur.offsetTop;
+        cur = cur.offsetParent;
+      }
+      const off = customLayout[url];
+      if (off) { x += off.dx || 0; y += off.dy || 0; }
+      next[url] = { x, y, w: el.offsetWidth, h: el.offsetHeight };
+    });
+    // 얕은 비교 — 동일하면 setState skip 으로 리렌더 회피.
+    const prev = tilePositionsRef.current;
+    const sameKeys = Object.keys(next).length === Object.keys(prev).length;
+    let same = sameKeys;
+    if (same) {
+      for (const k in next) {
+        const a = next[k], b = prev[k];
+        if (!b || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h) { same = false; break; }
+      }
+    }
+    if (!same) {
+      tilePositionsRef.current = next;
+      setTilePositions(next);
+    }
+  }, [customLayout]);
+
+  // groups / layoutMode / disabledGroups / aspects / customLayout 변경 시 재측정.
+  // useLayoutEffect 로 paint 전에 갱신 → 라인 깜빡임 방지.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useLayoutEffect(() => { measureTiles(); });
+  // window resize 도 재측정.
+  React.useEffect(() => {
+    const onResize = () => measureTiles();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [measureTiles]);
+
+  // v1.10.143 — Lineage edges: lineageMap 의 (source → target) 쌍을 dedup 후 곡선용 좌표로 변환.
+  // showAllLines 모드 또는 hover 모드 둘 중 하나라도 켜져 있으면 SVG 가 렌더됨.
+  const lineageEdges = React.useMemo(() => {
+    if (!lineageOn) return [];
+    const positions = tilePositions;
+    const seen = new Set();
+    const edges = [];
+    Object.keys(lineageMap).forEach((toUrl) => {
+      const node = lineageMap[toUrl];
+      if (!node) return;
+      node.sources.forEach((fromUrl) => {
+        if (!fromUrl || fromUrl === toUrl) return;
+        const key = `${fromUrl}::${toUrl}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const a = positions[fromUrl];
+        const b = positions[toUrl];
+        if (!a || !b) return; // 둘 다 화면에 그려진 타일일 때만 라인 표시 (그룹 비활성 시 자동 제외).
+        const isActive = !!relatedUrls && (
+          (toUrl === hoveredUrl   && relatedUrls.has(fromUrl)) ||
+          (fromUrl === hoveredUrl && relatedUrls.has(toUrl))
+        );
+        edges.push({ key, fromUrl, toUrl, a, b, isActive });
+      });
+    });
+    return edges;
+  }, [lineageOn, lineageMap, tilePositions, relatedUrls, hoveredUrl]);
 
   // 휠 줌 (커서 기준) — scale 은 setState, x/y 는 ref 로 직접 반영.
   const onWheel = React.useCallback((e) => {
@@ -6002,6 +6091,20 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               color: lineageOn ? "#facc15" : "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
             }}
           >💡 Lineage</button>
+          {/* v1.10.143 — 흐름선 항상 보기 토글 (전체 lineage 곡선 옅게 표시). lineageOn 켜진 상태에서만 의미 */}
+          <button
+            onClick={() => setShowAllLines((v) => !v)}
+            disabled={!lineageOn}
+            title={lineageOn ? "전체 흐름 (참조→시안→시트) 을 옅은 곡선으로 항상 표시" : "Lineage 가 꺼져 있어 사용 불가"}
+            style={{
+              padding: "5px 10px", borderRadius: 6,
+              background: showAllLines && lineageOn ? "rgba(250,204,21,0.18)" : "rgba(255,255,255,0.08)",
+              border: `1px solid ${showAllLines && lineageOn ? "rgba(250,204,21,0.45)" : "rgba(255,255,255,0.15)"}`,
+              color: showAllLines && lineageOn ? "#facc15" : "#fff",
+              opacity: lineageOn ? 1 : 0.4,
+              fontSize: 11, fontWeight: 700, cursor: lineageOn ? "pointer" : "not-allowed",
+            }}
+          >🔗 흐름선</button>
           {/* v1.10.117 — 자유 배치 리셋 (커스텀 위치가 있을 때만 노출) */}
           {Object.keys(customLayout).length > 0 && (
             <button
@@ -6130,6 +6233,74 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, padding: 40 }}>
               이 카드엔 아직 이미지가 없습니다.
             </div>
+          )}
+          {/* v1.10.143 — Lineage 흐름선 SVG 오버레이.
+              contentRef 자식이라 zoom/pan transform 자동 적용. pointerEvents: none 으로 호버 차단 안함.
+              z-index: 1 → 타일은 z-index: auto/2 로 이미 위에 있음 (offset 있는 타일은 2). */}
+          {lineageOn && (showAllLines || !!relatedUrls) && lineageEdges.length > 0 && (
+            <svg
+              style={{
+                position: "absolute", left: 0, top: 0,
+                width: "100%", height: "100%",
+                pointerEvents: "none", overflow: "visible",
+                zIndex: 1,
+              }}
+            >
+              <defs>
+                <marker id="gallery-arrow-soft" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(250,204,21,0.45)" />
+                </marker>
+                <marker id="gallery-arrow-active" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#facc15" />
+                </marker>
+              </defs>
+              {lineageEdges.map((e) => {
+                // 활성 모드 외에는 전체 라인 표시 안함 (showAllLines 가 꺼져있고 hover 도 없으면 빈 SVG).
+                if (!e.isActive && !showAllLines) return null;
+                const x1 = e.a.x + e.a.w; // 출발 = 소스 타일 우측 중앙
+                const y1 = e.a.y + e.a.h / 2;
+                const x2 = e.b.x;          // 도착 = 타깃 타일 좌측 중앙
+                const y2 = e.b.y + e.b.h / 2;
+                // 출발 좌표가 타깃보다 오른쪽이면 (행 순서 반전), 양쪽 모두 좌측에서 출발/도착 — 위/아래로 곡선.
+                let cx1, cx2;
+                if (x1 < x2) {
+                  const dx = (x2 - x1) * 0.5;
+                  cx1 = x1 + dx; cx2 = x2 - dx;
+                } else {
+                  // 역방향이면 양쪽 다 좌측 가장자리에서 곡선 펼치기.
+                  const ax = e.a.x, bx = e.b.x;
+                  const off = Math.max(80, Math.abs(y2 - y1) * 0.3);
+                  cx1 = ax - off; cx2 = bx - off;
+                  // 라인의 시작점도 좌측으로 변경.
+                  return (
+                    <path
+                      key={e.key}
+                      d={`M ${e.a.x} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${e.b.x} ${y2}`}
+                      fill="none"
+                      stroke={e.isActive ? "#facc15" : "rgba(250,204,21,0.22)"}
+                      strokeWidth={e.isActive ? 3 : 1.5}
+                      strokeLinecap="round"
+                      markerEnd={`url(#${e.isActive ? "gallery-arrow-active" : "gallery-arrow-soft"})`}
+                      style={{ transition: "stroke 0.15s, stroke-width 0.15s" }}
+                    />
+                  );
+                }
+                return (
+                  <path
+                    key={e.key}
+                    d={`M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`}
+                    fill="none"
+                    stroke={e.isActive ? "#facc15" : "rgba(250,204,21,0.22)"}
+                    strokeWidth={e.isActive ? 3 : 1.5}
+                    strokeLinecap="round"
+                    markerEnd={`url(#${e.isActive ? "gallery-arrow-active" : "gallery-arrow-soft"})`}
+                    style={{ transition: "stroke 0.15s, stroke-width 0.15s" }}
+                  />
+                );
+              })}
+            </svg>
           )}
           {LAYOUT.rows.map((row, ri) => (
             <div key={ri} style={{
