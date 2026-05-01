@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.147";
+const APP_VERSION = "1.10.148";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9207,7 +9207,9 @@ function DesignsPanel({
 
       {/* 시안 생성 — drafting / wishlist 단계 모두 노출 (v1.10.84: 위시 단계에서도 직접 생성 가능).
           위시 카드도 description/title 만 있으면 doGenerate 가 그것을 prompt fallback 으로 사용. */}
-      {(statusKey === "drafting" || statusKey === "wishlist") && !disabled && (
+      {/* v1.10.148 — 시안 생성 패널은 done 단계만 잠금. 그 외 (wishlist/drafting/voting/sheet) 모두 허용.
+          시트 단계에서 시안을 더 보강할 수 있어야 한다는 사용자 요구. */}
+      {statusKey !== "done" && !disabled && (
         <div style={{
           marginBottom: 10, padding: 10, borderRadius: 10,
           background: "linear-gradient(135deg, rgba(7,110,232,0.05), rgba(139,92,246,0.03))",
