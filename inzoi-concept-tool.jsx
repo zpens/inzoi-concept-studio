@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.152";
+const APP_VERSION = "1.10.153";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -2379,8 +2379,18 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
   // v1.10.151 — 시안 생성 시 대표 이미지 자동 등록 제거. 사용자가 시안 선정 또는
   // ⭐ 버튼으로 명시적으로 대표를 지정. (시안 선정 자체는 thumbnail 자동 갱신 유지.)
   // v1.10.152 — 단, 카드에 썸네일이 아예 없을 때만 첫 시안을 자동 대표로 등록.
+  // v1.10.153 — 추가 안전장치: existing designs 가 비어있을 때만 (= 진짜 첫 시안 생성).
+  //   기존 시안이 있으면 baseThumb 가 falsy 라도 자동 갱신 안 함. 디버그 로그도 추가.
   const patch = { data: nextData, actor };
-  if (!baseThumb && valid[0]?.imageUrl) {
+  const isFirstGeneration = existing.length === 0;
+  const willAutoSetThumb = !baseThumb && isFirstGeneration && !!valid[0]?.imageUrl;
+  console.log("[generateCardVariants] thumbnail 자동 갱신 판정:", {
+    baseThumb: baseThumb || "(없음)",
+    existingCount: existing.length,
+    isFirstGeneration,
+    willAutoSetThumb,
+  });
+  if (willAutoSetThumb) {
     patch.thumbnail_url = valid[0].imageUrl;
   }
   await fetch(`/api/projects/${slug}/cards/${card.id}`, {

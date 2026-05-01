@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.153",
+    "date": "2026-05-01",
+    "changes": [
+      "시안 생성 자동 대표 등록 조건 강화 — '썸네일이 없음' AND '기존 시안이 0개' 일 때만 (= 진짜 첫 시안 생성). 기존 시안이 있으면 thumbnail 이 비어있어도 자동 갱신 안 함. F12 콘솔에 [generateCardVariants] thumbnail 자동 갱신 판정 로그 추가 — baseThumb / existingCount / willAutoSetThumb 값을 출력해 의도와 다른 동작 발생 시 즉시 진단 가능"
+    ]
+  },
+  {
     "version": "1.10.152",
     "date": "2026-05-01",
     "changes": [
