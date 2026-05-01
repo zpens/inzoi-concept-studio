@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.153";
+const APP_VERSION = "1.10.154";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -8741,17 +8741,22 @@ function DesignsPanel({
     const job = { count, variation, extra: extraPrompt.trim() };
     queueRef.current.push(job);
     setQueueLen(queueRef.current.length);
+    console.log("[시안 생성 큐] PUSH", { job, queueLen: queueRef.current.length, working: workingRef.current });
     processQueue();
   };
 
   const processQueue = async () => {
-    if (workingRef.current) return; // 이미 처리 중
+    if (workingRef.current) {
+      console.log("[시안 생성 큐] 이미 worker 실행 중 — 큐에만 추가됨");
+      return;
+    }
     if (queueRef.current.length === 0) return;
     workingRef.current = true;
     setBusy(true);
     while (queueRef.current.length > 0) {
       const job = queueRef.current.shift();
       setQueueLen(queueRef.current.length);
+      console.log("[시안 생성 큐] SHIFT 시작", { job, remaining: queueRef.current.length });
       try {
         await runGenerateJob(job);
       } catch (e) {
@@ -8762,6 +8767,7 @@ function DesignsPanel({
     setBusy(false);
     setProgress(null);
     onGenerateEnd?.(card);
+    console.log("[시안 생성 큐] 모든 작업 완료, idle");
   };
 
   const runGenerateJob = async (job) => {
