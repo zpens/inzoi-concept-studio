@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.141";
+const APP_VERSION = "1.10.142";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -689,6 +689,160 @@ function generateConceptSheetCanvas(canvas, images, metadata) {
 }
 
 // ─── Components ───
+
+// v1.10.142 — 버전 모달 내부 사용 설명서 탭 컨텐츠.
+// 정적 React JSX. CHANGELOG 와 달리 자주 바뀌지 않으므로 인라인 유지.
+function UserGuideContent() {
+  const Section = ({ title, icon, children }) => (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{
+        fontSize: 15, fontWeight: 800, color: "var(--text-main)",
+        marginBottom: 10, display: "flex", alignItems: "center", gap: 8,
+      }}>
+        <span>{icon}</span>{title}
+      </div>
+      <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.8 }}>
+        {children}
+      </div>
+    </div>
+  );
+  const Step = ({ n, title, children }) => (
+    <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
+      <div style={{
+        flex: "0 0 auto",
+        width: 24, height: 24, borderRadius: "50%",
+        background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+        color: "#fff", fontSize: 12, fontWeight: 800,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>{n}</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 2 }}>{title}</div>
+        <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.7 }}>{children}</div>
+      </div>
+    </div>
+  );
+  const Kbd = ({ children }) => (
+    <span style={{
+      display: "inline-block", padding: "1px 7px", margin: "0 2px",
+      background: "rgba(0,0,0,0.06)", border: "1px solid var(--surface-border)",
+      borderRadius: 5, fontSize: 11.5, fontWeight: 700, color: "var(--text-main)",
+      fontFamily: "ui-monospace, SFMono-Regular, monospace",
+    }}>{children}</span>
+  );
+  const Tag = ({ children, color = "#6366f1" }) => (
+    <span style={{
+      display: "inline-block", padding: "1px 8px", margin: "0 3px",
+      background: `${color}1a`, color, border: `1px solid ${color}40`,
+      borderRadius: 6, fontSize: 11.5, fontWeight: 700,
+    }}>{children}</span>
+  );
+
+  return (
+    <div>
+      <div style={{
+        padding: "12px 16px", marginBottom: 20,
+        background: "linear-gradient(135deg, rgba(152,166,255,0.08), rgba(196,181,253,0.08))",
+        border: "1px solid rgba(152,166,255,0.25)",
+        borderRadius: 12,
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-main)", marginBottom: 4 }}>
+          🎨 inZOI Asset Studio 란?
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.7 }}>
+          크래프톤 inZOI 의 어셋 컨셉 워크플로우 도구.
+          아이디어 → 시안 → 컨셉 시트 → 3D 모델러용 사양서까지 한 곳에서 관리합니다.
+          AI 가 카테고리 분류, 시안 생성, 어셋명 추천, 카탈로그 유사 검색을 자동으로 수행합니다.
+        </div>
+      </div>
+
+      <Section title="기본 워크플로우 5단계" icon="🚀">
+        <Step n="1" title="위시리스트 (📝)">
+          만들고 싶은 어셋의 아이디어를 카드로 추가합니다. 제목만 있어도 OK — 세부 정보는 나중에 채워도 됩니다.
+        </Step>
+        <Step n="2" title="시안 (🎨)">
+          참조 이미지/프롬프트로 AI 시안 4장을 생성. 마음에 드는 시안을 <b>대표 시안</b> 으로 선정합니다.
+          <br/>비어있는 어셋 정보 (카테고리/스타일/크기 등) 는 자동 분류로 함께 채워집니다.
+        </Step>
+        <Step n="3" title="투표 (🗳️)">
+          팀원들이 시안을 비교하고 투표 — 어떤 방향으로 갈지 합의.
+        </Step>
+        <Step n="4" title="컨셉 시트 (📐)">
+          선정 시안을 기반으로 다중 뷰 (정면/측면/후면 + 180cm 인체 스케일 참조) 컨셉 시트 자동 생성.
+          외주용 사양서 (FN/HS 네이밍 + 폴리곤 / 텍스처 규약) 도 별도 페이지로 출력 가능.
+        </Step>
+        <Step n="5" title="완료 (✅)">
+          최종 검수가 끝난 어셋. 3D 작업 의뢰 완료 상태로 보관.
+        </Step>
+      </Section>
+
+      <Section title="카드 추가하기" icon="➕">
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <li>좌측 상단 <b>＋ 위시 추가</b> 버튼 → 제목 정도만 입력해 빠르게 생성.</li>
+          <li>이미지가 있으면 드래그 드롭 / 붙여넣기 (Ctrl+V) 로 카드와 함께 첨부.</li>
+          <li>세부 정보 (카테고리, 스타일, 크기, 우선순위 등) 는 카드 클릭 → 상세 모달에서 편집.</li>
+        </ul>
+      </Section>
+
+      <Section title="AI 자동 분류 / 추천" icon="🤖">
+        상세 모달에서 다음 기능을 사용할 수 있습니다 (Gemini API 키 필요):
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+          <li><Tag>자동 분류</Tag> 이미지로 카테고리 / 스타일 / 크기 / posmap 동시 추정 — 빈 필드만 채움 (이미 입력된 값은 보존).</li>
+          <li><Tag>어셋명 추천</Tag> 단계별 (참조 / 시안 / 최종) 한글명 + PascalCase 영문명 + 짧은 설명 후보 5개. 색상/재질은 제외 (커마 가능).</li>
+          <li><Tag>카탈로그 유사</Tag> DINOv2 시각 임베딩으로 inZOI 카탈로그 5,265 개 중 유사한 기존 어셋 매칭 — 메쉬 중복은 자동 제거.</li>
+          <li><Tag>시안 생성</Tag> 참조 이미지 + 프롬프트로 4장 동시 생성. Gemini Imagen 사용.</li>
+          <li><Tag color="#a855f7">컨셉 시트</Tag> Claude 가 시점/포즈를 자동 결정해 다중 뷰 1장으로 합성. 180cm 인체 실루엣 스케일 자동 포함.</li>
+        </ul>
+      </Section>
+
+      <Section title="갤러리 / 라이트박스" icon="🖼️">
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <li><Kbd>F</Kbd> 키 — 화이트보드 갤러리 열기. 줌 인/아웃 휠, <Kbd>Alt</Kbd>+드래그 자유 배치, 우클릭 리셋.</li>
+          <li>썸네일 호버 시 원본 → 시안 → 시트 계보가 색상 테두리로 표시 (어디서 파생됐는지 한눈에).</li>
+          <li>시안/시트 클릭 → 라이트박스 — 우클릭 "이미지 저장", 그리기 → 다음 시안 참조로 보내기, 좌표 코멘트 가능.</li>
+        </ul>
+      </Section>
+
+      <Section title="3D 모델러용 사양서" icon="📐">
+        컨셉 시트 단계 카드에서 <b>📋 사양서 보기</b> → 외주 발주용 PDF 가능 페이지.
+        포함 내용:
+        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+          <li>네이밍 규약 (SM_HS_FN_*, MI_*, T_*_BC/NM/OC/OMR/ID/EM)</li>
+          <li>폴리곤 예산 / LOD / 콜리전 / 피벗</li>
+          <li>텍스처 채널 매핑 / 해상도 가이드</li>
+          <li>참조 / 시안 / 컨셉 시트 이미지 함께 출력</li>
+        </ul>
+      </Section>
+
+      <Section title="API 키 설정" icon="🔑">
+        우측 상단 톱니바퀴 → API 설정. 서버에 키가 설정돼 있으면 그대로 쓰고, 개인 키를 입력하면 그것이 우선 사용됩니다.
+        키 자체는 클라이언트에 노출되지 않으며 모든 호출은 서버 프록시 (<code>/api/ai/gemini/*</code>, <code>/api/ai/claude/*</code>) 경유. API 사용량은 같은 패널에서 일별/누적으로 확인 가능.
+      </Section>
+
+      <Section title="단축키" icon="⌨️">
+        <div style={{ lineHeight: 2 }}>
+          <Kbd>F</Kbd> 갤러리 (화이트보드) 열기 / 닫기<br/>
+          <Kbd>Esc</Kbd> 모달 닫기<br/>
+          <Kbd>Ctrl</Kbd>+<Kbd>V</Kbd> 클립보드 이미지 붙여넣기 (참조 / 시안 패널)<br/>
+          <Kbd>Alt</Kbd>+드래그 (갤러리) 타일 자유 위치 이동
+        </div>
+      </Section>
+
+      <Section title="데이터 / 백업" icon="💾">
+        모든 카드 데이터는 SQLite (<code>data.db</code>) 에 저장. <code>npm run backup</code> 으로 스냅샷 생성 가능.
+        운영 PC 는 5분마다 자동 git pull 로 최신 빌드를 반영합니다.
+      </Section>
+
+      <div style={{
+        marginTop: 16, padding: "12px 14px",
+        background: "rgba(0,0,0,0.03)", border: "1px solid var(--surface-border)",
+        borderRadius: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7,
+      }}>
+        💡 자세한 변경 이력과 새 기능은 좌측 <b>변경내역</b> 탭에서 확인할 수 있습니다.
+        문제가 생기면 F12 콘솔 로그와 함께 제보해 주세요.
+      </div>
+    </div>
+  );
+}
 
 function StepIndicator({ currentStep, steps }) {
   return (
@@ -10146,6 +10300,9 @@ export default function InZOIConceptTool() {
 
   // Version modal state
   const [versionOpen, setVersionOpen] = useState(false);
+  // v1.10.142 — 모달 내 탭: "version" (변경내역) / "guide" (사용 설명서). 진입 시 항상 version.
+  const [versionTab, setVersionTab] = useState("version");
+  useEffect(() => { if (versionOpen) setVersionTab("version"); }, [versionOpen]);
 
   // API key state — v1.10.71: 키 자체는 클라이언트에 노출 안됨. /api/config 가 boolean 만 응답.
   // - personalKey 가 있으면 헤더로 서버에 전달 (개인 override)
@@ -14581,7 +14738,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           <div style={{
             position: "fixed", top: "50%", left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 480, maxWidth: "90vw", maxHeight: "80vh",
+            width: 640, maxWidth: "92vw", maxHeight: "82vh",
             background: "rgba(255, 255, 255, 0.97)",
             backdropFilter: "blur(20px)",
             border: "1px solid var(--surface-border)",
@@ -14616,48 +14773,85 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 ✕
               </button>
             </div>
+            {/* 탭 — 변경내역 / 사용 설명서 */}
+            <div style={{
+              display: "flex", gap: 4, padding: "10px 28px 0",
+              borderBottom: "1px solid var(--surface-border)",
+            }}>
+              {[
+                { key: "version", label: "📋 변경내역" },
+                { key: "guide",   label: "📖 사용 설명서" },
+              ].map((t) => {
+                const active = versionTab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setVersionTab(t.key)}
+                    style={{
+                      padding: "10px 16px",
+                      background: active ? "rgba(152,166,255,0.1)" : "transparent",
+                      border: "none",
+                      borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+                      marginBottom: -1,
+                      fontSize: 13, fontWeight: active ? 800 : 600,
+                      color: active ? "var(--accent)" : "var(--text-muted)",
+                      cursor: "pointer",
+                      borderTopLeftRadius: 8, borderTopRightRadius: 8,
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
             <div style={{ padding: "20px 28px", overflowY: "auto", flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 16 }}>
-                변경내역
-              </div>
-              {CHANGELOG.map((entry, idx) => (
-                <div key={entry.version} style={{
-                  marginBottom: 20,
-                  paddingBottom: idx < CHANGELOG.length - 1 ? 20 : 0,
-                  borderBottom: idx < CHANGELOG.length - 1 ? "1px solid rgba(0,0,0,0.05)" : "none",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                    <span style={{
-                      fontSize: 13, fontWeight: 800, color: idx === 0 ? "var(--accent)" : "var(--text-lighter)",
-                      background: idx === 0 ? "rgba(152,166,255,0.1)" : "rgba(0,0,0,0.04)",
-                      border: idx === 0 ? "1px solid rgba(152,166,255,0.25)" : "1px solid var(--surface-border)",
-                      padding: "3px 10px", borderRadius: 8,
-                    }}>
-                      v{entry.version}
-                    </span>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{entry.date}</span>
-                    {idx === 0 && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 800, color: "#fff",
-                        background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-                        padding: "2px 8px", borderRadius: 6,
-                      }}>
-                        최신
-                      </span>
-                    )}
+              {versionTab === "version" ? (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-lighter)", marginBottom: 16 }}>
+                    변경내역
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: 20 }}>
-                    {entry.changes.map((change, ci) => (
-                      <li key={ci} style={{
-                        fontSize: 13, color: "var(--text-muted)", lineHeight: 1.8,
-                        listStyleType: "disc",
-                      }}>
-                        {change}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+                  {CHANGELOG.map((entry, idx) => (
+                    <div key={entry.version} style={{
+                      marginBottom: 20,
+                      paddingBottom: idx < CHANGELOG.length - 1 ? 20 : 0,
+                      borderBottom: idx < CHANGELOG.length - 1 ? "1px solid rgba(0,0,0,0.05)" : "none",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                        <span style={{
+                          fontSize: 13, fontWeight: 800, color: idx === 0 ? "var(--accent)" : "var(--text-lighter)",
+                          background: idx === 0 ? "rgba(152,166,255,0.1)" : "rgba(0,0,0,0.04)",
+                          border: idx === 0 ? "1px solid rgba(152,166,255,0.25)" : "1px solid var(--surface-border)",
+                          padding: "3px 10px", borderRadius: 8,
+                        }}>
+                          v{entry.version}
+                        </span>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{entry.date}</span>
+                        {idx === 0 && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 800, color: "#fff",
+                            background: "linear-gradient(135deg, var(--primary), var(--secondary))",
+                            padding: "2px 8px", borderRadius: 6,
+                          }}>
+                            최신
+                          </span>
+                        )}
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 20 }}>
+                        {entry.changes.map((change, ci) => (
+                          <li key={ci} style={{
+                            fontSize: 13, color: "var(--text-muted)", lineHeight: 1.8,
+                            listStyleType: "disc",
+                          }}>
+                            {change}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <UserGuideContent />
+              )}
             </div>
           </div>
         </>
