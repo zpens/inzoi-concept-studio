@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.144";
+const APP_VERSION = "1.10.145";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -7831,7 +7831,7 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           onPointerUp={(e) => e.stopPropagation()}
           title={isExpanded ? "상세 패널 닫기" : "프롬프트 / 메타정보 펼치기"}
           style={{
-            position: "absolute", top: 6, right: isCopyable ? 110 : 42,
+            position: "absolute", top: 6, right: isCopyable ? 130 : 42,
             width: 30, height: 30, borderRadius: 15,
             background: isExpanded ? "rgba(250,204,21,0.92)" : "rgba(0,0,0,0.55)",
             border: "none",
