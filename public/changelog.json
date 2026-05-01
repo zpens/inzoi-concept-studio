@@ -1,0 +1,2117 @@
+[
+  {
+    "version": "1.10.140",
+    "date": "2026-05-01",
+    "changes": [
+      "CHANGELOG 외부 분리 — 2,109 줄 인라인 배열을 public/changelog.json 으로 추출. 메인 jsx 약 2,231 줄 감소 (17,626 → 15,395). App boot 시 fetch /changelog.json 로 동적 로드, 모달 렌더 재사용. git diff 가깝고 미래 버전 추가도 별도 파일만 갱신"
+    ]
+  },
+  {
+    "version": "1.10.139",
+    "date": "2026-05-01",
+    "changes": [
+      "[정리] 호출 0건 dead code 제거 — estimateSizeWithGemini (classifyCategoryWithGemini 가 size 도 함께 반환해 중복), completedToDbPayload, wishlistToDbPayload, getSlugFromUrl, LoadingOverlay (작업 큐가 그 역할 대체). 약 130줄 감소, 기능 변경 없음",
+      "Phase 1 정리 시작 — 17,626 → ~17,490줄. legacy job 시스템 잔재(generateConceptSheetCanvas, drawViewSlot) 는 line 14573 버튼에서 여전히 호출되어 보존"
+    ]
+  },
+  {
+    "version": "1.10.138",
+    "date": "2026-05-01",
+    "changes": [
+      "[버그 수정] 어셋명 추천 + 자동 분류 동시 실행 시 마지막 PATCH 가 다른 작업 결과를 덮어쓰던 race — 두 작업 모두 함수 시작 시점의 stale card.data snapshot 으로 PATCH 빌드. 늦게 끝나는 쪽이 일찍 끝난 쪽 결과를 잃음.",
+      "수정: patchCardMerged(slug, cardId, dataPatch, actor, topLevelPatch) 헬퍼 신설 — PATCH 직전 서버에서 최신 card 재로드 후 dataPatch 만 머지. AssetNameSuggester runSuggest / pickCandidate, AssetInfoEditor save 3곳 모두 적용",
+      "이제 두 작업이 동시에 끝나도 서로의 변경 보존 (name_suggestions / picked_name / category / style / posmap_features / size_info / catalog_matches 가 한 카드에 다 모임)"
+    ]
+  },
+  {
+    "version": "1.10.137",
+    "date": "2026-05-01",
+    "changes": [
+      "어셋명 추천 / 자동 분류가 모달을 닫아도 백그라운드로 계속 진행 — 작업 큐(우하단 fixed) 에 등록되어 진행 상황이 모달 외부에서도 보임. 'lass=🏷 이름 추천 중… (시안)' 같은 라벨로 작업 종류 구분",
+      "기술적: AssetNameSuggester / AssetInfoEditor 에 onGenerateProgress / onGenerateEnd props 추가 — App 의 setGeneratingCards 와 연결. 작업 큐 렌더러가 info.label 을 우선 표시 (없으면 진행률%)",
+      "이미 fetch promise 는 component unmount 후에도 실행되므로 PATCH 자체는 항상 완료 — 이번 수정은 사용자에게 진행 상황을 알리는 시각적 피드백 추가"
+    ]
+  },
+  {
+    "version": "1.10.136",
+    "date": "2026-05-01",
+    "changes": [
+      "상세 모달 좌측 박스 제목 '🏷 이 자산의 이름' → '🏷 어셋명' 으로 단축"
+    ]
+  },
+  {
+    "version": "1.10.135",
+    "date": "2026-05-01",
+    "changes": [
+      "API 사용량 패널에 👥 전체 사용량 한 줄 추가 — 모든 사용자 합산 (cost / 호출 수 / 사용자 수). 기간 토글에 연동, 선택된 프로필 합계 줄 바로 아래 표시. 회색 배경으로 시각 구분"
+    ]
+  },
+  {
+    "version": "1.10.134",
+    "date": "2026-05-01",
+    "changes": [
+      "업데이트 일정 popover 폭 확장 — 좁은 chip 안에 갇혀 태그 단어가 줄바뀜되던 문제. left: 142 / right: 14 안 → left: 0 + minWidth: 520 / maxWidth: 800 으로 변경. 태그 pill 에 white-space: nowrap 추가해 단어 단위로도 안 잘림"
+    ]
+  },
+  {
+    "version": "1.10.133",
+    "date": "2026-05-01",
+    "changes": [
+      "참조 이미지 갯수 제한 (4장) 제거 — 무제한 추가 가능. 라벨도 (N/4) → (N) 으로 변경",
+      "[버그 수정] 시안 생성 중 (~30초) 사용자가 참조 이미지를 추가하면 시안 끝나고 그 참조가 사라지던 race — generateCardVariants 가 함수 시작 시점의 stale card.data snapshot 으로 PATCH 빌드해 사용자의 후속 변경을 덮어쓰던 문제. PATCH 직전에 서버에서 latest card 재로드 후 그 위에 prompt/designs 만 머지",
+      "[버그 수정] 같은 race 가 시트 생성 (30~60초) 에도 있어 참조/posmap 등이 사라질 수 있었음. SheetPanel.makeSheet 도 latest card 재로드 후 머지하도록 동일 수정"
+    ]
+  },
+  {
+    "version": "1.10.132",
+    "date": "2026-05-01",
+    "changes": [
+      "상세 모달 좌측 정리 — 업데이트 일정 + 우선순위가 별도 박스 2개로 길게 차지하던 것을 chip 한 줄로 통합. TargetUpdateField / PriorityField 에 compact prop 추가, padding/font 작게 + flex-row 배치. 좌측 약 50% 단축",
+      "🏷 자산 이름 추천을 어셋 정보 박스에서 분리해 별도 강조 박스로 위로 이동. 채택된 이름이 크게 표시되고, 5개 후보는 'details ▼ 후보 보기' 안에 접힘 기본 — 채택 후엔 거의 클릭 없이 정체성 한눈에",
+      "AssetNameSuggester 에 standalone prop 추가 — 강조 박스 모드(채택 이름 위, 후보 details 안) / 인라인 모드(이전 동작) 둘 다 지원"
+    ]
+  },
+  {
+    "version": "1.10.131",
+    "date": "2026-05-01",
+    "changes": [
+      "이름 추천에서 색상/재질 단어 배제 — 자산은 게임 내 cst (커스터마이즈) 로 색·재질이 사용자 변경 가능하므로 자산명에 들어가면 안 됨. suggestAssetNames 시스템 프롬프트에 강력한 금지 규칙 추가 (검정/메탈/우드/유리 등 명시 차단), 형태·용도·설치 위치·크기 중심 추천. desc 에서도 색·재질 언급 최소화"
+    ]
+  },
+  {
+    "version": "1.10.130",
+    "date": "2026-05-01",
+    "changes": [
+      "자산 이름 추천 — 단계별(참조/시안/최종) 한글명 + 영문 PascalCase + 짧은 설명 5개 후보. 어셋 정보 패널 상단에 🏷 이름 추천 섹션, 단계 세그먼트 [참조][시안][최종], 채택 시 카드 제목/설명/picked_name 자동 갱신",
+      "Gemini suggestAssetNames helper — 단계별 이미지 + 카드 메타 + 카탈로그 자산명 충돌 회피로 5개 후보 JSON 생성. 단계 별 추천 톤 차이: 참조=일반명/카테고리 정체성, 시안=실제 형태 반영, 최종=카탈로그 출시명 정식 표현",
+      "단계별 결과는 card.data.name_suggestions[stage] 캐시 (재방문 시 재호출 X). picked_name = {ko, en, desc, picked_at, stage} 으로 채택 추적",
+      "카드 상세 헤더 제목 옆에 🏷 영문명 배지 — picked_name.en 이 있을 때만 노출. 호버 시 단계/채택일 툴팁"
+    ]
+  },
+  {
+    "version": "1.10.129",
+    "date": "2026-04-30",
+    "changes": [
+      "3D 모델러 발주 사양서 페이지 신설 — /p/:slug/cards/:id/spec 별도 라우트. inZOI 가구 BP 표준(interactobject_production_spec.md) + 외주 발주 PPTX 양식(교도소프랍_*.pptx) 동시 반영",
+      "Claude Sonnet 4 가 카드 정보(제목·카테고리·posmap·치수) + 카탈로그 시각 유사 top-3 분석 후 JSON 사양 자동 생성: AssetName 영문 PascalCase 변환(예: '수감실 인터콤장치' → 'PrisonIntercom01'), Domain/Subcat 분류, Texture 슬롯 결정(BC/NM/OC/OMR/ID/EM 조합 + 해상도), 폴리곤 가이드(LOD0 tris), 가이드 메시 ID, 작업 지시 한글 3줄(BC/OC/NM)",
+      "사양서 8개 섹션: 자산 정보 / 납품 품목(SM·MI·T·SPP·PSD·BP 자동 조립) / 수정 이미지(선정 시안+참조) / ID 맵 가이드+작업 지시 / 직교 뷰+스케일 참조 / 카탈로그 시각 유사 top-3 / 검수 체크리스트 / 공통 가이드",
+      "card.data.spec_sheet 에 결과 캐시. 카드 상세 SheetPanel 헤더에 '📄 3D 사양서' 버튼 → 새 탭으로 사양서 페이지 열기. 처음 진입 시 자동 Claude 호출, 이후엔 캐시 사용. 헤더 '🤖 재생성' 으로 다시 생성 가능",
+      "인쇄 친화 CSS (@media print) — 헤더/버튼 자동 숨김, page-break 제어. 사용자가 Ctrl+P → PDF 저장 (PDF 라이브러리 0)"
+    ]
+  },
+  {
+    "version": "1.10.128",
+    "date": "2026-04-29",
+    "changes": [
+      "/api/object-icon 404 응답에 cache-control:no-store 추가 — 이전엔 자산 icon 매핑 버그로 발생한 404 가 브라우저에 캐시되어 자산이 정상 추가된 후에도 빈 박스로 보이는 stale 캐시 문제. 사용자는 Ctrl+Shift+R 한 번 하면 즉시 정상화됨"
+    ]
+  },
+  {
+    "version": "1.10.127",
+    "date": "2026-04-29",
+    "changes": [
+      "v1.10.126 의 icon fallback 이 캐시된 카드에선 적용 안 되던 문제 — 카드 상세의 catalog_matches 표시 path 가 cm.source==='image' 일 때 cached items 를 그대로 쓰는데, 그 cache 가 v1.10.126 이전에 저장되어 icon=null. 표시 시점에 ASSET_META 로 매번 보강해 기존 카드도 즉시 복구"
+    ]
+  },
+  {
+    "version": "1.10.126",
+    "date": "2026-04-29",
+    "changes": [
+      "[버그 수정] DINOv2 매칭 결과의 일부 자산(DEV_*, Crime_HighLevel_* 등) 아이콘이 톱니 placeholder 로 표시되던 문제 — 이 자산들은 objects.json 의 icon 필드가 id 와 다른데 (예: DEV_WaterPurifier02 의 icon='WaterPurifier02'), POSMAP_SCORES 에 분석 entry 가 없어 fallback 으로 id 그대로 fetch 시도해 404",
+      "수정: 서버 /api/object-meta 응답에 asset_meta (전 자산 id → icon/name/filter/lv1/lv2 매핑) 필드 추가. 클라이언트가 POSMAP_SCORES 미스 시 ASSET_META 에서 icon 보강. 이제 DEV/Crime/Dev 류 자산도 올바른 아이콘으로 표시"
+    ]
+  },
+  {
+    "version": "1.10.125",
+    "date": "2026-04-29",
+    "changes": [
+      "유사 어셋 타일 좌상단 source 배지(📌 기준 / 🔗 시각) 제거 — 헤더 라벨이 source 종류 알려주므로 타일별 배지는 시각 노이즈. 아이콘 자체가 가리지 않게 깔끔."
+    ]
+  },
+  {
+    "version": "1.10.124",
+    "date": "2026-04-29",
+    "changes": [
+      "유사 어셋 표시 갯수 18 → 20으로 확대. findVisualMatchByImage 기본 topK / AssetInfoEditor 자동분류 / DesignsPanel 사전·사후 자동분류 / posmap fallback / 표시 재계산 8곳 모두 20으로 통일"
+    ]
+  },
+  {
+    "version": "1.10.123",
+    "date": "2026-04-29",
+    "changes": [
+      "유사 어셋 표시 갯수 12 → 18로 확대 — inzoiObjectList v0.27.1 의 9×2 그리드(18개) 와 일치. findVisualMatchByImage 기본 topK / AssetInfoEditor 자동분류 / DesignsPanel 사전·사후 자동분류 / posmap fallback / 표시 재계산 모두 18로 통일"
+    ]
+  },
+  {
+    "version": "1.10.122",
+    "date": "2026-04-28",
+    "changes": [
+      "DINOv2 카드 이미지 직접 매칭 — 자동 분류 시 카드 reference 이미지를 inzoiObjectList:8080 의 /api/similar-by-image (DINOv2 사이드카) 로 보내 5,265 카탈로그 임베딩과 cosine similarity 비교, top-12 자산을 catalog_matches 에 캐시. 이전엔 posmap 태그 거리 기반 anchor 후 그 anchor 의 시각 유사를 가져오던 2단계 우회였는데, 이제 카드 이미지가 직접 임베딩되어 1단계로 정확한 시각 매칭",
+      "AssetInfoEditor 🤖 자동 분류 / DesignsPanel 사전·사후 자동 분류 3곳 모두 visual matching 병렬 호출. 실패 시 기존 posmap-based fallback 으로 자동 복귀 (DINOv2 사이드카 미가동 환경 호환)",
+      "catalog_matches 에 source 필드 추가 ('image' | 'visual' | 'posmap'). 그리드 헤더 라벨 자동 변경 — '🎯 유사 에셋 (DINOv2 카드 이미지 직접)' / '(DINOv2 시각 유사)' / '(posmap 매칭)'",
+      "server.js: /api/similar-by-image POST + /api/similar-by-image/health GET 프록시 추가. 상대 image_url 자동 절대 URL 보정 (inzoiObjectList 가 우리 서버를 직접 fetch 가능). timedFetch 가 init 옵션 받게 확장",
+      "client: findVisualMatchByImage(imageUrl, topK) 신규 헬퍼 — 결과를 POSMAP_SCORES 에서 보강(filter/lv1/lv2/icon/name) 후 catalog_matches 호환 shape 으로 반환. 표시 path 도 cm.source==='image' 면 캐시된 items 우선 사용 (재계산 X)"
+    ]
+  },
+  {
+    "version": "1.10.121",
+    "date": "2026-04-28",
+    "changes": [
+      "유사 어셋 그리드 = inzoiObjectList similar_assets 12개 그대로 사용 — anchor (posmap top-1) prefix 제거. 이제 그리드 12칸 모두 DINOv2 시각 유사 결과. anchor 는 어떤 자산의 시각 유사 목록을 참조할지 내부적으로 결정만 (그리드에 노출 X)",
+      "방어적 fallback 유지: 시각 유사 < topN (예: similar_assets 갱신 전 일부 자산이 10개) 인 경우 posmap 후순위로 채움"
+    ]
+  },
+  {
+    "version": "1.10.120",
+    "date": "2026-04-28",
+    "changes": [
+      "유사 어셋 그리드가 12칸인데 11개만 채워지던 문제 — similar_assets.json 이 자산당 시각 유사 top-10 만 저장해 anchor 1 + visual 10 = 11 로 한 칸 빔. 부족분을 posmap 후순위(entries[1..]) 로 보강해 항상 topN 채움"
+    ]
+  },
+  {
+    "version": "1.10.119",
+    "date": "2026-04-28",
+    "changes": [
+      "카드 상세의 '🎯 유사 에셋' 매칭을 inzoiObjectList 의 DINOv2 시각 유사 데이터로 교체 — 이전엔 클라이언트가 직접 posmap 태그 거리 (스타일·재질·색상 enum) 로만 계산하던 것이, 이제 inzoiObjectList 가 사전 계산해둔 시각 임베딩 (5,265 어셋 × 768차) 기반 결과를 그대로 가져와 사용",
+      "하이브리드 알고리즘: posmap 으로 anchor (top-1) 만 결정 → SIMILAR_ASSETS[anchor.id] 의 시각 유사 N-1 개로 그리드 채움. 시각 유사 데이터 없으면 기존 posmap-only top-N 으로 자동 fallback",
+      "서버 /api/object-meta 가 /data/similar_assets.json 도 함께 fetch (1시간 캐시). 응답에 similar_assets 필드 추가",
+      "클라이언트 SIMILAR_ASSETS 모듈 변수 + 1시간 폴링 갱신",
+      "그리드 헤더 라벨이 source 에 따라 자동 변경: '🎯 유사 에셋 (DINOv2 시각 유사)' / '🎯 유사 에셋 (posmap 매칭)' / '📦 기존 제작 에셋'",
+      "각 타일 좌상단에 source 배지 노출: 📌 기준 (posmap anchor) / 🔗 시각 (DINOv2)",
+      "inzoiObjectList 가 시각 임베딩을 더 정확하게 갱신할 때 — 우리쪽 코드 수정 없이 자동으로 더 좋은 매칭 결과를 보게 됨"
+    ]
+  },
+  {
+    "version": "1.10.118",
+    "date": "2026-04-28",
+    "changes": [
+      "카드 상세의 카탈로그 iframe (CatalogDetailModal) 캐시 버스터 + 🔄 최신 카탈로그 버튼 — 카탈로그 측 5분 주기 git pull 로 업데이트되더라도 사용자 브라우저가 옛 HTML/JS 를 캐시해 stale 로 보이던 문제 해결. iframe src 에 ?v=<timestamp> 자동 부착(모달 오픈마다 새 값) + 헤더에 🔄 버튼으로 즉시 강제 reload (key 갱신으로 iframe 자체를 새 element 로 mount)"
+    ]
+  },
+  {
+    "version": "1.10.117",
+    "date": "2026-04-27",
+    "changes": [
+      "갤러리(F) 화이트보드 통합 개선 — 줌 컨트롤 / Lineage 강조 / Alt+드래그 자유 배치 / 정렬 리셋. 화면 전체에서 시안·참조·시트 간 출처 관계와 자유 레이아웃 동시 작업 가능",
+      "줌 컨트롤 버튼 추가 — 헤더에 ＋ / − / ⊡전체 / 1:1 4버튼. 줌 인/아웃은 화면 중앙 기준 1.25× 단위. 휠 줌·키보드 + − 0 동작은 그대로",
+      "Lineage 강조 (💡 Lineage 토글, 기본 ON) — 타일 hover 시 그것의 sources(만든 입력) 와 targets(파생 결과) 가 노란 테두리로 강조, 무관한 타일은 35% 디밍. 시안→참조/대표, 시트→source 시안, 이전 시트도 동일 적용",
+      "시안 lineage 메타 저장 — generateCardVariants 가 각 design 에 sources: [{url, kind:'cover'|'ref'}] 저장. 기존 design 은 '현재 ref+cover' fallback",
+      "Alt+드래그로 타일 자유 이동 — 타일 위 Alt+클릭 후 드래그하면 기본 그리드 위치에서 오프셋 이동. 위치는 card.data.gallery_layout 에 자동 영속, 다음 진입 시 복원. 일반 드래그(좌클릭)는 lightbox, 가운데/우클릭은 캔버스 패닝 그대로",
+      "↺ 정렬 리셋 버튼 — 커스텀 위치가 1개라도 있으면 헤더에 표시, 클릭 시 모든 오프셋 제거 → 기본 그리드 복구"
+    ]
+  },
+  {
+    "version": "1.10.116",
+    "date": "2026-04-27",
+    "changes": [
+      "갤러리 캔버스(F) 시안 hover 좌측 ◀/▶ 순서 이동 버튼 제거 — onMoveDesign prop, GalleryCanvas.moveDesign 함수, GalleryTile 의 hover 화살표 UI 모두 삭제. 시안 정렬은 DesignsPanel 의 정렬 모드(생성순/최신순/투표순) 로 일원화"
+    ]
+  },
+  {
+    "version": "1.10.115",
+    "date": "2026-04-27",
+    "changes": [
+      "이미지 lightbox 우클릭 → '이미지 다른 이름으로 저장' 가능 — 이전엔 wrap onContextMenu 가 무조건 preventDefault + img pointer-events: none 으로 우클릭 메뉴 자체가 안 떴음. 우클릭이 실제로 패닝(이동) 으로 사용된 경우(>4px 이동) 에만 메뉴 차단, 정적 우클릭은 브라우저 기본 메뉴 허용. img pointer-events 를 auto 로 바꿔 contextmenu 의 target 이 이미지가 되도록"
+    ]
+  },
+  {
+    "version": "1.10.114",
+    "date": "2026-04-27",
+    "changes": [
+      "DesignsPanel '✨ 선정 시안으로 시트 단계로 이동 →' 버튼 제거 — 시트는 SheetPanel 에서 단계 무관 항상 생성 가능, 단계 이동은 카드 목록의 상태 chip 으로 일원화. moveSelectedToSheet 함수도 제거"
+    ]
+  },
+  {
+    "version": "1.10.113",
+    "date": "2026-04-27",
+    "changes": [
+      "상세 모달 정리 — CardActionPanel 통째로 제거 (위시→시안 안내 패널·시트 단계 이동 버튼 모두 제거). 단계 이동은 카드 목록의 상태 chip 으로 일원화되어 상세 모달은 작업(시안·시트) 에 집중",
+      "WishlistToDraftingAction 함수 정의도 제거 (≈40줄 감소)",
+      "SheetPanel 컴팩트 갤러리 스타일로 재설계 — 헤더 한 줄(📑 시트 + 뷰 카운트 + 생성/재생성 버튼), 본문은 5타일 한 줄 그리드(정·측·후·상·📏), 소스 이미지 미리보기 제거(시안 패널과 중복), 이전 시트 기록 details 안 접힘 기본",
+      "SheetPanel 톤을 DesignsPanel 과 일관 (회색 배경 + 기본 border) — 파랑 그라디언트 강조 제거로 시각적 무게감 ↓",
+      "이전 시트 기록 — 5뷰까지 동적 그리드 + 라벨 칩 추가, 단일 legacy 와 다중 뷰 모두 한 흐름으로 표시"
+    ]
+  },
+  {
+    "version": "1.10.112",
+    "date": "2026-04-27",
+    "changes": [
+      "상세 모달 우측 프레임에 시트 패널을 단계 무관하게 항상 노출 — 위시/시안/시트/완료 어느 단계에서도 시안(DesignsPanel) 바로 아래에 시트(SheetPanel) 가 표시되어 시안 만들고 바로 시트까지 한 화면에서 가능. 단계 이동 (시트→완료/시안) 만 CardActionPanel sheet 분기에 분리 유지",
+      "SheetPanel 컴포넌트 추출 — CardActionPanel sheet 분기에 있던 시트 생성 UI(소스 이미지 미리보기 / 직교 뷰 + 스케일 참조 / 이전 시트 기록 / 시트 생성·재생성 버튼) 를 모두 새 컴포넌트로 분리. disabled (완료 상태) 일 때는 생성 버튼 비활성화하지만 기존 시트는 그대로 표시"
+    ]
+  },
+  {
+    "version": "1.10.111",
+    "date": "2026-04-27",
+    "changes": [
+      "스케일 참조 인체 실루엣 키 180cm 명시 — Claude buildScalePromptWithClaude 시스템 프롬프트와 fallback 프롬프트 양쪽에 '180cm 성인 비율' 자연스럽게 명시 (이미지 내부 텍스트 라벨/룰러 강제 어구는 사용 안 함). 좌석/무릎/굽힘 자세에서도 180cm 성인 비율 유지 지시. UI 라벨 '인체 실루엣 + 10cm 그리드' → '인체 실루엣 180cm + 10cm 그리드'"
+    ]
+  },
+  {
+    "version": "1.10.110",
+    "date": "2026-04-27",
+    "changes": [
+      "[버그 수정] 갤러리 (F) 에 스케일 참조 이미지가 안 보이던 문제 — GalleryCanvas 의 시트 인식 배열이 ['front','side','back','top'] 만 순회해 scale 키를 누락. SHEET_KEYS 에 'scale' 추가 + 라벨 '📏 스케일' 매핑. 현재 시트 / 이전 시트 history 둘 다 적용"
+    ]
+  },
+  {
+    "version": "1.10.109",
+    "date": "2026-04-27",
+    "changes": [
+      "시트에 스케일 참조 이미지 1장 항상 추가 — 직교 뷰(원본 보존, 실루엣/그리드 없음) 외에 인체 실루엣 + 10cm 그리드 포함된 스케일 참조 이미지를 별도로 1장 더 생성. Claude Sonnet 이 카테고리/사이즈/posmap 기반으로 실루엣 배치 결정 (큰 가구 옆 서있는 사람, 작은 가구 무릎 굽힘, 탁상 액세서리 + 책상 사용자, 벽걸이/천장/차량 등 카테고리별 자동 매핑)",
+      "data.concept_sheet_views.scale + scale_prompt 보존. 렌더링 — 직교 뷰 그리드 아래 '📏 스케일 참조' 섹션으로 풀폭 표시, 프롬프트 펼침/PNG 저장 지원",
+      "Claude 스케일 호출 실패 시 카테고리/높이 기반 fallback 프롬프트 자동 동작"
+    ]
+  },
+  {
+    "version": "1.10.108",
+    "date": "2026-04-27",
+    "changes": [
+      "자동 분류 필드별 게이트 — 트리거를 '무엇 하나라도 비어있으면 실행' 으로 넓히고, 빈 필드만 채우도록 변경. 사용자가 미리 입력한 카테고리·스타일·크기·프롬프트는 어떤 경우에도 덮어쓰지 않음",
+      "사전/사후 분류 모두 missingCategory/missingStyle/missingSize/missingPosmap/missingPromptOrig 각각 독립 게이트. 필요한 호출만 (classify / generatePrompt) 병렬 실행해 API 비용 최적화",
+      "예: 카테고리만 입력해두고 시안 생성 → 카테고리는 유지, 스타일/크기/posmap/프롬프트만 자동 채움",
+      "catalog_matches 도 posmap_features 가 새로 채워질 때만 재계산 (불필요한 덮어쓰기 방지)"
+    ]
+  },
+  {
+    "version": "1.10.107",
+    "date": "2026-04-27",
+    "changes": [
+      "[버그 수정] 사후 자동분류가 방금 생성된 시안 designs 를 덮어쓰던 race — generateCardVariants 가 designs/prompt 를 PATCH 한 직후, 사후 분류의 save(patch) 가 stale card.data prop 을 base 로 다시 PATCH 해 새 designs 를 잃거나 분류 결과가 반영 안 되던 문제",
+      "수정: generateCardVariants 가 updatedData (방금 저장된 nextData) 도 함께 반환. 사후 분류 PATCH 가 save() 대신 직접 fetch 로 그 위에 분류 결과만 머지"
+    ]
+  },
+  {
+    "version": "1.10.106",
+    "date": "2026-04-27",
+    "changes": [
+      "시트 생성이 더 이상 카드 대표 이미지(thumbnail) 를 덮어쓰지 않음 — 시트 결과는 concept_sheet_views.front + concept_sheet_url 에만 저장하고 thumbnail_url 은 기존 값 그대로 보존"
+    ]
+  },
+  {
+    "version": "1.10.105",
+    "date": "2026-04-27",
+    "changes": [
+      "시트 단일 이미지 → 다중 직교 뷰로 회귀 (3D 모델링 참조 목적) — 정면(front) 항상 + Claude 가 형태 복잡도/대칭성 보고 측/후/상 조건부 추가. 단순 대칭 형태(평범한 의자, 박스, 램프)는 정면 1뷰만, 비대칭/디테일 많은 형태는 필요한 뷰만 추가해 비용 최소",
+      "원본 보존 강화 프롬프트 — 'CRITICAL: faithfully preserve the EXACT form, silhouette, proportions, materials, colors, textures, and design details from the source reference image — do not redesign, restyle, or interpret' 로 원본 형태/색 1:1 유지 강조",
+      "인체 실루엣/스케일 그리드/배경 props 모두 제거. 깨끗한 회색 스튜디오, 그림자 없음, 고립된 피사체",
+      "concept_sheet_views = { front, side?, back?, top?, view_decision, model } 신 형식. 정면 이미지가 자동 카드 썸네일로 적용. legacy single 시트도 그대로 표시되며 재생성 시 새 형식으로 자동 변환"
+    ]
+  },
+  {
+    "version": "1.10.104",
+    "date": "2026-04-27",
+    "changes": [
+      "시트 단일 이미지 + Claude 가 추가 직교 뷰 필요성 판단 — decideExtraViewsWithClaude 가 형태 복잡도/대칭성을 JSON 으로 답변하면 필요한 측/후/상 만 병렬 생성. (이후 v1.10.105 에서 다중 직교 뷰로 전면 전환)",
+      "이미지 없는 카드(제목만)에서 시안 생성 시 사후 자동분류 도입 — 사전 분류가 못 돈 경우(이미지 없음) 첫 생성 이미지로 classifyCategoryWithGemini + generatePromptFromImage 사후 실행해 카테고리·스타일·크기·posmap·프롬프트 자동 채움"
+    ]
+  },
+  {
+    "version": "1.10.103",
+    "date": "2026-04-27",
+    "changes": [
+      "시트 4뷰 → 단일 이미지 + 인체 실루엣 스케일 참조 — Claude Sonnet 이 카드의 카테고리/사이즈/posmap 기반으로 인체 실루엣 배치를 자동 결정해 시트 프롬프트 생성. Gemini 가 단일 고해상도 시트 이미지 생성",
+      "스마트 실루엣 배치 규칙: 큰 가구(소파/침대) 옆에 서있는 사람 / 작은 가구(스툴) 무릎 굽힌 사람 / 탁상 액세서리(램프·꽃병) 책상 + 앉은 사람 / 벽걸이 앞에 서있는 사람 / 천장걸이 아래 서있는 사람 / 차량·아키텍처 옆 전신",
+      "Claude 호출 실패 시 카테고리/높이 기반 자동 fallback 프롬프트로 안전 동작",
+      "data.concept_sheet_views.single 신 형식 + sheet_prompt 기록. legacy 4뷰 (front/side/back/top) 도 history 에서 그대로 렌더 (호환)",
+      "GalleryCanvas(F) 도 single 인식해 시트 그룹에 노출. 버튼 라벨 '4뷰 생성' → '시트 생성 (스케일 참조 포함)'",
+      "사용된 프롬프트 보기 details — '📝 사용된 프롬프트 보기' 펼치면 실제 입력된 영문 프롬프트 확인 가능"
+    ]
+  },
+  {
+    "version": "1.10.102",
+    "date": "2026-04-26",
+    "changes": [
+      "DesignsPanel 시안 타일의 '☆ 선정' / '⭐ 선정' 라벨을 '☆ 대표' / '⭐ 대표' 로 변경 — 사용자가 카드 대표 이미지(썸네일) 지정 방법을 직관적으로 인식. tooltip 도 '이 시안을 카드 대표 이미지(썸네일)로 지정' 으로 갱신"
+    ]
+  },
+  {
+    "version": "1.10.101",
+    "date": "2026-04-26",
+    "changes": [
+      "카드 시안 생성에 Claude 프롬프트 최적화 적용 — generateCardVariants 가 Gemini 호출 전 Claude Sonnet 으로 프롬프트를 한 번 다듬음. 카테고리 / 스타일 / posmap 재질·색상·shape·mood / 사이즈 힌트 + 사용자 프롬프트를 결합해 풍부한 영문 프롬프트 생성",
+      "doGenerate 의 자동 분류 결과(카테고리·스타일·posmap·size) 가 같은 PATCH 에 저장된 후 Claude 가 그것을 컨텍스트로 받아 프롬프트 최적화 → '키워드 + 의도' 결합",
+      "Claude 키 없거나 호출 실패 시 기존 fallback 영문 프롬프트로 자동 복귀 (안전)",
+      "Claude 사용량이 API 사용량 패널에 누적되기 시작 (이전엔 0건이던 Claude 가 시안 생성마다 1회씩 카운트)"
+    ]
+  },
+  {
+    "version": "1.10.100",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] API 설정 모달 스크롤이 끝에 도달하면 뒤 페이지가 같이 스크롤되던 문제 — overscrollBehavior: contain 추가해 스크롤 체이닝 차단"
+    ]
+  },
+  {
+    "version": "1.10.99",
+    "date": "2026-04-26",
+    "changes": [
+      "자동 분류 + 시안 생성 진단 강화 — doGenerate 가 자동 분류 결과를 console.log + 부분 실패 시 alert 로 안내. catalog_matches 도 함께 저장 (runCategorySuggest 와 동일)",
+      "API 설정 모달 세로 스크롤 — maxHeight 92vh + overflowY auto 추가. 사용량 패널이 길어져 화면 밖으로 나가던 문제 해결",
+      "API 사용량 가독성 개선 — 모델별 / 최근 호출 글자 크기 10→11~12, 색상 muted→lighter/main 으로 contrast ↑",
+      "Claude 미사용 안내 — 모델별 탭에 Claude 호출 0건이면 'Gemini 만 사용 / Claude 는 레거시 워크플로우 프롬프트 최적화에만 호출' 안내",
+      "태그 공유 링크에 탭 정보 포함 — UpdateChipBar 의 🔗 링크 복사가 ?tab=wishlist&tag=... 로 현재 탭과 태그를 함께 인코딩. 받는 사람이 같은 탭 + 같은 필터로 자동 진입",
+      "URL ?tab= 부팅 시 자동 인식 + activeTab 변경 시 URL 동기 (popstate 도). 기본값 progress 는 URL 미포함"
+    ]
+  },
+  {
+    "version": "1.10.98",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 시안 생성 완료 시 닫혀있던 카드 모달이 자동으로 다시 열리던 문제 — DesignsPanel / PromptRefEditor 의 onRefresh 가 generation 완료 후 무조건 setDetailCard(d) 를 호출해 사용자가 도중에 닫아도 모달이 다시 튀어나옴. CardActionPanel(v1.10.23) 와 동일 정책으로 통일: '모달 열려있고 같은 카드일 때만 갱신' (setDetailCard((prev) => (prev && prev.id === d.id) ? d : prev))",
+      "결과: 시안 생성 시작 → 모달 닫음 → 작업큐에 ✓ 완료만 뜨고 모달 안 열림. 클릭해야 열림 (의도된 v1.10.95 정책)"
+    ]
+  },
+  {
+    "version": "1.10.97",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 참조 이미지를 ⭐ 대표로 지정해도 카드 썸네일이 안 바뀌던 문제 — CardHubCard / CardListRow / 상세 모달 좌측 대표이미지 모두 'designs.length === 1 이면 그 시안을 우선' 로직(v1.10.0) 때문에 사용자의 명시 설정이 무시됐음. 우선순위 뒤집어 card.thumbnail_url 이 최우선, 없을 때만 단일 시안 자동 fallback",
+      "결과: 시안 1장 + 참조 1장 카드에서 참조를 ⭐ 대표로 지정 → 카드 그리드/리스트/상세 좌측에 그 참조 이미지 즉시 반영"
+    ]
+  },
+  {
+    "version": "1.10.96",
+    "date": "2026-04-26",
+    "changes": [
+      "어셋 정보 없을 때 시안 생성 자동 분류 선행 — DesignsPanel.doGenerate 가 prompt/description 모두 비어있고 이미지(ref 또는 thumbnail)만 있으면 classifyCategoryWithGemini + generatePromptFromImage 자동 실행 후 그 결과(category, style, posmap, size, prompt) 를 PATCH 저장하고 새 prompt 로 시안 생성. 사용자가 별도로 자동 분류 누를 필요 없음",
+      "버튼 라벨이 단계별로 변경: '🎨 N개 생성' → '🤖 어셋 정보 자동 분류 중...' → '생성 중… (1/4)'",
+      "이미지도 prompt 도 없으면 alert 메시지 갱신: '프롬프트, 설명, 또는 이미지가 필요합니다'"
+    ]
+  },
+  {
+    "version": "1.10.95",
+    "date": "2026-04-26",
+    "changes": [
+      "v1.10.94 의 자동 상세 오픈 롤백 — 위시 카드에서 시안 생성 후 모달이 자동으로 띄워지면 '진행중으로 넘어간 듯' 보여 사용자가 혼란. 다시 작업큐 ✓ 완료 표시 → 사용자 클릭으로 상세 열기 (v1.10.23 정책 복귀)",
+      "[참고] 위시→진행 list_id 변경은 코드상 자동 이동이 없으며, 사용자가 명시적으로 'WishlistToDraftingAction → 시안 단계로 이동' 버튼 클릭 시에만 발생"
+    ]
+  },
+  {
+    "version": "1.10.94",
+    "date": "2026-04-26",
+    "changes": [
+      "시안 생성 완료 시 카드 상세 자동 오픈 — 작업큐에서 ✓ 완료 표시되면 동시에 해당 카드 상세 모달 자동 활성화. 단, 사용자가 다른 카드 모달을 열어 보고 있으면 방해하지 않음(현재 작업 우선). v1.10.23 의 완전 비활성화에서 '다른 모달이 안 열린 경우만 자동 오픈' 정책으로 완화"
+    ]
+  },
+  {
+    "version": "1.10.93",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 한글 프로필(예: 조영복) 사용 시 자동 분류 / 시안 생성 등 모든 AI 호출 실패 — fetch 가 'String contains non ISO-8859-1 code point' TypeError throw. HTTP 헤더는 ISO-8859-1 만 허용되는데 X-Actor-Name 에 한글 그대로 넣어서 발생",
+      "수정: 클라이언트가 encodeURIComponent 로 인코딩 후 헤더 전송, 서버 프록시가 decodeURIComponent 로 복원. Gemini / Claude 두 경로 모두 적용"
+    ]
+  },
+  {
+    "version": "1.10.92",
+    "date": "2026-04-26",
+    "changes": [
+      "자동 분류 실패 진단 강화 — classifyCategoryWithGemini 의 모든 실패 경로(JSON 없음 / category_id 누락 / FURNITURE_CATEGORIES 미일치 / JSON 파싱 실패)에 console.warn 출력. 사용자 alert 도 사유별로 구분 (HTTP 에러 vs 응답 인식 실패). F12 콘솔 보면 정확한 원인 파악 가능"
+    ]
+  },
+  {
+    "version": "1.10.91",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] API 사용량 로그가 actor=null(익명) 으로 누적되던 문제 — AI 프록시 헤더 헬퍼가 localStorage('inzoi_actor_name') 를 읽어 X-Actor-Name 으로 전달하는데, 프로필 선택 시 그 키가 갱신 안 됨(actorName 은 currentProfile.name 에서 파생되는 메모이제이션 값일 뿐). actorName 변경 시 localStorage 자동 동기 effect 추가. 새로고침 후 호출하면 그 사용자 사용량으로 정상 기록"
+    ]
+  },
+  {
+    "version": "1.10.90",
+    "date": "2026-04-26",
+    "changes": [
+      "API 사용량 패널 풀 개편 — 🏆 Top 5 사용자 leaderboard (메달 + 비율 막대), 프로필 드롭다운으로 다른 사용자 사용량 조회, 기간 토글(오늘/7일/30일/90일), 탭 뷰(🤖 모델별 / 📅 일자별 / 🕐 최근 호출)",
+      "📅 일자별 — 막대 그래프로 일 단위 비용 시각화 (최대 90일)",
+      "🤖 모델별 — 선택된 기간 범위로 자동 갱신 (이전엔 month 고정)",
+      "Top 5 항목 클릭 → 해당 사용자 상세로 자동 전환",
+      "GET /api/usage/daily?actor=&days= 신규 — 일별 시계열 집계"
+    ]
+  },
+  {
+    "version": "1.10.89",
+    "date": "2026-04-26",
+    "changes": [
+      "API 사용량 추적 (옵션 B 풀 구현) — 서버 프록시(/api/ai/gemini/* + /api/ai/claude/*)가 응답에서 토큰/이미지 수 추출 → 모델별 가격표 적용 → ai_usage_log 테이블에 INSERT. 헤더 X-Actor-Name 으로 프로필별 집계",
+      "GET /api/usage?actor=<name> — 오늘/주(7일)/월(30일) 합계 + 엔드포인트·모델별 breakdown + 최근 30건. ?actor=* 로 전체 사용자 비교",
+      "API 설정 모달에 📊 API 사용량 패널 — 3개 카드(오늘/주/월), 엔드포인트별 표, 최근 호출 details, 👥 전체 비교 토글",
+      "가격표: Gemini 3 Flash Image $0.039/장, Gemini 1.5/2.5 Flash $0.075/$0.30 per 1M, Claude Sonnet $3/$15, Claude Opus $15/$75 — 추정 ±10%",
+      "schema.sqlite.sql 에 ai_usage_log 테이블 + 인덱스 2개 추가 (actor+date / date)"
+    ]
+  },
+  {
+    "version": "1.10.88",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] HTTP 환경에서 🔗 링크 복사 / 카드 🔗 공유 안 되던 문제 — navigator.clipboard 가 secure context (HTTPS / localhost) 에서만 동작. 사내망 http://10.99.4.115:8081 에서 차단됨. copyToClipboard 헬퍼로 통일: 1) navigator.clipboard 시도 2) 실패 시 hidden textarea + document.execCommand('copy') legacy 방식 fallback. 둘 다 실패하면 prompt 표시",
+      "UpdateChipBar 의 태그 공유 + CardShareLink 의 카드 공유 모두 같은 헬퍼로 동작"
+    ]
+  },
+  {
+    "version": "1.10.87",
+    "date": "2026-04-26",
+    "changes": [
+      "[A 옵션] 태그별 공유 URL — UpdateChipBar 우측에 '🔗 링크 복사' 버튼 추가. 현재 URL + ?tag=... 쿼리로 선택된 업데이트 태그가 인코딩되어 클립보드에 복사. 외부 동료가 링크 클릭 → 같은 탭의 같은 태그 필터로 자동 진입",
+      "selectedUpdates 변경 시 URL ?tag= 자동 갱신 (replaceState — history 오염 없음). 부팅 시 ?tag=... 읽어 초기 필터 채움. 브라우저 뒤로/앞으로 popstate 도 동기",
+      "복수 태그는 콤마 구분: ?tag=0.7.0,0.8.0"
+    ]
+  },
+  {
+    "version": "1.10.86",
+    "date": "2026-04-26",
+    "changes": [
+      "메인페이지 헤더 컴팩트화 — 위시 / 진행 중 / 완료 탭 모두 동일 패턴으로 정리. 제목 fontSize 28→22, 카운트 텍스트(예: '52개') 가 제목 아래 별도 줄 → 제목 옆 인라인. 상단 padding 32→20, sticky 헤더 padding 4→2, 제목 영역 marginBottom 24→10. 전체 헤더 높이 약 60px 절약 → 카드 그리드가 더 위로 노출"
+    ]
+  },
+  {
+    "version": "1.10.85",
+    "date": "2026-04-26",
+    "changes": [
+      "단일 이미지 자동 대표 등록 — 카드에 이미지(시안 + 참조 합산)가 1개만 있고 thumbnail_url 미설정이면 자동으로 그것을 대표로 PATCH. 위시에서 시안 1개 생성 시 / 시안 삭제로 1개만 남았을 때도 자동 적용",
+      "카테고리 계층 표시 — 리스트뷰에서 '게이트 · 외관' → '건축 / 외관 / 게이트' 처럼 상위 group / room / label 모두. inzoiObjectList catHier 의 lv1/lv2 구조 활용",
+      "카테고리 정렬 키도 같은 계층 문자열 사용 → 같은 group(예: 건축) 끼리 자연스럽게 묶임"
+    ]
+  },
+  {
+    "version": "1.10.84",
+    "date": "2026-04-26",
+    "changes": [
+      "위시 단계에서도 시안 생성 가능 — DesignsPanel 의 생성 UI(추가 프롬프트 + N개 생성) 가 drafting 만이 아니라 위시 stage 에서도 노출. 카드를 시안 단계로 옮기지 않고도 바로 이미지 생성 시도 가능. 프롬프트는 card.data.prompt 또는 description/title fallback 사용",
+      "WishlistToDraftingAction (→ 시안 단계로 이동 버튼) 은 그대로 유지 — 사용자가 명시적으로 단계 이동 원할 때 사용"
+    ]
+  },
+  {
+    "version": "1.10.83",
+    "date": "2026-04-26",
+    "changes": [
+      "스타일 필터 누락 보완 — 서버 /api/object-meta 의 styleMap 에 Bohemian/Country/Hanok/Tropical 추가. inzoiObjectList objTags 에는 있지만 매핑이 없어 클라이언트 필터에 안 나타나던 4개 스타일이 이제 노출됨 (보헤미안 / 컨트리 / 한옥 / 트로피컬)",
+      "전체 스타일: 9개 → 13개. 자동 분류 / 카드 생성 / 카탈로그 매칭 모두 영향"
+    ]
+  },
+  {
+    "version": "1.10.82",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 카드 상세 모달의 시안 이미지가 5초마다 깜박이던 문제 — DesignsPanel 함수 안에 정의된 const Tile = (...) => {} 가 부모 폴링 setCards/setLists 시 새 reference 로 만들어져 React 가 컴포넌트 type 변경으로 인식 → Tile 인스턴스 unmount/remount → IMG element 도 함께 재생성 → 매 폴링마다 짧은 깜박임",
+      "Tile → renderTile 함수로 변경하고 호출도 JSX 컴포넌트(<Tile ... />) 대신 직접 함수 호출(renderTile(d,i,h))로 전환. JSX 결과가 부모 트리에 그대로 mount 되어 IMG element 재사용",
+      "outer div 에 key={i} 추가 (배열 매핑 호환)"
+    ]
+  },
+  {
+    "version": "1.10.81",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 생성 실패한 시안(imageUrl: null) 이 삭제 안 되던 문제 — Tile 의 🗑 버튼이 'd?.imageUrl &&' 가드로 숨겨지고 있었음. 가드 완화하고 raw.length 안쪽 idx 만 허용해 _sheet/_legacy 는 여전히 보호. 이제 '실패' placeholder 도 우측 하단 🗑 로 제거 가능"
+    ]
+  },
+  {
+    "version": "1.10.80",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 진행 중 탭에서 삭제 안 되던 '새 작업' placeholder 제거 — invariant useEffect 가 jobs.length>=1 유지하려 빈 legacy job 을 자동 생성하던 부작용. 데이터 없는 빈 job 은 그리드에서 숨김 (isBlankJob 필터). 데이터가 있는 legacy job 은 계속 표시",
+      "+ 새 시안 버튼은 그대로 동작 (실제 카드를 drafting 으로 직접 생성)"
+    ]
+  },
+  {
+    "version": "1.10.79",
+    "date": "2026-04-26",
+    "changes": [
+      "카드 상세 모달 활동 이력 — 기본값을 접힘으로 변경 (이전엔 펼침). 헤더 클릭으로 펼치기 가능"
+    ]
+  },
+  {
+    "version": "1.10.78",
+    "date": "2026-04-26",
+    "changes": [
+      "카드 상세 모달 폭 1440 → 1600. 우측 프레임이 시안 그리드 1열(160px) 더 수용 — auto-fill minmax(160) 기준 4열 → 5열",
+      "좌/우 비율 1:1 → 1:1.3 (좌 ≈ 696, 우 ≈ 904). 좌측은 기존 폭 유지, 우측만 확장",
+      "[버그 수정] 카드 상태 이동 후 자동 탭 전환 — STATUS_TO_TAB 가 옛 tab id (create/sheet) 를 가리키고 있어 의미 없는 setActiveTab 호출. 통합 'progress' 로 매핑 정정"
+    ]
+  },
+  {
+    "version": "1.10.77",
+    "date": "2026-04-26",
+    "changes": [
+      "메인 콘텐츠 폭 1400 → 1600 (모든 main wrapper / sticky 헤더 / API 안내 동시 적용) — 와이드 모니터에서 카드 한 줄에 더 많이 노출",
+      "헤더 좌측 tagline 'AI-Powered Furniture Asset Concept Generator' 제거 — 좌측 브랜딩 슬림화",
+      "헤더 레이아웃 flex space-between → 3-column grid (1fr auto 1fr) — [위시][진행 중][완료] 탭이 좌/우 그룹 폭과 무관하게 화면 정중앙 고정",
+      "헤더 좌우 padding 40 → 24 (탭 가운데 정렬과 균형 맞춤)"
+    ]
+  },
+  {
+    "version": "1.10.76",
+    "date": "2026-04-26",
+    "changes": [
+      "리스트뷰 컬럼 미세 조정 — 스타일 70 → 85 (스칸디나비안·인더스트리얼 등 6자 라벨 잘림 완화), 진행 92 → 78 (4자 + emoji 라벨 기준 충분)"
+    ]
+  },
+  {
+    "version": "1.10.75",
+    "date": "2026-04-26",
+    "changes": [
+      "리스트뷰 진행 컬럼 폭 130 → 92. 용어 단축('투표 및 선정' → '투표') 으로 모든 stage 라벨이 비슷한 길이가 되어 넓게 둘 필요 없어짐"
+    ]
+  },
+  {
+    "version": "1.10.74",
+    "date": "2026-04-26",
+    "changes": [
+      "용어 통일 — 위시 / 시안 / 투표 / 시트 / 완료 5단계 단일 어휘. 같은 단계가 곳곳에서 다른 이름(위시리스트=아이디어, 시안=시안 생성, 시트=컨셉시트)으로 불리던 혼란 정리",
+      "STATUS_META 라벨: 위시리스트→위시, 시안 생성→시안, 컨셉시트→시트 (icon 도 ✨→🎨 통일)",
+      "STAGE_OPTIONS 에 wishlist 엔트리 신규 + '🗳️ 투표 및 선정' → '🗳️ 투표' 단축",
+      "탭 라벨: 위시리스트→위시, 완료 목록→완료 (icon 📋→✅)",
+      "페이지 헤딩 / 버튼 / 모달 제목 일괄 정리: 'Completed → 완료', '⭐ 위시리스트 → ⭐ 위시', '＋ 새 아이디어 → ＋ 새 위시', 'WishlistToDraftingAction 헤더', 'DesignsPanel 컨셉시트 단계로 이동 → 시트 단계로 이동' 등",
+      "단축키 치트시트 N 키 라벨도 '새 위시 추가'"
+    ]
+  },
+  {
+    "version": "1.10.73",
+    "date": "2026-04-26",
+    "changes": [
+      "[HOTFIX] v1.10.72 통합 후 화면 전체 blank 재발 — 두 번째 IIFE(상세 진행 UI 표시 조건)의 `ranges` 객체에 옛 키(create/vote/sheet)만 있어 activeTab='progress' 시 `const [min, max] = undefined` 로 TypeError 크래시. ranges 를 progress:[0,6] 로 갱신, 안전 가드 추가",
+      "활동 → 자동 전환 메시지 / 완료 탭 새 시안 버튼 도 setActiveTab(\"create\") → setActiveTab(\"progress\") 로 통일"
+    ]
+  },
+  {
+    "version": "1.10.72",
+    "date": "2026-04-26",
+    "changes": [
+      "탭 통합 — 시안 생성 / 투표 및 선정 / 컨셉시트 생성 → '🚀 진행 중' 단일 탭. 3탭 → 2단계(드래프팅 + 시트) 카드를 한 화면에. 탭 5개 → 3개 (위시 / 진행 / 완료)",
+      "정렬 옵션에 🎯 진행 단계순 추가 (정렬 시 자연스럽게 단계별 그룹으로 시각화)",
+      "카드 그리드 좌상단에 stage badge — computeStage 기반으로 🎨 시안 / 🗳️ 투표 및 선정 / 📑 시트 / ✅ 완료 표시",
+      "+ 새 시안 버튼이 진행 중 탭에서 항상 노출 (이전엔 시안 생성 탭에서만)",
+      "단계별 카드 컴포넌트 분기는 카드의 _statusKey 로 자동 결정 (drafting → create 렌더, sheet → sheet 렌더)",
+      "각 카드 모달에서 stage 자동 전환 시 더 이상 탭 이동 필요 없음 — 탭 한 곳에서 모든 진행 흐름 확인"
+    ]
+  },
+  {
+    "version": "1.10.71",
+    "date": "2026-04-26",
+    "changes": [
+      "[보안] API 키 서버 프록시화 — 키 자체가 클라이언트로 더 이상 전달되지 않음. /api/config 는 boolean(설정 유무) 만 응답. 모든 Gemini / Claude 호출은 /api/ai/gemini/* 와 /api/ai/claude/* 프록시를 거쳐 서버에서 키 부착",
+      "프록시는 Google/Anthropic API 의 path/body 를 그대로 forward — 클라이언트 코드는 URL 만 변경, 응답 형식 동일",
+      "개인 키 override 는 X-Personal-Gemini-Key / X-Personal-Claude-Key 헤더로 서버에 전달 (서버가 받아 그 키로 호출)",
+      "변경: generateImageWithGemini / generatePromptFromImage / classifyCategoryWithGemini / estimateSizeWithGemini / listGeminiImageModels / Claude 메시지 호출 모두 프록시 경유",
+      "이제 사내망 사용자가 /api/config 또는 devtools 에서 키를 직접 볼 수 없음"
+    ]
+  },
+  {
+    "version": "1.10.70",
+    "date": "2026-04-26",
+    "changes": [
+      "API 키 팀 공용 배포 — 운영 PC .env 의 GEMINI_API_KEY / CLAUDE_API_KEY 가 GET /api/config 로 클라이언트에 자동 전달. 새 사용자도 API 설정 입력 없이 바로 시작 가능",
+      "우선순위: 개인 localStorage 키 > 서버 팀 기본값. API 설정 모달에 source 라벨(👤 개인 키 / 🏢 팀 기본값) 표시",
+      "빈 입력 + 저장 = 개인 키 삭제 → 팀 기본값으로 복귀. placeholder 가 \"(비워두면 팀 기본값 사용)\"으로 동적 변경",
+      "서버에 .env 자동 로더 내장 (dotenv 의존성 없이) — KEY=VALUE 단순 파싱. .env.example 샘플 추가",
+      "사내망 한정 접근(10.99.4.115)을 전제로 한 1단계 보안 모델. 키 회전은 운영 PC .env 수정 + pm2 restart 만으로 즉시 반영"
+    ]
+  },
+  {
+    "version": "1.10.69",
+    "date": "2026-04-26",
+    "changes": [
+      "갤러리 캔버스(F) 시안 순서 변경 — 시안 타일 hover 시 좌측에 ◀/▶ 버튼 (designs ≥ 2 일 때만). 한 번 클릭으로 designs 배열 swap, selected_design 인덱스도 자동 동기",
+      "레이아웃 모드 토글 — 🧱 justified(자유 배치) / ▦ 균등 그리드(360×360 고정) / ⏱ 타임라인(1열, 최신순). 상단 바 우측 셀렉트, localStorage 영속, 모드 변경 시 자동 refit",
+      "타임라인은 item.meta.createdAt 으로 정렬 — AI 시안/시트 history 모두 시간 기준으로 한 줄에 배치, 최대 폭 70% 캡"
+    ]
+  },
+  {
+    "version": "1.10.68",
+    "date": "2026-04-26",
+    "changes": [
+      "포인트 코멘트 — lightbox 좌하단 🗨 코멘트 버튼 클릭 시 코멘트 모드 진입, 이미지 위 원하는 위치 클릭 → 입력 popover → 저장 시 마커가 그 위치에 고정",
+      "마커는 이미지와 같은 transform 으로 줌·패닝에 따라 이동, counter-scale 로 시각 크기 일정 유지",
+      "마커 hover 시 본문 / 작성자 / 시각 popover 표시. 본인 코멘트는 🗑 삭제 버튼",
+      "스키마: card.data.point_comments[image_url] = [{ id, x, y, body, actor, createdAt }]. x/y 는 0~1 정규화 좌표라 해상도와 무관",
+      "갤러리 타일 좌하단에 🗨 N 코멘트 수 badge 표시 (≥1 일 때만)",
+      "Ctrl/⌘+Enter 로 빠른 저장, Esc 취소"
+    ]
+  },
+  {
+    "version": "1.10.67",
+    "date": "2026-04-26",
+    "changes": [
+      "갤러리 비교 모드(F → Ctrl-클릭 ≥ 2장 → 🔀 비교) 에 🪄 슬라이더 모드 추가 — Before/After 식 좌·우 이미지를 가운데 슬라이더로 swipe 비교. 같은 시드 다른 프롬프트 / 시안 vs 시트 변화 등 미세 차이 확인에 강력",
+      "슬라이더 모드: 좌·우 이미지 셀렉트로 자유 선택, 핸들 드래그로 분할선 이동 (touchAction: none 으로 모바일 호환)",
+      "기존 그리드 모드(📰)와 토글 — 2장 이상이면 토글 활성, 1장 비교는 그리드만",
+      "CompareOverlay 컴포넌트로 추출 — GalleryCanvas 안에서 인라인이던 비교 UI 분리"
+    ]
+  },
+  {
+    "version": "1.10.66",
+    "date": "2026-04-26",
+    "changes": [
+      "갤러리 캔버스(F) 외부 이미지 드래그-드롭 → ref_images 자동 추가. 데스크탑 / 다른 브라우저 탭에서 이미지 드래그해 갤러리에 놓으면 업로드 후 참조 이미지에 추가, 다음 시안 생성에 자동 반영",
+      "드래그 중 시각 오버레이 (점선 테두리 + 📥 안내). 업로드 중에는 ⏳ 진행 표시",
+      "다중 파일 동시 드롭 지원. 중복 URL 은 무시",
+      "기존 paste / + 이미지 추가 / lightbox 그리기 → 참조 저장과 같은 ref_images 흐름 공유"
+    ]
+  },
+  {
+    "version": "1.10.65",
+    "date": "2026-04-26",
+    "changes": [
+      "갤러리 캔버스(F) 다중 선택 + 비교 — Ctrl/Cmd-클릭으로 타일 선택(녹색 inset border + ✓ badge), 2장 이상이면 상단에 🔀 비교 버튼. 클릭 시 풀스크린 비교 그리드(2~4 columns 자동) — contain 으로 풀사이즈 유지, 각 이미지 클릭 시 lightbox 진입",
+      "비교 모드 ESC 또는 ← 갤러리로 버튼으로 복귀. 선택 상태는 비교 종료 후에도 유지 (해제는 ✕ 해제 명시)",
+      "일반 클릭은 그대로 lightbox, 모디파이어 키만 선택 토글 — 기존 워크플로 비파괴"
+    ]
+  },
+  {
+    "version": "1.10.64",
+    "date": "2026-04-26",
+    "changes": [
+      "갤러리 캔버스(F) 상단에 그룹별 표시 토글 chip — 🖼 참조 / 🎨 시안 / 📑 현재 시트 / 🗂 이전 시트 N. 클릭으로 해당 그룹 숨기기·표시. 시트 history 가 많을 때 시안만 보기 등 시각 정리 가능",
+      "비활성 그룹 키는 카드별 localStorage 저장 (gallery_disabled_groups_<cardId>). 재방문 시 상태 유지",
+      "그룹 토글 시 자동으로 fit-to-viewport 재실행 — 줄어든 콘텐츠가 화면에 가득"
+    ]
+  },
+  {
+    "version": "1.10.63",
+    "date": "2026-04-26",
+    "changes": [
+      "갤러리 캔버스(F) — 타일 클릭 시 ImageLightbox 진입 (줌/패닝/그리기 전체 기능). 갤러리 위에 스택되도록 zIndex 1100 적용",
+      "타일 hover 우상단에 🎯 참조 버튼 (시안/시트 종류만) — 클릭 한 번으로 해당 이미지 URL 을 ref_images 에 추가, 다음 시안 생성에 자동 반영. 중복은 무시",
+      "타일 좌클릭 = lightbox / 미들·우 드래그 = 패닝 / 좌 드래그(>4px) 도 클릭 무시. 기존 cover/copy-ref 버튼은 stopPropagation 으로 클릭 분리",
+      "ImageLightbox 에 zIndex prop 추가 (default 300, 갤러리에서는 1100)"
+    ]
+  },
+  {
+    "version": "1.10.62",
+    "date": "2026-04-26",
+    "changes": [
+      "갤러리 캔버스(F) 타일 hover 시 메타 패널 표시 — 좌하단에 해상도 / 종류(AI 시안·업로드·시트·참조) / 모델 / seed / 생성 시각 / 투표 수. 카드 단일 데이터 소스만 사용, 추가 fetch 없음",
+      "메타 패널은 줌과 무관하게 일정 크기 유지 (counter-scale: invScale 적용)",
+      "groups useMemo 가 각 item 에 meta 객체 enrich (kind/seed/model/createdAt/votes/view)"
+    ]
+  },
+  {
+    "version": "1.10.61",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 갤러리 캔버스(F) 에서 이미지가 원본 해상도로 안 보이던 문제 — 셀 크기(약 460px)로 다운샘플 후 GPU 업스케일되어 줌인해도 흐림. 이제 IMG 를 자연 해상도(최대 2048px cap) 로 렌더하고 CSS transform 으로 셀에 fit → 줌인 시 원본 픽셀 노출",
+      "aspects 상태가 {aspect, w, h} 객체로 확장 (이전 number 와 호환). LAYOUT 이 naturalImgW/H 를 GalleryTile 에 전달",
+      "MAX_DIM 2048 cap — 4K+ 이미지 메모리 폭주 방지 (2K로 다운샘플하지만 기존 460 대비 4배 해상도)"
+    ]
+  },
+  {
+    "version": "1.10.60",
+    "date": "2026-04-26",
+    "changes": [
+      "이미지 lightbox 에 그리기 기능 — 좌하단 🖊 그리기 진입. 펜·지우개·되돌리기·전체 비우기·색상 4종(빨강/노랑/파랑/흰색). 그림은 이미지 자연 해상도 캔버스에 직접 그려져 품질 보존",
+      "💾 참조 저장 + 닫기 — 원본 이미지 + 그림을 합성해 PNG 로 업로드 → card.data.ref_images 끝에 추가. 다음 시안 생성 시 자동 반영 (v1.10.58 의 cover prepend + ref_images 로직과 자연 연동)",
+      "draw 모드에서는 줌/패닝 일시 비활성, 캔버스가 pointer 이벤트 가져감. 이미지 ←/→ 이동 시 자동으로 view 모드 복귀 + history 리셋",
+      "지우개는 destination-out 합성 모드 — 원본은 보존하면서 그림만 부분 삭제"
+    ]
+  },
+  {
+    "version": "1.10.59",
+    "date": "2026-04-26",
+    "changes": [
+      "이미지 lightbox 줌/패닝 지원 — 시안/참조/시트 이미지 클릭 시 GalleryCanvas 와 동일한 인터랙션. 휠로 커서 기준 줌(0.05~20×), 좌/휠/우 드래그 패닝, 0 키로 화면 맞춤, ←/→ 로 갤러리 이동, ESC 닫기",
+      "ImageLightbox 컴포넌트로 추출 — 기존 인라인 로직 정리, viewRef + DOM transform 패턴(React 리렌더 회피) 재사용",
+      "좌하단에 ⛶ 맞춤 + 🔍 N% 컨트롤. 우상단 닫기/저장 버튼은 기존대로"
+    ]
+  },
+  {
+    "version": "1.10.58",
+    "date": "2026-04-26",
+    "changes": [
+      "[#18] 시안 추가 생성 시 대표이미지를 항상 참조 1순위로 prepend — generateCardVariants 가 ref_images 와 무관하게 thumbnail_url 을 맨 앞에 추가 (중복 제거). 이전엔 ref 가 있으면 대표가 무시됐지만 이제 '대표 기준 보강' 의도가 일관 동작",
+      "추가 프롬프트 자동 복원 — generateCardVariants 가 last_extra_prompt 를 같은 PATCH 에 저장해 race 회피, 다음 회차에 카드별로 자동 입력. 빈 값이면 클리어",
+      "DesignsPanel 정렬 (생성순/최신순/투표순) — 헤더에 셀렉트 추가, sortedRenderOrder 가 원본 idx 보존해 voteCount/selectDesign/removeDesign 정상 동작",
+      "drafting 단계 ☆ 선정 동작 분리 — 이전엔 선정 = 대표 + sheet 자동 이동 묶음. 이제 ☆ 선정 = 대표만 변경, 별도 패널 하단 '✨ 선정 시안 으로 컨셉시트 단계로 이동 →' 버튼 신설. 의도 명확",
+      "카드 복제 (📋) — 상세 모달 헤더에 신설. 어셋 정보·프롬프트·참조 이미지·last_extra_prompt 가져오고 시안/시트/투표는 비워서 drafting 으로 새 카드 생성",
+      "CardActionPanel dead-code 정리 — drafting 분기 흡수 후 남은 count/extraPrompt/doGenerate/selectDesign/setCoverDesign/removeDesign 제거 (~80줄 감소)",
+      "DesignsPanel 생성 행 flexWrap + 버튼 whiteSpace 처리 — 좁은 폭에서 버튼 찌그러짐 방지"
+    ]
+  },
+  {
+    "version": "1.10.57",
+    "date": "2026-04-26",
+    "changes": [
+      "시안 생성 / 시안 이력 패널 통합 — drafting 단계에서 같은 썸네일 그리드가 두 번(시안 생성 패널 + 시안 이력 패널) 렌더되던 시각 중복 제거. DesignsPanel 한 곳에서 생성·표시·선정·삭제·투표 일원화",
+      "DesignsPanel 헤더에 추가 프롬프트 + [1][2][4] + 🎨 N개 생성 컨트롤 노출 (drafting 일 때만)",
+      "Tile 에 🗑 삭제 버튼 추가 (우측 하단). _sheet/_legacy 시안은 보호",
+      "DesignsPanel.selectDesign 가 drafting 단계에서는 컨셉시트로 자동 이동 (구 CardActionPanel.selectDesign 동작 보존)",
+      "타이틀 '🎨 시안 이력' → '🎨 시안' 으로 단순화. CardActionPanel 의 drafting 분기는 null 반환"
+    ]
+  },
+  {
+    "version": "1.10.56",
+    "date": "2026-04-26",
+    "changes": [
+      "유사 에셋 / 기존 제작 에셋 그리드에서 중복 아이콘 제거 — 같은 에셋이 여러 inZOI 카테고리에 복사 등록된 경우(같은 icon 파일이 여러 id 로 노출) 가장 점수 높은 한 건만 표시",
+      "findSimilarCatalogAssets 가 score 정렬 후 icon → name → id 순 키로 dedup. fallback(spec.sample_thumbs) 경로도 동일 정책 적용",
+      "결과: 12개 슬롯이 실제 서로 다른 에셋 12개로 채워짐 (이전엔 중복 때문에 의미 있는 후보가 6~8개로 줄던 케이스)"
+    ]
+  },
+  {
+    "version": "1.10.55",
+    "date": "2026-04-26",
+    "changes": [
+      "[버그 수정] 활동 이력 / 댓글 / 카드 날짜 표시가 KST(+9) 보다 9시간 늦게 보이던 문제 — SQLite datetime('now') 가 UTC 'YYYY-MM-DD HH:MM:SS' (Z 없음) 로 저장되는데 프런트가 단순 slice 로 잘라 그대로 표시했음. 명시적 UTC 파싱 → 로컬 변환 헬퍼 formatLocalTime 도입",
+      "적용 위치: 활동 이력 (MM-DD HH:MM), 댓글 (YYYY-MM-DD HH:MM), 리스트 뷰 날짜, 카드 그리드 완료/생성일, 시트 history generated_at, 갤러리 시트 그룹 타이틀, 아카이브 updated_at",
+      "기존 ISO 'Z' 또는 timezone 이 있는 값은 그대로, 없으면 UTC 로 간주하는 휴리스틱 — 두 형식 모두 안전"
+    ]
+  },
+  {
+    "version": "1.10.54",
+    "date": "2026-04-23",
+    "changes": [
+      "메인뷰 좌/우 끝 통일 — 시안 생성/투표/시트/완료/위시 sticky 헤더의 marginLeft:-40, marginRight:-40, paddingLeft:40, paddingRight:40 제거. 이전엔 헤더 배경이 maxWidth 1400 까지 확장되어 1320 폭의 카드와 좌우가 어긋나 보였음. 이제 헤더·태그 chip·리스트 헤더·카드 모두 동일한 1320 inner 콘텐츠 영역에 정렬",
+      "리스트 뷰 컬럼 폭 재조정 — 우선순위 70→56, 업데이트 90→120 (긴 태그 ellipsis 110), 카테고리 150→140, 스타일 80→70, 크기 130→115, 상태 95→70, 진행 110→130 (🗳️ 투표 및 선정 등 긴 라벨 수용), 날짜 100→92. 빈 공간/잘림 양쪽 균형 맞춤",
+      "갤러리 캔버스 (F) — 같은 URL 이미지를 여러 그룹(대표/시안/시트)에 중복 표시하지 않도록 dedup. 대표가 시안이기도 하면 첫 그룹(대표)에서만 보임",
+      "갤러리 캔버스 초기 fit-to-viewport — 작은 콘텐츠도 화면 가득 채우도록 fitScale cap(1) 제거. 이미지 적은 카드도 첫 진입 시 크게 표시"
+    ]
+  },
+  {
+    "version": "1.10.53",
+    "date": "2026-04-25",
+    "changes": [
+      "API 상태 안내 문구가 Claude API 키 설정 여부를 반영 — Gemini + Claude 둘 다 등록되어 있으면 'Gemini + Claude 모두 연결됨 — 프롬프트 자동 최적화 활성' 표시. 이전엔 Gemini 만 보고 'Claude 추가하면…' 항상 안내해 혼란"
+    ]
+  },
+  {
+    "version": "1.10.52",
+    "date": "2026-04-25",
+    "changes": [
+      "업데이트 태그 삭제 지원 — chip 바 ✏️ 인라인 편집에서 이름을 빈 값으로 저장하면 '태그 전역 삭제' 확인창 → 해당 태그 붙은 모든 카드를 미지정으로 일괄 변경. 별도 UI 버튼 없이 기존 편집 흐름 확장",
+      "renameUpdateTag 가 null 입력 시 selectedUpdates 에 새 값 추가 안하도록 수정 — 삭제 후 필터 정리"
+    ]
+  },
+  {
+    "version": "1.10.51",
+    "date": "2026-04-25",
+    "changes": [
+      "시안 이력 섹션에 이미지 붙여넣기 지원 — 헤더에 '📋 붙여넣기' 버튼 (navigator.clipboard.read) + 패널 내부 hover/focus 중에만 Ctrl+V 로 직접 붙여넣기",
+      "ingestImage 공용 함수로 File 파일 선택 / Clipboard API / Ctrl+V 세 경로 통합",
+      "PromptRefEditor 의 참조 이미지 paste 와 충돌 방지 — capture 모드 + stopImmediatePropagation 으로 패널이 활성 상태일 때만 DesignsPanel 이 가로챔",
+      "패널 활성 상태일 땐 테두리가 primary 색으로 바뀌고 '📋 Ctrl+V 로 붙여넣기 가능' 안내 문구 노출"
+    ]
+  },
+  {
+    "version": "1.10.50",
+    "date": "2026-04-25",
+    "changes": [
+      "[버그 수정] 자동 분류 실행해도 카테고리·스타일이 이미 값이 있으면 덮어쓰지 않던 문제 — 버튼 클릭 = 재분석 의도로 해석해 category/style_preset/posmap_features/catalog_matches 는 항상 새 결과로 덮어씀. 크기 수동 입력과 기존 프롬프트는 존중",
+      "자동 분류 버튼 위치 이동 — 카테고리 필드 라벨 옆 → '📝 어셋 정보' 헤더 라인 우측으로. 카테고리 필드 라벨은 텍스트만 남김",
+      "자동 분류 기준은 card.data.ref_images[0] || card.thumbnail_url. 대표이미지 교체 후 다시 '🤖 자동 분류' 누르면 새 이미지 기준으로 분석·덮어쓰기"
+    ]
+  },
+  {
+    "version": "1.10.49",
+    "date": "2026-04-25",
+    "changes": [
+      "리스트 뷰 업데이트 태그 팝오버 간소화 — 우선순위처럼 기존 태그 목록 중 선택만. 새 태그 입력 / 저장 버튼 제거. 등록된 태그 없으면 상세 모달 안내 표시",
+      "리스트 뷰 제목 클릭 동작 변경 — ✏️ hover 버튼 제거하고 제목 텍스트 자체 클릭으로 바로 인라인 input 전환. 썸네일 / 설명 / 다른 셀 클릭은 기존대로 상세 모달 오픈",
+      "제목 hover 시 연한 배경 + cursor: text 로 편집 가능 표시"
+    ]
+  },
+  {
+    "version": "1.10.48",
+    "date": "2026-04-25",
+    "changes": [
+      "리스트 뷰에도 카드 크기(0.5× / 1× / 2×) 토글 적용 — 이전엔 카드 뷰에서만 보였는데 항상 표시",
+      "스케일 대상: 썸네일(90×90 기본 → 45/90/180) + 행 수직 padding(15px 기본 → 7.5/15/30). 텍스트 셀은 고정 너비 유지해 가독성 보존",
+      "CardListHeader / CardListRow 모두 getListGrid(scale) 로 동적 grid 생성, 썸네일 컬럼만 scale 적용"
+    ]
+  },
+  {
+    "version": "1.10.47",
+    "date": "2026-04-25",
+    "changes": [
+      "[버그 수정] 리스트 뷰 팝오버 피커가 아래 행 뒤에 가려지던 문제 — row 가 position: relative 라 자체 stacking context 에 갇혀 z-index: 50 팝오버가 다음 row 위로 못 올라감. editing 상태일 때 해당 row 전체 zIndex 를 100 으로 올려 다른 row 위로 뜨게 수정"
+    ]
+  },
+  {
+    "version": "1.10.46",
+    "date": "2026-04-25",
+    "changes": [
+      "[버그 수정] 상세 모달의 업데이트 일정이 이미 채워져 있으면 수정 불편하던 문제 — 기존 <input list=…> datalist UX 에서 리스트 뷰와 같은 팝오버 피커로 교체. 기입된 값이든 빈 값이든 항상 클릭으로 기존 태그 pill 선택 또는 새 태그 입력 가능",
+      "잠긴(완료) 카드는 여전히 수정 불가, 비워서 '미지정'으로 되돌리는 전용 버튼 제공"
+    ]
+  },
+  {
+    "version": "1.10.45",
+    "date": "2026-04-25",
+    "changes": [
+      "리스트 뷰 제목 셀 인라인 편집 — 행 hover 시 우측 ✏️ 아이콘, 클릭하면 input 전환 / Enter 저장 / Esc 취소 / blur 자동 저장",
+      "업데이트 태그 셀 = 팝오버 피커로 전환 — 기존 태그들을 pill 로 나열해서 클릭 즉시 적용, 하단에 '새 태그 / 직접 입력' 박스 분리. 기존 태그 많아도 스크롤 (max 320)",
+      "[버그 수정] 리스트 뷰 팝오버가 다른 행 팝오버를 열어도 안 닫히던 문제 — 외부 클릭 감지를 'data-inline-edit attribute 기준' → 'row ref 기준'으로 변경해 행 경계로 닫힘",
+      "팝오버 z-index 30 → 50, background #fff 로 불투명 보장 → 뒤 내용 겹쳐보이는 현상 수정",
+      "진행 컬럼 정렬 가능 — 헤더 클릭 시 stage 기준 정렬 (wishlist<drafting<voting<sheet<done)",
+      "enrichedCards useMemo 도입 — cards 에 _statusKey 를 일괄 주입해 stage 정렬/렌더에서 재사용"
+    ]
+  },
+  {
+    "version": "1.10.44",
+    "date": "2026-04-25",
+    "changes": [
+      "리스트 뷰 인라인 편집 — 우선순위 / 업데이트 태그 셀 클릭 시 해당 셀 아래 팝업 열려 바로 수정 가능. 저장은 즉시 PATCH, 외부 클릭/Esc 로 닫힘",
+      "리스트 뷰에 [진행] 컬럼 추가 (상태 ↔ 생성일 사이) — 🎨 시안 / 🗳️ 투표 및 선정 / 📑 시트 / ✅ 완료 중 선택해서 바로 상태 변경. 완료 선택 시 confirmed_at 자동 세팅, 되돌릴 땐 해제",
+      "LIST_GRID 10→11 컬럼 (110px 진행 컬럼 신규)",
+      "컬럼 헤더에 '진행' 라벨 추가",
+      "card._statusKey 힌트를 부모에서 주입해 computeStage(drafting 내부에서 시안/투표 designs.length 기준 구분) 동작"
+    ]
+  },
+  {
+    "version": "1.10.43",
+    "date": "2026-04-24",
+    "changes": [
+      "[버그 수정] 새 아이디어 추가 창에서 Ctrl+V 이미지 붙여넣기가 안되던 문제 — paste 리스너가 '위시 탭일 때만' 등록되고 있어 N 단축키 / 다른 탭에서 모달 오픈 시 작동 안함. 조건을 'wishAddOpen && !detailCard' 로 변경해 모달 열림 상태 기준으로 동작"
+    ]
+  },
+  {
+    "version": "1.10.42",
+    "date": "2026-04-24",
+    "changes": [
+      "자동 분류 개편 — 제안/적용 확인 단계 없이 결과를 바로 저장. 카테고리 / 스타일 / 크기 / posmap features / 카탈로그 매칭 top-12 에 더해 프롬프트 초안도 한 번에 채움 (이미 값이 있는 필드는 건드리지 않음)",
+      "AI 자동 준비 + 이동 버튼 (v1.10.40) 제거 — 자동 분류가 프롬프트까지 커버하므로 중복. WishlistToDraftingAction 은 원래의 단일 이동 버튼으로 복귀",
+      "classifyCategoryWithGemini + generatePromptFromImage 을 Promise.allSettled 로 병렬 호출해 한 번에 처리"
+    ]
+  },
+  {
+    "version": "1.10.41",
+    "date": "2026-04-24",
+    "changes": [
+      "👍 시안 투표 (단독 재투입) — 각 시안 타일 좌하단에 👍 버튼 + 카운트. 프로필 기반 (card.data.cardVotes = { [designIdx]: { [profileName]: true } }), 토글 방식, 본인 투표는 primary 색",
+      "1등 시안은 🏆 배지 + 초록 테두리, 헤더에 '🏆 투표 1등 선정 (N표)' 버튼 — 클릭 시 selected_design + 썸네일 자동 갱신",
+      "hover 시 투표자 이름 tooltip (voters.join(', '))",
+      "(legacy job.data.votes 와 이름 충돌 방지 위해 cardVotes 로 분리)"
+    ]
+  },
+  {
+    "version": "1.10.40",
+    "date": "2026-04-24",
+    "changes": [
+      "🤖 위시 → 시안 자동 준비 (단독 재투입) — 위시 카드 상세에 'AI 자동 준비 + 이동' 버튼. Gemini 로 카테고리/스타일/크기 자동 분류 + 이미지 기반 프롬프트 초안 2~4문장 생성 → 서버 저장 → 드래프트 상태로 자동 이동",
+      "generatePromptFromImage 함수 신규 — 이미지 + 제목으로 한글 프롬프트 초안 생성 (Gemini 2.5 Flash Vision)",
+      "참조 이미지 없으면 Gemini 호출 스킵하고 제목만으로 드래프트 이동 가능"
+    ]
+  },
+  {
+    "version": "1.10.39",
+    "date": "2026-04-24",
+    "changes": [
+      "[HOTFIX] 카드 상세에서 '카탈로그 매칭 기준' 렌더 시 catalog_matches 없고 posmap_features 만 있는 새 카드가 crash 하던 문제 — cm.features → cm?.features 옵셔널 체이닝. '보안문' 같은 AI 자동분류 직후 아직 카탈로그 top-12 저장되지 않은 카드에서 detail modal blank 재현"
+    ]
+  },
+  {
+    "version": "1.10.38",
+    "date": "2026-04-24",
+    "changes": [
+      "⌨️ 단축키 치트시트 (단독 재투입) — ? 키로 오버레이 열기/닫기, Esc 도 닫힘. 전역 / 상세 / 갤러리 / 편집 / Lightbox 그룹별 정리",
+      "(v1.10.37 에 3개 기능 한번에 넣었다 blank-screen 재발해 revert, 기능별 분리 재투입)"
+    ]
+  },
+  {
+    "version": "1.10.36",
+    "date": "2026-04-24",
+    "changes": [
+      "추가 프롬프트 결합 방식 강화 — '기존 — 추가' em dash 대신 '기존. Additionally apply: 추가' 영문 접속어로 Gemini 가 뒤 문장을 override 가 아닌 '덧붙임' 으로 해석하게 유도",
+      "추가 프롬프트 입력 아래에 최종 프롬프트 실시간 프리뷰 추가 — '→ 최종: {기존}. Additionally apply: {추가}' 로 점선 박스에 회색 표기"
+    ]
+  },
+  {
+    "version": "1.10.35",
+    "date": "2026-04-24",
+    "changes": [
+      "한 번에 생성 개수 옵션 1 / 2 / 4 만 제공 (8 제거) — UI 선택지 + generateCardVariants 의 클라이언트 안전장치(Math.min) 도 4 로 통일"
+    ]
+  },
+  {
+    "version": "1.10.34",
+    "date": "2026-04-24",
+    "changes": [
+      "갤러리 레이아웃을 Justified Grid (Google Photos / Flickr 식) 로 변경 — 각 행의 이미지 너비를 자동 조정해 행 폭이 CONTAINER_W(2800px) 를 꽉 채움, 행 높이 통일 (기본 460)",
+      "서로 다른 원본 비율 이미지들이 한 화면에 더 크고 효율적으로 배치 — 빈 공간 최소화, 세로 스택 제거",
+      "img aspect ratio 는 onLoad 에서 자동 수집(naturalWidth/naturalHeight) → useMemo 로 행 packing 재계산",
+      "각 타일은 justified 셀(width/height) + object-fit: cover 로 채움 — 셀 비율이 이미 이미지 aspect 와 같아 crop 되지 않음",
+      "fit-to-viewport 가 justified 전체 박스를 뷰포트에 맞춤 → 초기 오픈 시 한눈에 다 보임"
+    ]
+  },
+  {
+    "version": "1.10.33",
+    "date": "2026-04-24",
+    "changes": [
+      "[버그] 갤러리 이미지가 원본 해상도로 안 나오던 문제 — v1.10.32 의 height: 480 CSS 가 GPU 레이어를 480px 로 다운샘플 스냅샷 → 줌인 시 블러. 제거하고 img 는 natural size (max 1280px) 로 렌더 → GPU 텍스처 = 소스 해상도",
+      "갤러리 레이아웃 — 그룹 세로 스택 제거. 모든 이미지를 단일 flex-wrap 그리드로 평탄화, maxWidth 3200px 안에서 자연스럽게 줄바꿈 → 한 화면에 더 많이 표시",
+      "그룹 라벨은 각 타일 좌상단 배지로만 구분 (🎨 시안 #N / 📑 front / 📤 업로드 등). 별도 그룹 헤더 삭제",
+      "fit-to-viewport 가 이 wrap 그리드 기준으로 재계산 — 가로로 꽉 차면 세로로 쌓이고, 전체 박스가 뷰포트에 맞춤"
+    ]
+  },
+  {
+    "version": "1.10.32",
+    "date": "2026-04-24",
+    "changes": [
+      "갤러리 타일 — 테두리/그림자 제거하고 이미지만 gap 0 으로 붙여 packing",
+      "타일 고정 크기 정사각(260 object-fit contain) → height 480 + width auto 로 원본 비율 그대로. 줌인 시 소스 해상도 사용해 덜 깨짐",
+      "갤러리 오픈 시 자동 fit-to-viewport — 콘텐츠 전체가 화면에 꽉 차게 scale 자동 계산 (마운트 후 120ms + 500ms + 모든 이미지 load 시점)",
+      "전체 보기 버튼(⊡) 과 '1:1 원본 크기' 버튼 분리. 0 키 = 전체 보기 (이전엔 scale=1 리셋)",
+      "각 그룹 헤더도 scale 역수로 counter-scale 해서 항상 읽히는 크기 유지"
+    ]
+  },
+  {
+    "version": "1.10.31",
+    "date": "2026-04-24",
+    "changes": [
+      "갤러리 ⭐ 선정 버튼 제거 — 대표 지정(⭐/☆)만 유지. 시안 선정은 DesignsPanel 에서 계속 가능",
+      "줌 한계 6x → 20x — 원본 이미지 더 크게 확대 가능",
+      "아이콘(⭐ 대표, label 배지) 이 캔버스 scale 의 역수로 counter-scale → 줌인해도 비례로 작아져 이미지를 가리지 않음",
+      "[성능] 팬/줌 리렌더 최소화 — x/y 를 React state 에서 ref 로 빼 직접 DOM transform 업데이트, setState 는 scale 변경 시에만. translate3d + will-change: transform 으로 GPU 레이어 승격"
+    ]
+  },
+  {
+    "version": "1.10.30",
+    "date": "2026-04-24",
+    "changes": [
+      "상세 모달 헤더 제목 앞 상태 아이콘(meta.icon, 예: ⭐ ✨ 📑 ✅) 제거 — 카드 뷰 / 리스트 뷰에서 v1.10.15 에 이미 제거된 것과 일관"
+    ]
+  },
+  {
+    "version": "1.10.29",
+    "date": "2026-04-24",
+    "changes": [
+      "상세 모달 Esc 로 닫기 지원 — 단, 갤러리(F) / 미리보기 lightbox / 카탈로그 iframe 모달이 열려있으면 그쪽이 먼저 닫힘 (각자 자체 Esc 핸들러 유지)",
+      "입력창(input/textarea/select/contenteditable) 포커스 중엔 동작 안 함 — 평소 입력 방해 없음"
+    ]
+  },
+  {
+    "version": "1.10.28",
+    "date": "2026-04-24",
+    "changes": [
+      "갤러리 팬 제스처 변경 — 좌클릭 드래그 대신 '가운데 버튼' 또는 '우클릭' 누른 채 드래그",
+      "좌클릭은 타일 내부 버튼(⭐/☆, 선정) 클릭용으로 예약되어 의도치 않은 팬 방지",
+      "우클릭 팬 중 브라우저 컨텍스트 메뉴는 onContextMenu preventDefault 로 차단",
+      "상단 안내 문구도 '가운데/우클릭 드래그 팬' 으로 수정"
+    ]
+  },
+  {
+    "version": "1.10.27",
+    "date": "2026-04-24",
+    "changes": [
+      "갤러리 캔버스 — hover 시 떠있던 그라데이션 오버레이 제거. 이미지 줌인 시야를 가리지 않음",
+      "대표 지정은 타일 우측 상단 고정 ⭐/☆ 원형 아이콘 클릭 — 현재 대표는 초록 ⭐, 아니면 검정 ☆",
+      "시안 선정 버튼도 우측 상단 대표 아이콘 바로 아래 작은 pill 로 배치 (design 타입만)",
+      "↗ 원본 링크는 제거 — 캔버스 자체가 팬/줌 으로 원본 탐색 가능"
+    ]
+  },
+  {
+    "version": "1.10.26",
+    "date": "2026-04-24",
+    "changes": [
+      "🖼 갤러리 캔버스 — 상세 모달 열고 F 키 (또는 헤더 🖼 버튼) 로 전체 화면 전환. 카드의 모든 이미지를 그룹별(대표/참조 · 시안 · 현재 시트 · 이전 시트)로 한 화면에 배치",
+      "팬 / 줌 / 키보드 조작: 휠=커서 기준 줌 · 드래그=팬 · 0=초기화 · ±=줌 · 방향키=팬 · Esc/F=닫기",
+      "각 이미지 호버 시 ☆ 대표 (카드 썸네일 지정) / ⭐ 선정 (시안 한정, selected_design + 썸네일 갱신) / ↗ 원본 열기 버튼",
+      "선정된 시안은 노란 테두리 + ⭐ 선정 배지, 현재 대표는 초록 테두리",
+      "외부 의존성 없음 — CSS translate+scale 로 구현",
+      "단축키 추가 — N: 어디서나 새 아이디어 추가 모달 오픈"
+    ]
+  },
+  {
+    "version": "1.10.25",
+    "date": "2026-04-24",
+    "changes": [
+      "시안 생성 패널에 '추가 프롬프트' 한 줄 입력 — 저장된 기본 프롬프트는 그대로 두고 이번 회차에만 '기본 — 추가지시' 형태로 뒤에 붙여 Gemini 호출",
+      "예: 기존 프롬프트 유지 + '더 단순하게', '파스텔 톤', '다리 없애기' 같은 변형 지시",
+      "Enter 로 바로 생성, 생성 중엔 비활성화. 값은 저장 안되고 모달 닫으면 초기화"
+    ]
+  },
+  {
+    "version": "1.10.24",
+    "date": "2026-04-24",
+    "changes": [
+      "카드 상세 딥링크 — 각 카드에 고유 URL /p/<slug>/cards/<cardId> 부여",
+      "상세 모달 열 때 자동으로 pushState, 닫으면 /p/<slug> 로 복귀, 뒤로/앞으로 브라우저 버튼(popstate) 지원",
+      "최초 로드 시 URL 에 cardId 있으면 자동으로 해당 카드 상세 오픈 — 공유 링크 바로 접근 가능",
+      "상세 모달 제목 옆에 작은 🔗 링크 버튼 — 클릭 시 클립보드 복사, 1.5 초간 '복사됨' 표시 (clipboard API 차단 시 prompt fallback)"
+    ]
+  },
+  {
+    "version": "1.10.23",
+    "date": "2026-04-24",
+    "changes": [
+      "생성 완료 시 상세 페이지 자동 오픈 중단 — 사용자가 도중 모달을 닫았다면 작업큐에 '✓ 완료' 알림만 뜸. 클릭 시에 상세 오픈",
+      "CardActionPanel onRefresh 가 setDetailCard((prev) => prev?.id === d.id ? d : prev) 로 변경 — 열려있는 카드만 갱신",
+      "작업큐에 완료 상태 디자인 추가 — 초록 배경 / '✓ 완료 · 클릭해서 열기' / ✕ 버튼으로 알림 닫기 가능",
+      "작업큐 타이틀도 '생성 중' → '작업 큐' 로 일반화, 전체 완료 시 아이콘 ✅"
+    ]
+  },
+  {
+    "version": "1.10.22",
+    "date": "2026-04-24",
+    "changes": [
+      "시안 이력 패널 대개편 — DesignsPanel 컴포넌트로 추출 + 3가지 보기 모드",
+      "  · 🔲 그리드 (기본, 자동 맞춤 4~6열)",
+      "  · ⬛⬛ 나란히 (2열, 280px 높이 — 시안 2개 비교)",
+      "  · 🖼 하나씩 (420px, 좌우 ‹ › 버튼 + 하단 페이지 닷 네비)",
+      "각 시안 타일에 ☆ 선정 버튼 추가 — 클릭 시 card.data.selected_design + card.thumbnail_url 자동 갱신",
+      "선정된 시안은 ⭐ 선정 배지 (노란 테두리), image objectFit: cover → contain 으로 비율 온전히 표시",
+      "빈 상태 안내 개선"
+    ]
+  },
+  {
+    "version": "1.10.21",
+    "date": "2026-04-24",
+    "changes": [
+      "시안 이력에 외부 이미지 수동 추가 — 섹션 헤더 우측 '＋ 이미지 추가' 버튼, 파일 선택 시 /api/upload 거쳐 card.data.designs 끝에 추가 (source: 'upload' 태그)",
+      "업로드된 시안은 📤 배지로 AI 생성 시안과 구분",
+      "시안 이력 섹션을 drafting 단계에서도 표시 (이전엔 drafting 외 단계만 보였음) — 빈 상태일 땐 안내 메시지"
+    ]
+  },
+  {
+    "version": "1.10.20",
+    "date": "2026-04-24",
+    "changes": [
+      "활동 이력에 컨셉시트 4뷰 생성도 기록 — sheet_generated 액션 추가 ('시트 생성' 라벨, views 개수 + 모델명 payload)",
+      "기존 designs_added 라벨도 '생성' → '시안 생성' 으로 명확화 (시트 생성과 구분)",
+      "서버: PATCH 시 data.concept_sheet_views.generated_at 타임스탬프 변경 감지해 활동 기록",
+      "활동 필터 드롭다운에 '시트 생성' 옵션 추가",
+      "시트 재생성 시 기존 시트 삭제하지 않고 card.data.concept_sheet_history[] 에 보존 — 상세 모달에 '📚 이전 시트 기록' details 토글로 누적 4뷰 썸네일 표시 (생성일시 + 모델명)"
+    ]
+  },
+  {
+    "version": "1.10.19",
+    "date": "2026-04-24",
+    "changes": [
+      "[버그 수정] 컨셉시트(4뷰) 생성 중인 카드가 우하단 작업큐에 안 뜨던 문제 — makeSheet 에서 onGenerateProgress/onGenerateEnd 콜백 호출 추가 (시안 생성과 동일 패턴)"
+    ]
+  },
+  {
+    "version": "1.10.18",
+    "date": "2026-04-24",
+    "changes": [
+      "활동 이력 — '생성' 라벨을 용도별로 분리",
+      "  · 카드 신규 등록(created) → '신규'",
+      "  · 시안 이미지 생성(designs_added) → '생성'",
+      "서버가 PATCH 시 prev/next data.designs 길이를 비교해 증가했으면 designs_added 활동 기록 (+count)",
+      "활동 이력 필터 드롭다운에도 '시안 생성' 옵션 추가"
+    ]
+  },
+  {
+    "version": "1.10.17",
+    "date": "2026-04-24",
+    "changes": [
+      "[버그 수정] 유사 에셋 아이콘이 일부 안 보이던 문제 — 에셋의 icon 파일명이 id 와 다른 경우 /api/object-icon/:id 가 404. 서버 posmap 응답에 objects.json 의 icon 필드 포함, 클라이언트는 m.icon || m.id 로 아이콘 URL 구성",
+      "유사 에셋 썸네일 로드 실패 시 해당 카테고리 이모지로 fallback 표시 (예전엔 숨김)",
+      "findSimilarCatalogAssets 결과에 icon / name 필드 포함",
+      "활동 이력 UI 개편 — 각 항목에 프로필 아이콘 원형 22px (hover 시 이름), action 명 한글화 (created→생성, moved→상태 이동 등), 배경 pill 로 가독성 향상",
+      "활동 이력 헤더 클릭 시 접기/펼치기 (기본 펼침)"
+    ]
+  },
+  {
+    "version": "1.10.16",
+    "date": "2026-04-24",
+    "changes": [
+      "상세 모달 좌/우 프레임 동일 폭 — gridTemplateColumns '1.3fr 1fr' → '1fr 1fr'",
+      "모달 전체 폭 1250 → 1440px — 좌측 크기 유지하면서 우측 확장 (maxWidth 96vw 는 유지, 좁은 화면에선 자동 축소)"
+    ]
+  },
+  {
+    "version": "1.10.15",
+    "date": "2026-04-24",
+    "changes": [
+      "카드 제목 앞 카테고리 아이콘 자동 노출 제거 — CardHubCard / CardListRow 둘 다 {catInfo.icon} 프리픽스 삭제. 카테고리는 별도 컬럼/배지로 이미 노출됨"
+    ]
+  },
+  {
+    "version": "1.10.14",
+    "date": "2026-04-24",
+    "changes": [
+      "리스트 뷰 행 오른쪽 끝에 작성자 아이콘 열 추가 — 카드의 created_by 프로필 이모지, 마우스 hover 시 이름 tooltip 표시",
+      "LIST_GRID 9→10 컬럼 (마지막 32px)",
+      "댓글 입력창 앞에 현재 프로필 아이콘 32px 원형 표시 — hover 시 현재 프로필 이름 tooltip, 프로필 미선택 시 회색 톤 + 안내"
+    ]
+  },
+  {
+    "version": "1.10.13",
+    "date": "2026-04-24",
+    "changes": [
+      "[HOTFIX — 카드 선택 시 화면이 하얗게 되던 문제] AssetInfoEditor 에서 v1.10.9 에 refImages state 를 PromptRefEditor 로 분리했는데 runCategorySuggest 버튼의 disabled / cursor 조건에 refImages[0] 참조가 남아 있어 ReferenceError 로 모달 렌더 실패. card.data.ref_images / thumbnail_url 로 이미지 유무 판정하도록 수정",
+      "(이번 재발 사례 TDZ 메모에 추가 — state 제거 시 잔여 참조 grep 필수)"
+    ]
+  },
+  {
+    "version": "1.10.12",
+    "date": "2026-04-24",
+    "changes": [
+      "헤더의 ＋ 새 시안 버튼 제거 — 시안 생성 탭 본문 상단에 동일 버튼이 이미 있어 중복"
+    ]
+  },
+  {
+    "version": "1.10.11",
+    "date": "2026-04-24",
+    "changes": [
+      "프로필 편집 가능 — 드롭다운 각 행 오른쪽 ✏️ 클릭 시 인라인 편집 (이름 + 아이콘), Enter 저장 / Esc 취소 / 저장 버튼",
+      "이름 변경 시 서버가 card_comments / card_activities / activity_log 의 actor 필드를 트랜잭션으로 일괄 갱신 — 기존 댓글·활동 기록도 새 이름으로 자동 연결 (orphan 방지)",
+      "이름 충돌 (다른 프로필이 같은 이름 사용) 시 409 반환",
+      "삭제는 여전히 지원 안 함 (사용자 요구사항 유지)"
+    ]
+  },
+  {
+    "version": "1.10.10",
+    "date": "2026-04-24",
+    "changes": [
+      "헤더 우측 3개 버튼(아카이브 / API 설정 / 새 시안) 컴팩트화 — padding 10→5, fontSize 13-14→11-12, 아이콘도 한 단계 축소",
+      "헤더 검색창 폭 280→238px (약 15% 감소)",
+      "프로필 아이콘 후보 16개 → 21개로 확장. 피부색(light / medium / dark) × 남/녀 기본, 빨강머리·곱슬·흰머리·탈모·수염·금발·안경(🤓/🧐)·어르신 포함 — 사용자 구분감 강화",
+      "프로필 선택 그리드 8→7 열 (21 = 7×3 행)"
+    ]
+  },
+  {
+    "version": "1.10.9",
+    "date": "2026-04-24",
+    "changes": [
+      "프롬프트 + 참조 이미지를 우측 프레임 최상단(시안 생성 위)으로 이동 — 좌측 AssetInfoEditor 에서 분리",
+      "PromptRefEditor 신규 컴포넌트 — 자체 state, PATCH, onRefresh 로 동기화, Ctrl+V 이미지 붙여넣기 유지",
+      "AssetInfoEditor 는 카테고리 / 스타일 / 크기 / 카탈로그 매칭에 집중 (프롬프트/참조 관련 state·effect 정리)",
+      "자동 분류는 여전히 refImages[0] || thumbnail_url 로 이미지를 받음 (card.data 직접 읽기)"
+    ]
+  },
+  {
+    "version": "1.10.8",
+    "date": "2026-04-24",
+    "changes": [
+      "👤 프로필 시스템 추가 — 헤더 맨 오른쪽에 프로필 선택기. 머리 이모지 + 이름, 여러 개 미리 등록 후 하나 선택 → localStorage 에 id 저장되어 새로고침 / 탭 전환해도 본인 프로필 유지",
+      "프로필은 전역 공유 (누구나 추가, 삭제 없음). 30초마다 서버 폴링으로 다른 사용자가 추가한 프로필 반영",
+      "서버: profiles 테이블 + GET/POST /api/profiles — 이름 unique, 중복 시 기존 반환",
+      "댓글 작성자 옆에 프로필 아이콘 표시 (👤 이름 · 날짜) — 이름으로 프로필 매칭, 없으면 기본 👤, 시스템은 ⚙️",
+      "활동 이력에도 작성자 아이콘 추가",
+      "actorName 은 선택된 프로필 이름에서 자동 파생 — 프로필 없으면 기존 inzoi_actor_name fallback (하위 호환)",
+      "아이콘 선택 후보 16종: 🧑 👤 👨 👩 🧔 👱 👴 👵 🧓 🧒 🤓 😊 🙂 🦊 🐻 🐰"
+    ]
+  },
+  {
+    "version": "1.10.7",
+    "date": "2026-04-24",
+    "changes": [
+      "상세 모달 레이아웃 재정리 — 좌: 업데이트 일정 → 우선순위 → 대표이미지 → 어셋정보 → 설명. 우: 시안 생성 → 시안 이력 → 댓글 → 활동 이력",
+      "[버그 수정] 댓글 편집이 안 되던 문제 — actorName 미설정(null) 사용자가 본인이 쓴 익명 댓글(cm.actor=null) 도 본인으로 인정되게 서버/클라 확인 로직 완화 ((cm.actor || null) === (actor || null))",
+      "v1.10.0 에서 추가한 본인 댓글 삭제도 같이 익명 케이스 허용"
+    ]
+  },
+  {
+    "version": "1.10.6",
+    "date": "2026-04-24",
+    "changes": [
+      "상세 모달 댓글 편집 가능 — 본인이 쓴 댓글은 본문 클릭 또는 ✏️ 로 인라인 textarea 전환, Ctrl/⌘+Enter 저장 / Esc 취소 / blur 자동 저장",
+      "서버: PATCH /api/projects/:slug/cards/:id/comments/:commentId — actor 일치 검사, 빈 본문 거부, 'comment_edited' 활동 기록",
+      "CommentRow 컴포넌트로 분리 — 편집 / 삭제 ✏️ ✕ 한 곳에 모음"
+    ]
+  },
+  {
+    "version": "1.10.5",
+    "date": "2026-04-24",
+    "changes": [
+      "스타일 프리셋 기본 목록 8개 → 24개 확장: 컨템포러리 / 재팬디 / 레트로 / 아르데코 / 러스틱 / 팜하우스 / 보헤미안 / 코스탈 / 지중해 / 전통(한옥) / 프렌치 컨트리 / 어반 / 퓨처리스틱 / 키즈 / 고딕 / 이클렉틱 추가",
+      "(inzoiObjectList meta.json 에 styles 가 있으면 그게 우선 — 이 목록은 fallback)",
+      "상세 모달 '설명' 영역 편집 가능 — CardDescriptionEditor 컴포넌트로 교체. 클릭해서 textarea 로 전환, Ctrl/⌘+Enter 로 저장 / Esc 로 취소 / blur 로 자동 저장"
+    ]
+  },
+  {
+    "version": "1.10.4",
+    "date": "2026-04-24",
+    "changes": [
+      "유사 에셋 가중치 재조정 — 검증 목적(같은 종류 에셋 이미 있는지 확인) 정확도 향상",
+      "  · 이름 키워드 매칭 ×25 → ×50 (가장 강한 신호로 승격)",
+      "  · style +30 → +10, mood +20 → +5 (분위기 기반 일치는 낮춘 보조 신호로)",
+      "  · shape ×20 유지, materials ×10 유지, size +5 유지",
+      "  · colors ×15 제거 — 같은 색이라도 다른 오브젝트 매칭 잦음",
+      "  · 같은 filter -10 페널티 제거 — 검증엔 같은 종류 더 보여야 함",
+      "  · 다른 catHier lv1 -50 페널티 유지 (가구 ↔ 탑승물/건축 배제)",
+      "[기존 카드 자동 반영] 상세에서 유사 에셋 그리드 렌더 시 저장된 features 로 매번 fresh 재계산 — 예전에 분류한 카드도 새 기준으로 자동 재매칭"
+    ]
+  },
+  {
+    "version": "1.10.3",
+    "date": "2026-04-23",
+    "changes": [
+      "리스트 뷰 컬럼 헤더(제목 / 우선순위 / 업데이트 / 카테고리 …) 도 sticky 영역으로 이동 — 카드 스크롤 시 컬럼 라벨이 따라다님",
+      "카드 뷰에서는 컬럼 헤더 숨김 (불필요)"
+    ]
+  },
+  {
+    "version": "1.10.2",
+    "date": "2026-04-23",
+    "changes": [
+      "탭 상단(제목 · 뷰 토글 · 카드 크기 · 정렬 · ＋새 시안 · 업데이트 chip 바) 전부 sticky 고정 — 카드 스크롤 시 상단이 남아 필터/정렬 접근 유지",
+      "메인 / 완료 / 위시 탭 3곳 모두 적용 (top: 64px 전역 헤더 바로 아래)"
+    ]
+  },
+  {
+    "version": "1.10.1",
+    "date": "2026-04-23",
+    "changes": [
+      "헤더에 🔍 전체 카드 검색 추가 — Asset Studio 로고 바로 옆, 제목 / 설명 / 업데이트 태그 / 카테고리·스타일 라벨 매칭. 탭과 무관하게 모든 카드 대상",
+      "입력 즉시 상위 12개 결과 드롭다운 (썸네일 · 상태 · 카테고리 · 업데이트 태그). 클릭하면 상세 모달 오픈",
+      "ESC / ✕ 로 검색어 즉시 초기화, blur 시 드롭다운 자동 닫힘"
+    ]
+  },
+  {
+    "version": "1.10.0",
+    "date": "2026-04-23",
+    "changes": [
+      "[버그 수정] 상세 모달에서 업데이트 일정 입력 후 금방 지워지던 문제 — PriorityField / TargetUpdateField 가 서로 stale card.data 를 PATCH 로 덮어쓰던 race 해결. 각 필드 저장 시 서버 응답을 onSaved 로 부모에 전달해 detailCard 즉시 동기화.",
+      "업데이트 chip ✏️ 일괄 이름 변경 — '교도소 · 3' 같은 chip 옆 ✏️ 클릭하면 인라인 입력으로 전환, 확인 시 해당 태그 붙은 모든 카드의 target_update 를 새 이름으로 일괄 PATCH. 컨펌 카드도 force 로 갱신.",
+      "본인 댓글 삭제 ✕ — 상세 모달 댓글 목록에서 본인이 쓴 댓글만 우측 상단에 ✕ 표시, 서버가 actor 일치 검사 후 DELETE /api/.../comments/:commentId 처리, 'comment_deleted' 활동 기록.",
+      "시안 이미지가 단 한 개뿐이면 무조건 대표 이미지 — CardHubCard / CardListRow / 상세 모달 좌측 대표 이미지 모두 designs.length === 1 일 때 card.thumbnail_url 보다 그 한 장을 우선."
+    ]
+  },
+  {
+    "version": "1.9.9",
+    "date": "2026-04-23",
+    "changes": [
+      "상단 🔥 우선순위 chip 필터 바 제거 — 리스트 컬럼 헤더 클릭 정렬로 같은 역할 커버",
+      "PriorityChipBar / matchesPriorityFilter / collectPriorityChips / selectedPriorities 관련 코드 전부 삭제 (데드 코드 방지)",
+      "우선순위 필드(상세 모달)와 리스트 컬럼 / 정렬은 그대로 유지"
+    ]
+  },
+  {
+    "version": "1.9.8",
+    "date": "2026-04-23",
+    "changes": [
+      "우선순위 필드를 상세 모달 좌측 최상단(썸네일 위)으로 이동 — 카드 열자마자 가장 먼저 눈에 들어오도록",
+      "리스트 뷰 컬럼 헤더 클릭 정렬 — 제목 / 우선순위 / 업데이트 / 카테고리 / 스타일 / 크기 / 상태 / 생성일 모두 클릭 가능",
+      "클릭 사이클 = 기본(생성일 역순) → ▲ 오름차순 → ▼ 내림차순 → 기본 (토글)",
+      "활성 정렬 컬럼은 primary 색상 + ▲/▼ 화살표로 강조, 나머지는 ↕ 힌트",
+      "sortCardArray 가 getCard 리졸버 받아 wishlist / 완료 탭(item 배열)에서도 card.data 기반 정렬 동작",
+      "우선순위 정렬은 '1 < 2 < 3 < 미정 < 보류' 순, 업데이트 정렬은 '미지정' 항상 뒤로, 크기는 W×D×H 부피 기준, 상태는 시안 수 기준 (컨펌은 최상위)"
+    ]
+  },
+  {
+    "version": "1.9.7",
+    "date": "2026-04-23",
+    "changes": [
+      "우선순위 '미정' 버튼이 투명 배경·투명 테두리라 안 보이던 문제 수정 — 회색 배경 + 테두리 추가",
+      "우선순위 버튼 클릭 시 active 하이라이트가 즉시 반영 안되던 문제 수정 — optimistic local state 로 클릭 즉시 UI 업데이트, 실패 시 rollback",
+      "활성 버튼에 그림자 추가 — 선택 여부 더 명확"
+    ]
+  },
+  {
+    "version": "1.9.6",
+    "date": "2026-04-23",
+    "changes": [
+      "🔥 우선순위 필드 추가 — card.data.priority 에 1/2/3/미정/보류 5개 고정값 저장, 상세 모달 최상단 어셋 정보 섹션 위에 버튼 5개로 편집",
+      "리스트 뷰에 [우선순위] 컬럼 추가 — 제목과 업데이트 사이, 1(빨강)/2(주황)/3(노랑)/미정(회색)/보류(흐림) 색상 뱃지",
+      "메인/완료/위시 탭 상단에 🔥 우선순위 chip 필터 바 — 업데이트 chip 바 위에 다중 선택, 카드에 실제 등장한 값만 노출",
+      "LIST_GRID 를 8→9 컬럼으로 확장 (90px 1fr 70px 90px 150px 80px 130px 95px 100px)"
+    ]
+  },
+  {
+    "version": "1.9.5",
+    "date": "2026-04-22",
+    "changes": [
+      "리스트 뷰에 [업데이트] 컬럼 추가 — 제목과 카테고리 사이에 🗓️ target_update 값 (교도소 / voc / 미지정 등) 표시",
+      "LIST_GRID 를 7→8 컬럼으로 확장 (90px 1fr 90px 150px 80px 130px 95px 100px)"
+    ]
+  },
+  {
+    "version": "1.9.4",
+    "date": "2026-04-23",
+    "changes": [
+      "유사 에셋 썸네일에서 ↗ 바로가기 배지와 NN% 유사도 배지 제거 — 깔끔한 아이콘만 표시"
+    ]
+  },
+  {
+    "version": "1.9.3",
+    "date": "2026-04-23",
+    "changes": [
+      "유사 에셋 매칭에 catHier lv1 분류 반영 — 가구 카드 검색 시 탑승물 / 건축 / 제작·기타 같은 다른 lv1 의 에셋은 -50 페널티로 자동 배제",
+      "서버가 catHier 를 파싱해 filter→lv1 / filter→lv2 매핑을 만들고 posmap 응답 각 entry 에 lv1/lv2 첨부",
+      "사용자 카드의 카테고리에서 lv1 자동 계산 (FURNITURE_CATEGORIES.group), 매칭 시 cross-lv1 강한 페널티",
+      "[데이터 출처 재확인] posmap_scores.json (shape/style/materials) + objects.json (filter/name) + meta.json (catHier lv1 매핑) 3개 모두 정상 소비"
+    ]
+  },
+  {
+    "version": "1.9.2",
+    "date": "2026-04-23",
+    "changes": [
+      "유사 에셋 매칭 정확도 향상 (검증 용도) — Gemini 가 posmap_shape (형태: 곡선/사각/원형/유기적/직선) + keywords (한글 명사 1~3개) 도 추출",
+      "매칭 점수에 shape 매칭 ×20, asset name 키워드 매칭 ×25 추가 — '바구니' 같은 명사로 카탈로그 이름 검색해 같은 종류 에셋 우선 노출",
+      "같은 카테고리 페널티 -30 → -10 으로 완화 — 검증엔 같은 종류 매칭이 더 중요",
+      "서버 posmap 응답에 shape 배열 + objects.json name 포함 (키워드 매칭 가능)",
+      "추천 배지에 매칭 근거 표시: 🔑 키워드 · 형태 · 스타일 · 재질"
+    ]
+  },
+  {
+    "version": "1.9.1",
+    "date": "2026-04-23",
+    "changes": [
+      "[버그 수정] /api/object-meta 가 5초 타임아웃으로 abort 되어 posmap 유사도 매칭이 작동 안 하던 문제 — object-meta upstream fetch 만 20초로 상향 (objects.json 1.8MB + posmap_scores.json 333KB 동시 수신)",
+      "개별 파일 실패 시 fallback (meta 필수, objects/posmap 빈 배열) 로 부분 성공 허용 → 하나가 느려도 전체 응답 막히지 않음"
+    ]
+  },
+  {
+    "version": "1.9.0",
+    "date": "2026-04-23",
+    "changes": [
+      "기존 제작 에셋 top-12 컷오프(기본 카테고리 정렬) · 자동 분류 시 posmap_scores 유사도 기반 재정렬",
+      "/api/object-meta 응답에 posmap_scores (전 에셋 ML 분석) 포함 — style/mood/size/colors/materials/filter",
+      "Gemini 자동 분류 1콜이 posmap 스키마와 동일한 한글 feature 추출 (posmap_style/mood/size/colors/materials) — 추가 호출 없음",
+      "클라이언트가 카드 feature 로 전 5,790개 에셋 전수 스캔, inzoiObjectList 의 calcSimilarity 알고리즘 그대로 사용 (스타일 +30, 무드 +20, 색상 ×15, 재질 ×10, 같은 카테고리 -30 크로스 카테고리 유도) — 즉시 완료",
+      "card.data.catalog_matches 에 features + top-12 items 저장, 썸네일 그리드가 이 우선, 각 썸네일에 유사도 % + 카테고리 배지 표시"
+    ]
+  },
+  {
+    "version": "1.8.7",
+    "date": "2026-04-23",
+    "changes": [
+      "카탈로그 상세 모달을 iframe 으로 회귀 — 카탈로그 자체 상세 UI (#item=<id>) 를 그대로 재사용해 원본 프로젝트 업데이트가 자동 반영",
+      "1.8.6 에서 추가했던 서버 /api/object-detail 엔드포인트 · loadCatalogCache · 클라 Section/InfoCell/ThumbGrid/MAT_KO 등 한글 라벨 맵 전부 제거 (중복 렌더 제거)",
+      "iframe 모달 헤더: 📦 에셋 카탈로그 · <id> · ↗ 새 탭 · ✕. ESC 로 닫힘"
+    ]
+  },
+  {
+    "version": "1.8.6",
+    "date": "2026-04-23",
+    "changes": [
+      "카탈로그 상세 모달이 inzoiObjectList 의 모달과 동일한 구성으로 대폭 확장 — 서버가 object_templates / posmap_scores / state_variations / customize_data / grab_types / collection_items / item_history / recommendations / similar_items 까지 한 번에 통합 캐시",
+      "포지셔닝맵 분석 섹션 (스타일/무드/크기/재질/색상 팔레트), 배치 정보 (carriable/handStyle/placement), 커스터마이즈 정보 (파트·AI 텍스처 지원 여부), 변형 (state_variations), 함께 배치된 아이템, 유사 아이템(벡터 유사도) 전부 표시",
+      "헤더 태그 라인에 inzoiObjectList 와 동일한 pill (카테고리 경로·가격·커마 가능/재질·잠금해제 조건·grab 유형·컬렉션·추가/수정일) 배치",
+      "재질/잠금조건/grab/컬렉션 한글 라벨 맵 (MAT_KO/COND_KO/GRAB_KO/COLL_KO) 클라이언트 복사"
+    ]
+  },
+  {
+    "version": "1.8.5",
+    "date": "2026-04-23",
+    "changes": [
+      "[버그 수정] 카탈로그 상세 모달이 '로딩 중' 에서 멈추던 문제 — inzoiObjectList :8080 upstream fetch 에 5초 AbortController 타임아웃 추가",
+      "서버 timedFetch 헬퍼로 모든 upstream (/api/object-meta, /api/object-detail, /api/object-icon) 통일",
+      "클라이언트 모달 에러 UI 개선 — '카탈로그 데이터 불러오기 실패' + 구체적 안내 ('운영자 PC 의 object catalog 서버 확인')"
+    ]
+  },
+  {
+    "version": "1.8.4",
+    "date": "2026-04-23",
+    "changes": [
+      "카탈로그 상세를 iframe 대신 네이티브 모달로 렌더 — /api/object-detail/:id 가 해당 에셋 데이터만 내려주고 클라이언트가 직접 그림 (전체 카탈로그 페이지 로드 없음, 훨씬 가볍고 빠름)",
+      "네이티브 모달: 아이콘 200×200, 이름/설명/필터/가격/태그/스타일태그/재질/속성, 같은 필터 변형 최대 10개 썸네일 — 클릭 시 모달 내에서 이동",
+      "[버그 수정] 완료 카드 '🔓 재오픈' 버튼이 실제로 잠금 풀리지 않던 문제 — 서버 updateCardField SQL 의 COALESCE 가 null 바인딩을 '변경 없음' 으로 처리. body.confirmed_at === null 일 때 별도 UPDATE 로 NULL 강제 (confirmed_by 도 동시 클리어)"
+    ]
+  },
+  {
+    "version": "1.8.3",
+    "date": "2026-04-23",
+    "changes": [
+      "카탈로그 상세를 새 탭 대신 현재 페이지의 iframe 모달로 표시 — 92vw × 88vh, 헤더에 에셋 id / '↗ 새 탭' / ✕",
+      "📎 카탈로그 전체 보기 버튼도 동일 iframe 모달로 (해시 없이 홈 로드)",
+      "기존 이미지 lightbox 는 그대로 유지 — 카탈로그 모달은 더 높은 z-index 로 오버레이"
+    ]
+  },
+  {
+    "version": "1.8.2",
+    "date": "2026-04-23",
+    "changes": [
+      "기존 제작 에셋 썸네일 클릭 시 inzoiObjectList 의 해당 에셋 상세를 새 탭으로 딥링크 — URL 해시 `#item=<id>` 로 카탈로그가 자동 인식해 모달 오픈",
+      "썸네일 우측 상단에 ↗ 배지 + hover 시 테두리 강조 + 살짝 떠오르는 피드백으로 '클릭 가능' 시각화"
+    ]
+  },
+  {
+    "version": "1.8.1",
+    "date": "2026-04-23",
+    "changes": [
+      "카테고리 스펙 배너에 '📦 기존 제작 에셋' 썸네일 그리드 추가 — inzoiObjectList 의 카탈로그 상위 8개 에셋 아이콘 표시",
+      "서버 /api/object-icon/:id 프록시 엔드포인트 — :8080/img/*.PNG 를 동일 오리진으로 프록시, 24시간 브라우저 캐시",
+      "spec.sample_thumbs = [{id, name, icon_url, price, tags}] 8개 반환, 썸네일 클릭 시 lightbox, hover 툴팁에 이름/가격/태그",
+      "📎 '카탈로그 전체 보기' 링크 버튼으로 inzoiObjectList :8080 홈 새 탭 오픈"
+    ]
+  },
+  {
+    "version": "1.8.0",
+    "date": "2026-04-23",
+    "changes": [
+      "컨셉시트 생성이 Gemini 3 Flash Image (나노바나나2) 로 4뷰(정면·측면·후면·상단) 병렬 생성 — 기존 Canvas 2D 합성 대체",
+      "각 뷰 1024² 수준, 카드별 card.data.concept_sheet_views = { front, side, back, top, model, generated_at, source_image_url } 저장",
+      "상세 모달 sheet 패널에 2×2 그리드 미리보기 + 📥 뷰별 다운로드 버튼. 실패 뷰는 '실패' 표시로 재생성 가능",
+      "[버그 수정] 참조 이미지에서 '대표' 지정해도 카드 썸네일이 이전 디자인/시안으로 보이던 문제 — card.thumbnail_url 을 항상 최우선으로, 없을 때만 tabId 별 fallback"
+    ]
+  },
+  {
+    "version": "1.7.9",
+    "date": "2026-04-23",
+    "changes": [
+      "Gemini 시안 생성 프롬프트 영문 일관화 — 카테고리/스타일을 id 기반 영문으로 변환(PascalCase → 'vanity table', 'mid century modern')",
+      "크기 정보가 있으면 프롬프트에 'target size: 190cm wide, 210cm deep, 50cm tall' 자동 포함",
+      "카탈로그 spec hints (referenced variants / tags) 는 프롬프트에서 제거 — 사용자 요청에 따라 참조이미지 + 프롬프트 + 스타일 + 크기만 포함"
+    ]
+  },
+  {
+    "version": "1.7.8",
+    "date": "2026-04-23",
+    "changes": [
+      "참조 이미지에 hover 오버레이 추가 — '☆ 대표' / '✕ 삭제' 버튼으로 카드 썸네일 지정 및 제거",
+      "현재 카드 썸네일과 일치하는 참조 이미지는 ⭐ 배지 + 노란 테두리로 구분"
+    ]
+  },
+  {
+    "version": "1.7.7",
+    "date": "2026-04-23",
+    "changes": [
+      "리스트 뷰에 스타일 / 크기 컬럼 추가 — 총 7컬럼(썸네일 · 제목 · 카테고리 · 스타일 · 크기 · 상태 · 날짜)",
+      "크기는 '180×210×50 cm' 모노스페이스 + source 아이콘(🤖/📚/✏️) 으로 출처 표시",
+      "스타일은 라운드 배지(모던/스칸디나비안 등) 로 강조"
+    ]
+  },
+  {
+    "version": "1.7.6",
+    "date": "2026-04-23",
+    "changes": [
+      "🤖 자동 분류가 카테고리 + 스타일 + 크기(W/D/H cm) 까지 한 번에 제안 — Gemini 응답에 width_cm / depth_cm / height_cm / size_confidence / size_reason 추가",
+      "추천 배지에 '📏 180×210×50cm · 70%' 로 크기도 표시, [적용] 한 번으로 세 필드 전부 반영",
+      "카테고리 선택 즉시 ASSET_SPECS 매핑 카테고리는 카탈로그 중앙값(midpoint) 으로 size_info 자동 채움 (source='catalog') — 기존 값 있으면 건드리지 않음",
+      "SizeInfoPanel 의 개별 AI 추정 버튼 제거 — 통합 '자동 분류' 로 일원화, 입력 상태 배지(🤖 AI 추정 / 📚 카탈로그 기준 / ✏️ 수동 입력) 추가"
+    ]
+  },
+  {
+    "version": "1.7.5",
+    "date": "2026-04-23",
+    "changes": [
+      "📏 크기 정보 패널 추가 — 어셋 정보 안에 별도 강조된 초록색 박스로 W/D/H (cm) 수동 입력 필드",
+      "'🔍 이미지로 AI 추정' 버튼 — Gemini Vision 이 참조/썸네일 이미지에서 실제 크기(cm) 추정, JSON 응답 파싱 → 필드 자동 채움",
+      "카탈로그 참고 범위 — PascalCase 카테고리 id 를 ASSET_SPECS (kebab) 로 매핑하는 CATEGORY_TO_LEGACY_SPEC 테이블로 10여 카테고리는 기본 크기 범위 표시",
+      "업데이트 일정 필드를 어셋 정보 안에서 밖으로 이동 — 상세 모달 좌측, 어셋 정보 상단에 별도 노란색 박스로 강조",
+      "card.data.size_info 구조: { width_cm, depth_cm, height_cm, source: 'manual'|'ai', confidence, reason, updated_at }"
+    ]
+  },
+  {
+    "version": "1.7.4",
+    "date": "2026-04-23",
+    "changes": [
+      "업데이트 일정 필드 + 필터 추가 — 카드 상세 어셋 정보에 🗓️ 업데이트 일정 자유 입력 (card.data.target_update), 기존 값 datalist 자동완성",
+      "모든 메인 탭(위시 / 시안 생성 / 투표 / 컨셉시트 / 완료) 상단에 chip 바 노출 — '[전체] [2026-Q2] [미지정]' 다중 토글",
+      "chip 은 탭에 보이는 카드 내 값만 집계 · 빈 값은 '미지정' 으로 묶임 · 한글 정렬"
+    ]
+  },
+  {
+    "version": "1.7.3",
+    "date": "2026-04-23",
+    "changes": [
+      "카테고리 선택 시 스펙 배너 대폭 확장 — 인용 설명(sample_desc), 예시 이름, 태그, 스타일, 가격대(min~max, 중앙값), 커스터마이즈/해금 카운트 표시",
+      "서버 /api/object-meta spec 블록에 sample_desc / unlock_count / custom_count 추가",
+      "배너 헤더에 카테고리 아이콘 + '가구 / 침실' 같은 계층 경로 노출"
+    ]
+  },
+  {
+    "version": "1.7.2",
+    "date": "2026-04-23",
+    "changes": [
+      "🤖 자동 분류가 카테고리 + 스타일 프리셋을 한 번에 추천 — Gemini 응답에 style_id / style_confidence 추가",
+      "추천 배지에 '· 모던 스타일 · 70%' 포맷으로 두 결과 동시 표시, [적용] 한 번으로 둘 다 반영",
+      "이미 스타일이 선택된 카드는 [적용] 시 카테고리만 교체하고 기존 스타일 유지 (배지에 '(기존 선택 유지)' 표시)"
+    ]
+  },
+  {
+    "version": "1.7.1",
+    "date": "2026-04-23",
+    "changes": [
+      "카테고리 스펙 정보 추가 — /api/object-meta 가 objects.json(5,265 에셋) 도 읽어 카테고리별 sample_names / common_tags / styles / price_range 생성",
+      "Gemini 시안 생성 프롬프트에 실제 카탈로그의 변형 이름/태그 자동 concat (기존 하드코딩 ASSET_SPECS 대신 208개 전 카테고리 커버)",
+      "어셋 정보 섹션에 '✦ <카테고리> 스펙' 배지 추가 — 카탈로그 에셋 수, 예시 이름, 태그, 스타일 표시",
+      "meta/spec 캐시 주기 5분 → 1시간 (자주 안 바뀌는 데이터, 부하 감소)"
+    ]
+  },
+  {
+    "version": "1.7.0",
+    "date": "2026-04-22",
+    "changes": [
+      "카테고리 / 스타일을 inzoiObjectList 의 meta.json 과 자동 연동 — 서버 /api/object-meta 가 운영자 PC :8080/data/meta.json 을 프록시해 catHier + filterKo + objTags 에서 목록 생성",
+      "클라이언트는 앱 시작 시 + 5분 주기로 목록 갱신, 실패 시 내장 fallback 목록 사용",
+      "meta.json 이 변동되면 최대 5분 내 자동 반영 (서버 캐시 동일 주기, ?force=1 로 즉시 무효화 가능)"
+    ]
+  },
+  {
+    "version": "1.6.9",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] 시안 생성 / 투표 탭의 카드 썸네일이 '대표 이미지' 변경을 반영하지 않던 문제 — 첫 시안 이미지를 무조건 쓰던 로직을 '선정 시안 > 첫 시안 > 카드 썸네일' 우선순위로 교체 (CardHubCard / CardListRow 모두)"
+    ]
+  },
+  {
+    "version": "1.6.8",
+    "date": "2026-04-22",
+    "changes": [
+      "위시리스트 '새 아이디어 추가' 폼을 좌측 사이드에서 제거 — 헤더 '＋ 새 아이디어' 버튼 누르면 모달로 오픈",
+      "그리드가 전체 너비 차지, 시안 생성 / 완료 탭과 레이아웃 통일",
+      "빈 위시리스트에서 '＋ 첫 아이디어 추가' CTA 버튼 노출"
+    ]
+  },
+  {
+    "version": "1.6.7",
+    "date": "2026-04-22",
+    "changes": [
+      "리스트 뷰 행 높이 약 1.5배 확대 — 썸네일 60→90px, 패딩 10→15px, 제목/메타 폰트 조금 키움"
+    ]
+  },
+  {
+    "version": "1.6.6",
+    "date": "2026-04-22",
+    "changes": [
+      "어셋 정보의 카테고리 선택기를 검색 가능한 콤보박스로 교체 — 50+ 카테고리를 라벨/방/id 로 substring 매칭",
+      "키보드 ↑ ↓ / Enter / Esc 지원, ✕ 로 선택 초기화, 바깥 클릭으로 닫힘"
+    ]
+  },
+  {
+    "version": "1.6.5",
+    "date": "2026-04-22",
+    "changes": [
+      "메인 페이지 뷰 토글 추가 — 🔲 카드 뷰(기본) ↔ ☰ 리스트 뷰",
+      "리스트 뷰는 썸네일(60px) + 제목 + 카테고리 + 상태/시안수 + 날짜 컬럼으로 컴팩트 표시, 많은 카드를 한 눈에 스캔",
+      "뷰 선택은 localStorage 에 저장되어 새로고침해도 유지, 리스트 뷰에선 카드 크기 토글 숨김"
+    ]
+  },
+  {
+    "version": "1.6.4",
+    "date": "2026-04-22",
+    "changes": [
+      "🤖 카테고리 자동 분류 추가 — 카드 상세 모달의 카테고리 필드 옆 '자동 분류' 버튼을 누르면 첨부 이미지를 Gemini 2.5 Flash Vision 에 보내 카테고리 id + confidence 반환",
+      "자동 적용하지 않고 '추천: 🛏️ 침대 (85%)' 배지로 제안, [적용] 클릭 시 반영 — 확신도 50% 미만은 주황색으로 표시",
+      "응답이 실제 FURNITURE_CATEGORIES 에 존재하는 id 인지 검증해 hallucination 방지"
+    ]
+  },
+  {
+    "version": "1.6.3",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] 위시리스트 / 상세 모달에서 입력창에 포커스된 상태로 Ctrl+V 하면 이미지 붙여넣기가 동작하지 않던 문제 해결 — 클립보드에 이미지가 있을 때만 기본 동작을 가로채고, 텍스트 붙여넣기는 그대로 유지"
+    ]
+  },
+  {
+    "version": "1.6.2",
+    "date": "2026-04-22",
+    "changes": [
+      "카드 썸네일 비율 조정 — 이미지 높이 180→240 (33% 증가), 본문 패딩/폰트 축소로 설명 영역 압축. 설명은 1줄로 말줄임 처리.",
+      "'카드' 보조 배지 제거로 헤더 공간 절약"
+    ]
+  },
+  {
+    "version": "1.6.1",
+    "date": "2026-04-22",
+    "changes": [
+      "컨셉시트 생성 버튼이 선정된 시안이 없어 비활성화되던 문제 개선 — 선정 시안 → (미선정) 첫 시안 → 카드 썸네일 순으로 fallback, 하나라도 있으면 활성화",
+      "소스 이미지 라벨과 툴팁에 어떤 이미지로 만들지 표시"
+    ]
+  },
+  {
+    "version": "1.6.0",
+    "date": "2026-04-22",
+    "changes": [
+      "메인 카드 그리드에 카드 크기 토글(0.5× / 1× / 2×) 추가 — localStorage 에 저장되어 새로고침 후에도 유지",
+      "위시리스트 / 완료목록 카드가 시안 생성 탭 크기 기준으로 동일한 양식, 스케일 적용",
+      "위시리스트 이미지 다중 첨부 지원 — 파일 선택(multiple) · Ctrl+V 반복 붙여넣기 모두 최대 4개까지 누적",
+      "위시리스트 생성 시 첫 이미지는 썸네일로, 전체는 data.ref_images 로 저장 → drafting 단계에서 그대로 참조이미지로 사용",
+      "카드 상세 모달(AssetInfoEditor)에서 Ctrl+V 로 참조 이미지 붙여넣기 지원"
+    ]
+  },
+  {
+    "version": "1.5.9",
+    "date": "2026-04-22",
+    "changes": [
+      "위시리스트 / 완료목록 카드 그리드를 CardHubCard 양식으로 통일 — 시안 생성 / 투표 / 컨셉시트 생성 탭과 동일한 UI",
+      "메인 카드 그리드에 정렬 드롭다운 추가 (최신순 / 오래된순 / 이름 A→Z / 이름 Z→A)",
+      "CardHubCard 가 tabId='wishlist' 와 'completed' 도 인식해 썸네일/메타 표시"
+    ]
+  },
+  {
+    "version": "1.5.8",
+    "date": "2026-04-22",
+    "changes": [
+      "카드 상세 모달에서 ← → 키로 같은 탭의 이전/다음 카드로 이동",
+      "상세 모달 오픈 시 slide-in 애니메이션 제거 (바로 표시)",
+      "완료 목록 / 위시리스트 카드 클릭이 항상 새 카드 모달을 열도록 수정 — item._cardId 우선 사용해 접두사 중복 방지"
+    ]
+  },
+  {
+    "version": "1.5.7",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] 같은 카드가 2개씩 보이는 근본 원인 제거 — 클라이언트의 legacy completed/wishlist 싱크 effect 제거 (cards 가 유일 SOT)",
+      "이 싱크가 cards → legacy → ensureLegacyMigration → 이중 접두사 카드 재생성(e.g. comp-wish-xxx) 을 유발하고 있었음",
+      "앱 초기화 dedupe 가 이중 접두사 카드(`comp-wish-…`, `wish-job-…`, `comp-job-…`)를 우선 삭제하도록 강화 — 기존 중복 데이터도 한번에 정리",
+      "수동 위시/완료 추가 핸들러에서도 legacy POST 제거"
+    ]
+  },
+  {
+    "version": "1.5.6",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] 위시리스트에 같은 내용 카드가 여러개 보이던 문제 — 앱 초기화 시 list_id+title+description+thumbnail 동일한 중복 카드 자동 정리(가장 오래된 1개 유지), derived 단계에서도 내용 기준 중복 제거",
+      "완료목록 카드 상세의 시안 이력이 legacy 마이그레이션 카드(designs 없음)에서도 data.image_url / concept_sheet_url 로 fallback 해 표시",
+      "lightbox 갤러리 순환 대상에 data.image_url 포함 — 완료 카드에서도 ← → 로 확인 가능"
+    ]
+  },
+  {
+    "version": "1.5.5",
+    "date": "2026-04-22",
+    "changes": [
+      "카드 상세 모달의 참조 이미지(72→144px) 및 시안 썸네일(100→200px) 크기 2배 확대 — 드래프트 패널 / 시안 이력 / AssetInfoEditor 모두 일괄"
+    ]
+  },
+  {
+    "version": "1.5.4",
+    "date": "2026-04-22",
+    "changes": [
+      "시안 작업 큐 재설계 — 실제로 생성 중인 항목이 있을 때만 우하단에 노출, 끝나면 자동 숨김",
+      "카드 생성 진행률(done/total + 프로그레스 바)을 카드별로 표시, 클릭 시 해당 카드 상세 모달 오픈",
+      "기존 레거시 job queue 는 여전히 loading 중인 것만 표시"
+    ]
+  },
+  {
+    "version": "1.5.3",
+    "date": "2026-04-22",
+    "changes": [
+      "시안 이력 섹션 추가 — 컨셉시트 / 완료 단계 카드도 상세 모달에서 그동안 생성된 시안(designs)을 그리드로 확인, 썸네일 클릭 시 lightbox 로 원본 열람",
+      "선정된 시안은 ⭐ 배지 + 노란 테두리로 표시"
+    ]
+  },
+  {
+    "version": "1.5.2",
+    "date": "2026-04-22",
+    "changes": [
+      "이미지 lightbox 좌/우 이동 지원 — 카드 상세에서 열린 이미지는 ← → 키 또는 ‹ › 버튼으로 해당 카드의 모든 이미지(썸네일·참조·시안·컨셉시트)를 순환",
+      "인덱스 표시(1/N) 하단 중앙에 추가"
+    ]
+  },
+  {
+    "version": "1.5.1",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] 위시리스트 이미지가 시안 단계로 넘어오면 참조이미지에서 사라지던 문제 해결 — card.thumbnail_url 로 ref_images 자동 seed & 서버 저장",
+      "Gemini multimodal 호출도 ref_images 비어있으면 thumbnail_url 로 fallback"
+    ]
+  },
+  {
+    "version": "1.5.0",
+    "date": "2026-04-22",
+    "changes": [
+      "시안 썸네일 클릭 시 원본 해상도 lightbox 오픈 (hover 오버레이가 pointer-events: none 으로 더 이상 클릭을 가로채지 않음)",
+      "'☆ 대표' 버튼 추가 — 상태 이동 없이 카드 대표 이미지(썸네일)만 지정, 대표 지정된 시안은 ⭐ 배지 + 노란 테두리 표시",
+      "카드 상세 모달 크기 약 30% 확장 (960×92vh → 1250×94vh, maxWidth 96vw)"
+    ]
+  },
+  {
+    "version": "1.4.9",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] '투표 및 선정' / '컨셉시트 생성' 탭이 선택 직후 다시 '시안 생성' 으로 튕기던 문제 해결",
+      "  - legacy job step 기반 자동 탭 전환 effect 가 탭 클릭 직후 덮어쓰던 것을 showWorkflowDetail 이 켜진 경우로만 제한"
+    ]
+  },
+  {
+    "version": "1.4.8",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] 카드 삭제가 폴링 후 되돌아가 보이던 문제 해결 — 서버 DELETE 가 대응되는 legacy wishlist_items/completed_items 행도 함께 제거"
+    ]
+  },
+  {
+    "version": "1.4.7",
+    "date": "2026-04-22",
+    "changes": [
+      "카드 상세 모달 제목 인라인 편집 — 제목 클릭 시 input 전환, Enter/blur 로 저장, ESC 취소"
+    ]
+  },
+  {
+    "version": "1.4.6",
+    "date": "2026-04-22",
+    "changes": [
+      "'투표 및 선정' 탭이 drafting 중 designs 가 생성된 '선정 대기' 카드만 보여주도록 필터 분리",
+      "'컨셉시트 생성' 탭은 sheet 상태 카드만 (기존 동일)",
+      "상세 모달에 🗑️ 영구 삭제 버튼 추가 — 아카이브(soft)와 구분되는 복구 불가 작업"
+    ]
+  },
+  {
+    "version": "1.4.5",
+    "date": "2026-04-22",
+    "changes": [
+      "상세 모달의 아카이브 버튼이 상태 토글(🗄️ 아카이브 / 📤 복구)로 구분 표시",
+      "이미지 클릭 시 원본 해상도 lightbox 뷰어 오픈 (상세 썸네일, 시안 그리드, 컨셉시트, 참조이미지)",
+      "기존 레거시 '새 작업' (빈) 카드 클릭 시 자동으로 card 마이그레이션 + 상세 모달 오픈"
+    ]
+  },
+  {
+    "version": "1.4.4",
+    "date": "2026-04-22",
+    "changes": [
+      "'＋ 새 시안' 버튼이 레거시 job 대신 카드를 drafting 상태로 생성하고 상세 모달을 즉시 오픈",
+      "시안 생성 탭에서 '새 작업' 카드를 열면 어셋 정보가 모달 안 AssetInfoEditor 에서 바로 편집",
+      "기존 레거시 작업(화면 하단 전개)은 phase-out — 새로 만드는 작업은 전부 카드 모달 경로"
+    ]
+  },
+  {
+    "version": "1.4.3",
+    "date": "2026-04-22",
+    "changes": [
+      "어셋 정보(카테고리·스타일·프롬프트·참조이미지) 입력이 카드 상세 모달 안에서 인라인 자동 저장",
+      "카드 생성은 최소 정보(제목 등)만, 세부 편집은 상세에서 점진적으로",
+      "별도 '시안 생성 준비' 다이얼로그 제거 — 위시 → 시안 이동은 필수 필드 검증 후 바로 전환",
+      "[버그 수정] 아카이브에서 복구 시 카드가 다시 보이지 않던 문제 해결 + 복구된 단계 탭으로 자동 전환"
+    ]
+  },
+  {
+    "version": "1.4.2",
+    "date": "2026-04-22",
+    "changes": [
+      "[버그 수정] 위시 → 시안 생성 이동 시 카드가 사라지던 문제 해결",
+      "워크플로우 탭(시안 생성/투표/컨셉시트)이 이제 새 cards 시스템 카드도 그리드에 렌더",
+      "CardHubCard 컴포넌트 추가 — 시안 개수 / 컨셉시트 생성 여부 / 스타일 등 표시",
+      "탭 카운트 뱃지가 legacy jobs + 새 카드 합산",
+      "카드 클릭 시 기존 통합 카드 모달 오픈 (Gemini 시안 생성 UI 바로 접근 가능)"
+    ]
+  },
+  {
+    "version": "1.4.1",
+    "date": "2026-04-22",
+    "changes": [
+      "위시 → 시안 생성 전환 시 자동으로 시안 생성 탭으로 이동 (이전엔 위시 탭에 머물러 카드를 못 찾음)",
+      "카드 모달에서 status_key 가 바뀌면 그 단계에 해당하는 탭으로 자동 전환",
+      "예: 시안 → 컨셉시트 → 완료 단계 이동 시 사용자도 함께 이동"
+    ]
+  },
+  {
+    "version": "1.4.0",
+    "date": "2026-04-22",
+    "changes": [
+      "위시 → 시안 생성 전환 시 다이얼로그 추가 (카테고리·스타일·프롬프트·참조이미지 입력)",
+      "Gemini 멀티모달 호출 — 참조 이미지를 inline_data 로 함께 전송하여 스타일 반영",
+      "프롬프트 자동 enhance: 카테고리·스타일·스펙 힌트가 합성된 enhancedPrompt 사용",
+      "위시 카드 썸네일이 자동으로 참조이미지 후보로 채워짐 (4개까지 추가 가능)",
+      "참조 이미지는 /api/upload 거쳐 /data/images/ URL 로 보관"
+    ]
+  },
+  {
+    "version": "1.3.3",
+    "date": "2026-04-22",
+    "changes": [
+      "자동 복구 로직 강화 — 자동 복구가 실패해도 마지막 정상 버전으로 롤백",
+      "auto-update 가 빌드/재시작 후 health 체크 — 실패 시 이전 커밋으로 자동 롤백",
+      "health-check.ps1 이 pm2 상태까지 확인 후 필요 시 강제 rebuild + restart (4단계 복구)",
+      "pm2 max_restarts 20 → 50, exp_backoff_restart_delay 추가로 일시 오류에 더 관대"
+    ]
+  },
+  {
+    "version": "1.3.2",
+    "date": "2026-04-22",
+    "changes": [
+      "상단 탭 순서: 위시리스트를 맨 앞으로 이동 (위시 → 시안 생성 → 투표 → 컨셉시트 → 완료)",
+      "[버그 수정] 위시리스트 저장 실패 시 alert 로 명확히 알림 + 폼 초기화 차단 (재시도 가능)",
+      "서버 기동 시 기존 wishlist_items / completed_items 자동으로 cards 로 이주 (npm run migrate:cards 불필요)",
+      "ensureLegacyMigration: 레거시 row 마다 wish-<id> / comp-<id> 존재 여부 체크 후 없는 것만 복사"
+    ]
+  },
+  {
+    "version": "1.3.1",
+    "date": "2026-04-22",
+    "changes": [
+      "브라우저 연결 끊김 감지 + 자동 복구 UX 추가",
+      "폴링 실패 시 상단에 노란색 '🔄 서버 재연결 중' 배너",
+      "3회 연속 실패 시 빨간색 '⚠️ 서버 연결 실패' + 🔁 새로고침 버튼",
+      "연결 끊김 상태에서는 폴링 주기가 5초 → 2초로 단축 (빠른 복구)",
+      "복구되면 자동으로 배너 사라지고 정상 5초 주기 복귀",
+      "/api/health 가 package.json 의 version 을 동적으로 노출"
+    ]
+  },
+  {
+    "version": "1.3.0",
+    "date": "2026-04-22",
+    "changes": [
+      "[Phase B-3] wishlist / completedList state 를 cards 에서 derived 로 완전 전환",
+      "cards 가 single source of truth. 기존 wishlist_items / completed_items 테이블은 하위 호환으로만 유지",
+      "카드 추가 시 setCards 로 즉시 UI 반영 (폴링 기다릴 필요 없음)",
+      "위시리스트 카드 삭제 시 cards 테이블에서 삭제 (UI 즉시 갱신)",
+      "[컨셉시트 카드 내부 생성] sheet 단계 카드 모달에서 '📑 컨셉시트 생성' 버튼으로 바로 PNG 제작",
+      "생성된 컨셉시트는 썸네일 + 카드 썸네일 자동 갱신 + 다운로드 버튼 제공"
+    ]
+  },
+  {
+    "version": "1.2.0",
+    "date": "2026-04-22",
+    "changes": [
+      "[Phase E] Gemini 시안 생성을 카드 내부 액션으로 통합",
+      "카드 모달에 상태별 액션 패널: 아이디어 → 시안 생성 → 컨셉시트 → 완료",
+      "아이디어 카드: '✨ 시안 생성 시작' 버튼으로 drafting 단계 진입",
+      "시안 생성 카드: 카드 내부에서 Gemini로 1/2/4/8개 시안 추가 생성, 썸네일 그리드, 개별 삭제/선정",
+      "시안 선정 시 자동으로 썸네일 갱신 + 컨셉시트 단계로 이동",
+      "컨셉시트 카드: '✅ 최종 완료' 버튼으로 컨펌 + 잠금",
+      "선정된 시안은 카드의 thumbnail_url 로 기록되어 그리드에서 바로 보임"
+    ]
+  },
+  {
+    "version": "1.1.4",
+    "date": "2026-04-22",
+    "changes": [
+      "[Phase F 마무리] 카드 모달에 🔓 재오픈 / 🗄️ 아카이브 버튼 추가",
+      "헤더에 🗄️ 아카이브 버튼 — 보관된 카드 목록 모달 오픈, 카드 클릭 시 복구",
+      "컨펌된(최종 완료) 카드 재오픈 시 force:true 로 잠금 해제 + 이력 기록",
+      "활동 이력에 액션 필터 드롭다운 (모든 액션 / 상태 이동 / 필드 수정 / 댓글 / 완료·재오픈 / 생성)",
+      "서버 GET /api/projects/:slug/cards?archived=1 엔드포인트 — 아카이브 전용 조회"
+    ]
+  },
+  {
+    "version": "1.1.3",
+    "date": "2026-04-22",
+    "changes": [
+      "[핫픽스] 서버가 UNIQUE 제약 위반으로 로그 폭주하던 문제 해결",
+      "원인: 폴링으로 받은 서버 아이템을 debounce effect 가 '새 추가'로 오인해 중복 POST",
+      "서버 측 POST /wishlist, /completed, /cards 가 중복 id 시 조용히 200 반환 (idempotent)",
+      "클라이언트 측 폴링 merge 시 prevRef 도 동기화 → 다음 diff 가 재POST 하지 않음"
+    ]
+  },
+  {
+    "version": "1.1.2",
+    "date": "2026-04-22",
+    "changes": [
+      "[Phase F] 카드 컨펌 시점 JSON snapshot 자동 저장 (data/snapshots/)",
+      "스냅샷에는 카드 + 체크리스트 + 첨부 + 댓글 + 활동 이력 전체 포함",
+      "이후 수정/삭제되어도 snapshot 파일은 immutable 로 보존",
+      "파일명: {card_id}__{timestamp}.json"
+    ]
+  },
+  {
+    "version": "1.1.1",
+    "date": "2026-04-22",
+    "changes": [
+      "[Phase B-2] 위시리스트/완료 아이템 추가 시 cards 테이블에도 이중 저장",
+      "[Phase D] 통합 카드 상세 모달 추가 — 상태 이동, 댓글, 활동 이력, data JSON 뷰어",
+      "완료/위시리스트 카드 클릭 시 cards 에 있으면 새 통합 모달, 없으면 기존 모달 (자동 폴백)",
+      "카드 상태 드롭다운으로 아이디어↔시안↔컨셉시트↔완료 단계 이동",
+      "컨펌(완료) 카드는 모달에서 🔒 잠김 표시 + 댓글/상태 변경 불가"
+    ]
+  },
+  {
+    "version": "1.1.0",
+    "date": "2026-04-22",
+    "changes": [
+      "앱 이름 변경: inZOI Concept Studio → inZOI Asset Studio",
+      "[Phase A] 카드 기반 태스크 관리 DB 스키마 도입 (lists / cards / checklists / card_attachments / card_comments / card_activities / labels / members)",
+      "기본 리스트 4개 자동 시드: 아이디어 / 시안 생성 / 컨셉시트 / 완료",
+      "서버 API 추가: /api/projects/:slug/lists, /cards (CRUD, 댓글, 활동 이력)",
+      "컨펌된 카드는 수정 방어, 상태 이동 시 card_activities 자동 기록"
+    ]
+  },
+  {
+    "version": "1.0.1",
+    "date": "2026-04-21",
+    "changes": [
+      "프로젝트 URL 개념 제거 — 팀 전체가 단일 'default' 프로젝트 공유",
+      "헤더에서 🔗 공유 URL 버튼 제거, 저장 상태 표시로 대체",
+      "워크플로우 탭 진입 시 카드 그리드만 표시, 아래 입력/단계 UI 는 숨김",
+      "카드 클릭 또는 ＋ 새 시안 누를 때만 상세 UI 전개",
+      "상세 헤더에 '← 목록으로' 버튼 추가로 쉽게 그리드 복귀"
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-04-21",
+    "changes": [
+      "[UX 대개편] 각 워크플로우 탭을 카드 허브로 전환",
+      "시안 생성 탭 — 시안 여러 개 동시 관리, 각 카드 클릭 시 갤러리로 진입",
+      "투표 및 선정 탭 — 생성된 시안 리스트가 카드 그리드로 표시, 카드마다 투표자/득표 현황",
+      "컨셉시트 생성 탭 — 선정된 작업 리스트, 시트 생성/검토 상태 한눈에",
+      "탭 상단에 '＋ 새 시안' 버튼 + 작업 개수 안내",
+      "기존 step 기반 단계 UI 는 카드 하단에 '선택된 작업 진행' 섹션으로 통합"
+    ]
+  },
+  {
+    "version": "0.9.10",
+    "date": "2026-04-21",
+    "changes": [
+      "[중대] 이미지 저장소를 파일시스템으로 분리 — /api/upload → data/images/{uuid}.png",
+      "Gemini 시안, 컨셉시트 PNG, 위시 첨부 이미지 모두 서버 파일로 저장 후 URL 만 DB 에 보관",
+      "위시리스트 추가 시 await POST 로 즉시 동기 저장 (새로고침 안전)",
+      "위시리스트 폼 버튼이 이미지 업로드 완료까지 기다린 후 완료 처리",
+      "[버그 수정] DB 2MB row 제한 때문에 이미지가 null 저장되던 문제 근본 해결"
+    ]
+  },
+  {
+    "version": "0.9.9",
+    "date": "2026-04-21",
+    "changes": [
+      "위시리스트 카드 클릭 시 상세 정보 모달 추가 — 큰 이미지/제목/메모/등록일시/삭제/다운로드",
+      "위시리스트 카드의 메모는 2줄까지만 표시(ellipsis), 클릭하면 전체 내용 확인",
+      "삭제 버튼은 카드/모달 양쪽에 제공"
+    ]
+  },
+  {
+    "version": "0.9.8",
+    "date": "2026-04-21",
+    "changes": [
+      "[버그 수정] 파이프라인 전송 완료 직후 새로고침하면 완료 목록에서 사라지던 문제 해결",
+      "파이프라인 전송 시 즉시 서버에 저장 (await) 후 로컬 반영 — 500ms debounce 대기 없이 확정",
+      "beforeunload/pagehide 이벤트에서 sendBeacon 으로 보류 중인 변경사항 긴급 전송",
+      "앱 시작 시 서버 스냅샷으로 prev refs 초기화 — 불필요한 중복 POST 방지"
+    ]
+  },
+  {
+    "version": "0.9.7",
+    "date": "2026-04-21",
+    "changes": [
+      "상단 메뉴를 5단계로 재편 — 시안 생성 / 투표 및 선정 / 컨셉시트 생성 / 완료 목록 / 위시리스트",
+      "각 탭은 담당 step 범위(0-1 / 2-3 / 4-6)의 작업 개수를 뱃지로 표시",
+      "탭 클릭 시 해당 단계의 작업으로 자동 전환, 없으면 친절한 empty-state 안내",
+      "step 이 바뀌면 자동으로 맞는 탭으로 이동 (예: 투표 시작 시 '투표 및 선정' 탭으로)",
+      "'＋ 새 시안' 버튼은 모든 워크플로우 탭에서 사용 가능"
+    ]
+  },
+  {
+    "version": "0.9.6",
+    "date": "2026-04-21",
+    "changes": [
+      "사내 서버 자동 운영 강화 — 5분마다 git pull + 재빌드 + pm2 restart 자동",
+      "2분마다 /api/health 헬스체크 실패 시 자동 복구 (pm2 restart → 실패 시 cold start)",
+      "ecosystem.config.cjs 로 pm2 설정 체계화 (max_restarts 20, restart_delay 5s, 메모리 1GB 초과 시 재시작)",
+      "재부팅 시 pm2-windows-startup 이 프로세스 자동 복구",
+      "logs/ 디렉토리에 auto-update.log, health-check.log, pm2-*.log 남김",
+      "better-sqlite3 v12.9.0 (Node v24 prebuild 공식 지원)"
+    ]
+  },
+  {
+    "version": "0.9.5",
+    "date": "2026-04-21",
+    "changes": [
+      "원클릭 자동 설치 스크립트 추가 — install.ps1 / install.bat / bootstrap.ps1",
+      "관리자 PowerShell 한 줄로 Node/Git 설치 + clone + build + 방화벽 + pm2 + 백업 스케줄러 전부 자동화",
+      "update.bat: GitHub 최신 코드 pull + 재빌드 + pm2 재시작 원클릭",
+      "uninstall.ps1: pm2/방화벽/백업 작업 등록 해제 (데이터 보존)"
+    ]
+  },
+  {
+    "version": "0.9.4",
+    "date": "2026-04-21",
+    "changes": [
+      "사내 PC 배포 지원 — Node + Hono + SQLite 단일 서버 추가 (server.js)",
+      "start.bat / start.sh 원클릭 실행 스크립트",
+      "data/ 폴더 기반 로컬 저장 (SQLite + 이미지 파일시스템)",
+      "scripts/backup.js 로 data/ 폴더 타임스탬프 백업",
+      "기존 Cloudflare 스택은 레거시로 유지 — 사내 운영자 PC 안정화 후 제거 예정",
+      "상세 배포 가이드: README-사내배포.md"
+    ]
+  },
+  {
+    "version": "0.9.3",
+    "date": "2026-04-21",
+    "changes": [
+      "[버그 수정] 완료 목록 항목이 사라지던 문제 해결 — 폴링이 서버 빈 응답으로 로컬 신규 항목 덮어쓰는 경쟁 조건 제거",
+      "대용량 base64 이미지(컨셉시트 등)가 D1 row 제한(2MB)을 넘지 않도록 저장 시 800KB 초과하면 자동 생략 (세션 내 표시는 유지)",
+      "완료 목록/위시리스트 폴링 merge 로직 추가 — 로컬에만 있는 아이템 보존",
+      "향후 R2 마이그레이션으로 근본 해결 예정"
+    ]
+  },
+  {
+    "version": "0.9.2",
+    "date": "2026-04-21",
+    "changes": [
+      "디자인 시안 카드 클릭 시 이미지 확대 모달 (갤러리 스텝)",
+      "확대 모달에서 PNG 로컬 저장 버튼 제공",
+      "모달 하단에 사용된 프롬프트도 함께 표시"
+    ]
+  },
+  {
+    "version": "0.9.1",
+    "date": "2026-04-21",
+    "changes": [
+      "위시리스트에 Ctrl+V 클립보드 이미지 붙여넣기 지원",
+      "시안 개수 기본값을 4개 → 1개로 변경 (필요 시 2/4/8 선택)"
+    ]
+  },
+  {
+    "version": "0.9.0",
+    "date": "2026-04-21",
+    "changes": [
+      "Cloudflare D1 백엔드 연동 — 모든 작업/완료목록/위시리스트가 서버에 저장",
+      "프로젝트 URL 공유 기능 — /p/{slug} URL 로 팀원과 동일 프로젝트 공유",
+      "5초 간격 자동 동기화 — 다른 사람 변경사항이 자동 반영",
+      "헤더 우측에 프로젝트 URL 버튼 추가 (클릭 시 공유 URL 복사)",
+      "localStorage 의존성 제거 — 이제 새로고침/다른 브라우저에서도 동일 데이터"
+    ]
+  },
+  {
+    "version": "0.8.0",
+    "date": "2026-04-21",
+    "changes": [
+      "시안 N개 동시 생성 — 입력 폼에 \"시안 개수\" 선택 (1/2/4/8) 추가",
+      "Gemini API 병렬 호출 (최대 동시 4개 쓰로틀링으로 레이트 리밋 회피)",
+      "큐 패널 진행률이 완료된 시안 개수 표시 (예: 3/4)",
+      "1개만 생성 시 투표 건너뛰고 자동 선정으로 진행",
+      "일부 시안 실패 시에도 성공한 것은 갤러리에 표시 (부분 실패 허용)"
+    ]
+  },
+  {
+    "version": "0.7.1",
+    "date": "2026-04-21",
+    "changes": [
+      "시안 생성을 완전 백그라운드 작업으로 전환 — \"생성중\" 화면 없이 입력 폼 유지",
+      "생성 클릭 시 새 빈 작업으로 자동 전환되어 다음 어셋을 바로 입력 가능",
+      "진행 상황은 우측 하단 큐 패널에서만 표시, 메인 화면은 방해받지 않음",
+      "생성 중인 작업 카드 클릭 시 버튼 비활성화로 중복 제출 방지"
+    ]
+  },
+  {
+    "version": "0.7.0",
+    "date": "2026-04-20",
+    "changes": [
+      "시안 작업 큐 도입 — 여러 시안을 동시에 백그라운드에서 생성",
+      "전체화면 로딩 오버레이 제거, 우측 하단 플로팅 큐 패널로 진행 상황 표시",
+      "헤더 \"＋ 새 시안\" 버튼으로 진행 중 작업 유지한 채 새 작업 시작",
+      "완료된 컨셉시트 클릭 시 대형 모달에 전체 정보/이미지 표시",
+      "완료 목록·위시리스트 localStorage 자동 저장 (새로고침해도 유지)",
+      "컨셉시트 전 뷰에 동일 디자인 공유 (정면/측면/후면/디테일 자동 변형)",
+      "컨셉시트 캔버스 한글 라벨 + 라이트 테마 통일"
+    ]
+  },
+  {
+    "version": "0.6.0",
+    "date": "2026-03-27",
+    "changes": [
+      "나노바나나2 (Gemini 3.1 Flash Image) API 연동으로 실제 이미지 생성",
+      "API 키 설정 패널 추가 (Gemini / Claude)",
+      "멀티뷰 컨셉시트 실제 이미지 생성"
+    ]
+  },
+  {
+    "version": "0.5.0",
+    "date": "2026-03-06",
+    "changes": [
+      "inZOI Canvas 브랜드 디자인 시스템 적용",
+      "컬러 팔레트 변경 (indigo → inZOI blue/skyblue)",
+      "Pretendard 한글 폰트 추가"
+    ]
+  },
+  {
+    "version": "0.4.0",
+    "date": "2026-03-05",
+    "changes": [
+      "완료 목록 카드에 대형 이미지 썸네일 추가",
+      "위시리스트 기능 추가 (이미지 첨부, 메모)",
+      "사이드바 탭 UI (완료 목록 / 위시리스트)",
+      "샘플 데이터 10개씩 확장"
+    ]
+  },
+  {
+    "version": "0.3.0",
+    "date": "2026-03-04",
+    "changes": [
+      "완료된 컨셉시트 리스트 사이드 패널 추가",
+      "파이프라인 전송 완료 시 자동 목록 추가",
+      "버전 정보 및 변경내역 팝업 추가"
+    ]
+  },
+  {
+    "version": "0.2.0",
+    "date": "2026-03-01",
+    "changes": [
+      "투표 및 시안 선정 워크플로우 추가",
+      "다중 투표자 지원",
+      "동점 시 수동 선정 기능"
+    ]
+  },
+  {
+    "version": "0.1.0",
+    "date": "2026-02-28",
+    "changes": [
+      "초기 프로토타입",
+      "AI 기반 프롬프트 최적화 (Claude API)",
+      "카테고리별 가구 컨셉 생성",
+      "멀티뷰 컨셉시트 생성",
+      "에셋 메타데이터 JSON 내보내기"
+    ]
+  }
+]
