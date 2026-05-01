@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.155",
+    "date": "2026-05-01",
+    "changes": [
+      "큐 / thumbnail 진단 로그 제거 — 큐 정상 동작 확인 후 [시안 생성 큐] PUSH·SHIFT·완료 로그와 [generateCardVariants] thumbnail 자동 갱신 판정 로그 정리. 큐 작업 실패 시 warn 만 보존. 변형 hint 적용 로그 ([변형] proportions → ...) 는 회고 가치가 있어 유지"
+    ]
+  },
+  {
     "version": "1.10.154",
     "date": "2026-05-01",
     "changes": [
