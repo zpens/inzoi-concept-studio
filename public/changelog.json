@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.147",
+    "date": "2026-05-01",
+    "changes": [
+      "시안 변형 (variation) 모드 추가 — DesignsPanel 의 추가 prompt 입력란 아래에 변형 칩 1줄 (없음 / 📐 비율 / 🎨 색·재질 / 🦵 구조 / ✨ 디테일). 칩 하나 선택 후 1·2·4 갯수와 🎨 생성 누르면 그 방향의 변형 hint (영문) 가 enhanced prompt 끝에 자동 append 되어 N 장 생성. 같은 prompt 4번 호출이 거의 동일 결과로 나오던 한계 (Nano Banana 2 = autoregressive 라 seed 미지원) 를 prompt-level 다양성으로 우회. 선택값은 localStorage gemini_variation_mode 에 영속, 다음 카드/세션에서 자동 복원. design 객체에 variation_hint 필드로 동결 저장 → 갤러리 ⓘ 펼침 패널에서 '변형: 색 / 재질' 같은 배지로 회고 가능. 기본값은 '없음' 이라 기존 사용자 동작 그대로"
+    ]
+  },
+  {
     "version": "1.10.146",
     "date": "2026-05-01",
     "changes": [

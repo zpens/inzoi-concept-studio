@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.146";
+const APP_VERSION = "1.10.147";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -2248,7 +2248,22 @@ ${ctxLines.join("\n")}`;
   }
 }
 
-async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress, extraPromptToSave }) {
+// v1.10.147 — 변형 (variation) 모드. seed 미지원 모델(Nano Banana)에서 다양성 확보용.
+// hint 가 enhanced prompt 끝에 append. design 에는 variation_hint key 로 동결.
+const VARIATION_HINTS = {
+  proportions: "vary proportions and silhouette while preserving overall identity",
+  colors:      "apply a different color palette and surface material, keep form intact",
+  structure:   "modify supporting structure (legs / base / joinery), keep top form",
+  details:     "alternative surface detailing, ornament, and finishing touches",
+};
+const VARIATION_LABELS = {
+  proportions: "📐 비율 / 형태",
+  colors:      "🎨 색 / 재질",
+  structure:   "🦵 구조 / 다리",
+  details:     "✨ 디테일 / 장식",
+};
+
+async function generateCardVariants({ card, count, prompt, geminiApiKey, selectedModel, slug, actor, onProgress, extraPromptToSave, variation }) {
   const seeds = Array.from({ length: Math.max(1, Math.min(4, count)) }, () => generateSeed());
 
   // prompt enhance — 영문 일관성 우선, 카테고리 spec hints 는 제외 (사용자 요청 v1.7.9).
@@ -2305,6 +2320,13 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
     console.warn("[Claude prompt 최적화] 예외 발생, fallback:", e.message);
   }
 
+  // v1.10.147 — 변형 hint append. enhanced prompt 끝에 자연스럽게 이어붙임.
+  const variationHint = variation && VARIATION_HINTS[variation] ? VARIATION_HINTS[variation] : null;
+  if (variationHint) {
+    enhancedPrompt = `${enhancedPrompt}. Variation direction: ${variationHint}.`;
+    console.log(`[변형] ${variation} → "${variationHint}"`);
+  }
+
   // v1.10.117 — 시안 lineage 저장: 이번 생성에 실제로 사용된 ref/cover URL 들을 sources 로 기록.
   // refImages[0] 은 cover (thumbnail_url, prepend 됨), 그 뒤는 ref_images.
   const sourcesUsed = refImages.map((url, i) => ({
@@ -2316,11 +2338,13 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
       const raw = await generateImageWithGemini(geminiApiKey, enhancedPrompt, selectedModel, refImages);
       const uploaded = await uploadDataUrl(raw);
       // v1.10.144 — 시안별 prompt 동결 저장. 이후 카드 prompt 가 바뀌어도 시점의 prompt 가 남음.
+      // v1.10.147 — variation 모드면 변형 키도 동결.
       return {
         seed: s, imageUrl: uploaded, createdAt: new Date().toISOString(), sources: sourcesUsed,
         prompt_used: prompt,
         enhanced_prompt_used: enhancedPrompt,
         model: selectedModel,
+        variation_hint: variation || null,
       };
     } catch (err) {
       return { seed: s, imageUrl: null, error: err.message, createdAt: new Date().toISOString() };
@@ -5490,6 +5514,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
             promptUsed: d.prompt_used || null,
             enhancedPromptUsed: d.enhanced_prompt_used || null,
             sources: Array.isArray(d.sources) ? d.sources : null,
+            // v1.10.147 — 변형 모드 동결 키.
+            variationHint: d.variation_hint || null,
           },
         };
       }));
@@ -6422,6 +6448,19 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                     meta.votes > 0 ? `👍 ${meta.votes}` : null,
                   ].filter(Boolean).join(" · ") || "(메타 없음)"}
                 </div>
+                {/* v1.10.147 — 변형 모드 표시 */}
+                {meta.variationHint && VARIATION_LABELS[meta.variationHint] && (
+                  <div style={{
+                    fontSize: 10.5, marginBottom: 8,
+                    padding: "3px 8px", borderRadius: 6,
+                    background: "rgba(7,110,232,0.15)",
+                    border: "1px solid rgba(7,110,232,0.4)",
+                    color: "#7dd3fc",
+                    display: "inline-block",
+                  }}>
+                    변형: {VARIATION_LABELS[meta.variationHint]}
+                  </div>
+                )}
                 {/* prompt */}
                 {promptText ? (
                   <div style={{ marginBottom: enhancedText ? 8 : 0 }}>
@@ -8520,6 +8559,13 @@ function DesignsPanel({
   const [progress, setProgress] = React.useState(null);
   // v1.10.58 — 추가 프롬프트는 카드별로 저장된 last_extra_prompt 로 자동 복원.
   const [extraPrompt, setExtraPrompt] = React.useState(card.data?.last_extra_prompt || "");
+  // v1.10.147 — 변형 모드. seed 미지원 모델(Nano Banana)에서 다양성 확보용. localStorage 영속.
+  const [variation, setVariation] = React.useState(() => {
+    try { return localStorage.getItem("gemini_variation_mode") || ""; } catch { return ""; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem("gemini_variation_mode", variation || ""); } catch {}
+  }, [variation]);
   // v1.10.58 — 시안 정렬 (생성순 / 최신순 / 투표순). 카드 단위 메모리.
   const [sortMode, setSortMode] = React.useState("created");
   // 카드 변경 시 추가 프롬프트 / 정렬 초기화.
@@ -8791,6 +8837,7 @@ function DesignsPanel({
         card: workingCard, count, prompt, geminiApiKey, selectedModel,
         slug: projectSlug, actor,
         extraPromptToSave: extra,
+        variation, // v1.10.147
         onProgress: (done, total) => {
           setProgress({ done, total });
           onGenerateProgress?.(card, done, total);
@@ -9195,6 +9242,35 @@ function DesignsPanel({
               </div>
             );
           })()}
+          {/* v1.10.147 — 변형 칩 행. 갯수 행 위에 별도 한 줄. 모델이 seed 미지원이라 prompt-level 다양성 확보 수단. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>변형:</span>
+            {[
+              { id: "",            label: "없음" },
+              { id: "proportions", label: "📐 비율" },
+              { id: "colors",      label: "🎨 색·재질" },
+              { id: "structure",   label: "🦵 구조" },
+              { id: "details",     label: "✨ 디테일" },
+            ].map((v) => {
+              const active = variation === v.id;
+              return (
+                <button
+                  key={v.id || "none"}
+                  onClick={() => setVariation(v.id)}
+                  disabled={busy}
+                  title={v.id ? VARIATION_HINTS[v.id] : "변형 hint 없이 카드 prompt 그대로 N장 생성"}
+                  style={{
+                    padding: "3px 9px", borderRadius: 12,
+                    background: active ? "rgba(7,110,232,0.12)" : "rgba(0,0,0,0.03)",
+                    border: active ? "1px solid var(--primary)" : "1px solid var(--surface-border)",
+                    color: active ? "var(--primary)" : "var(--text-muted)",
+                    fontSize: 11, fontWeight: active ? 800 : 600, cursor: busy ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >{v.label}</button>
+              );
+            })}
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {[1, 2, 4].map((n) => (
               <button
@@ -9225,7 +9301,7 @@ function DesignsPanel({
                 ? (progress?.label
                     ? progress.label
                     : `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
-                : `🎨 ${count}개 생성`}
+                : `🎨 ${count}개 생성${variation ? ` (${VARIATION_LABELS[variation].replace(/^.\s*/, "")})` : ""}`}
             </button>
           </div>
         </div>
