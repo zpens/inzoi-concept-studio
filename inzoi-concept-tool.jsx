@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.143";
+const APP_VERSION = "1.10.144";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -2315,7 +2315,13 @@ async function generateCardVariants({ card, count, prompt, geminiApiKey, selecte
     try {
       const raw = await generateImageWithGemini(geminiApiKey, enhancedPrompt, selectedModel, refImages);
       const uploaded = await uploadDataUrl(raw);
-      return { seed: s, imageUrl: uploaded, createdAt: new Date().toISOString(), sources: sourcesUsed };
+      // v1.10.144 — 시안별 prompt 동결 저장. 이후 카드 prompt 가 바뀌어도 시점의 prompt 가 남음.
+      return {
+        seed: s, imageUrl: uploaded, createdAt: new Date().toISOString(), sources: sourcesUsed,
+        prompt_used: prompt,
+        enhanced_prompt_used: enhancedPrompt,
+        model: selectedModel,
+      };
     } catch (err) {
       return { seed: s, imageUrl: null, error: err.message, createdAt: new Date().toISOString() };
     }
@@ -5476,9 +5482,14 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           meta: {
             kind: d._sheet ? "시트" : d._legacy ? "레거시" : d.source === "upload" ? "업로드" : "AI 시안",
             seed: d.seed ?? null,
+            model: d.model || null,
             createdAt: d.createdAt || null,
             votes: voteN,
             badge: `#${i + 1}`,
+            // v1.10.144 — 펼침 패널용 prompt / sources.
+            promptUsed: d.prompt_used || null,
+            enhancedPromptUsed: d.enhanced_prompt_used || null,
+            sources: Array.isArray(d.sources) ? d.sources : null,
           },
         };
       }));
@@ -5496,11 +5507,14 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
       : k;
     if (v && (v.single || SHEET_KEYS.some((k) => v[k]))) {
       const sheetItems = [];
+      // v1.10.144 — 시트 펼침 패널용 source 정보. 모든 시트 뷰가 동일 source 시안 공유.
+      const sheetSourceUrl = v.source_image_url || null;
       if (v.single) {
         sheetItems.push({
           url: v.single, type: "sheet",
           label: "시트", isCover: v.single === hero,
-          meta: { kind: "현재 시트", model: v.model || null, createdAt: v.generated_at || null },
+          meta: { kind: "현재 시트", model: v.model || null, createdAt: v.generated_at || null,
+                  sourceImageUrl: sheetSourceUrl, scalePrompt: v.scale_prompt || null },
         });
       }
       SHEET_KEYS.forEach((k) => {
@@ -5508,7 +5522,8 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           url: v[k], type: "sheet",
           label: labelOf(k),
           isCover: v[k] === hero,
-          meta: { kind: "현재 시트", view: k, model: v.model || null, createdAt: v.generated_at || null },
+          meta: { kind: "현재 시트", view: k, model: v.model || null, createdAt: v.generated_at || null,
+                  sourceImageUrl: sheetSourceUrl, scalePrompt: v.scale_prompt || null },
         });
       });
       const items = dedup(sheetItems);
@@ -5626,6 +5641,12 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   React.useEffect(() => {
     try { localStorage.setItem("gallery_show_all_lines", showAllLines ? "1" : "0"); } catch {}
   }, [showAllLines]);
+
+  // v1.10.144 — 타일 우상단 ⓘ 클릭 시 prompt / 메타 펼침 패널 표시. 한 번에 한 노드만.
+  const [expandedUrl, setExpandedUrl] = React.useState(null);
+  const toggleExpand = React.useCallback((url) => {
+    setExpandedUrl((prev) => (prev === url ? null : url));
+  }, []);
 
   // v1.10.117 — 자유 배치: Alt+드래그로 타일별 오프셋 적용. card.data.gallery_layout 에 영속.
   const [customLayout, setCustomLayout] = React.useState(() => {
@@ -6302,6 +6323,135 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               })}
             </svg>
           )}
+          {/* v1.10.144 — 노드 상세 펼침 패널 (prompt / 메타). expandedUrl 이 있을 때 한 개만 렌더.
+              transform: scale(invScale) 로 zoom 무관하게 일정 화면 크기 유지. */}
+          {expandedUrl && tilePositions[expandedUrl] && (() => {
+            const pos = tilePositions[expandedUrl];
+            // 그룹 전체에서 item 찾기.
+            let item = null;
+            for (const g of groups) {
+              const found = g.items.find((it) => it.url === expandedUrl);
+              if (found) { item = found; break; }
+            }
+            if (!item) return null;
+            const meta = item.meta || {};
+            const invS = 1 / Math.max(scale, 0.01);
+            const promptText = meta.promptUsed || (item.type === "design" ? card?.data?.prompt : null) || "";
+            const enhancedText = meta.enhancedPromptUsed || "";
+            const sourcesArr = Array.isArray(meta.sources) ? meta.sources : null;
+            const sourceCover = sourcesArr ? sourcesArr.find((s) => s.kind === "cover")?.url : null;
+            const sourceRefs = sourcesArr ? sourcesArr.filter((s) => s.kind !== "cover").map((s) => s.url) : [];
+            const sheetSource = item.type === "sheet" || item.type === "sheet-history" ? meta.sourceImageUrl : null;
+            return (
+              <div
+                key={expandedUrl}
+                onPointerDown={(e) => e.stopPropagation()}
+                onPointerMove={(e) => e.stopPropagation()}
+                style={{
+                  position: "absolute",
+                  left: pos.x, top: pos.y + pos.h + 8,
+                  width: 380,
+                  transform: `scale(${invS})`, transformOrigin: "top left",
+                  zIndex: 10,
+                  background: "rgba(20, 22, 28, 0.96)",
+                  color: "#fff",
+                  border: "1px solid rgba(250,204,21,0.45)",
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  boxShadow: "0 12px 36px rgba(0,0,0,0.6)",
+                  fontSize: 12,
+                  lineHeight: 1.55,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#facc15" }}>
+                    {meta.kind || "노드"}
+                    {meta.badge ? <span style={{ marginLeft: 6, opacity: 0.7 }}>{meta.badge}</span> : null}
+                  </div>
+                  <button
+                    onClick={() => setExpandedUrl(null)}
+                    style={{
+                      width: 22, height: 22, borderRadius: 11,
+                      background: "rgba(255,255,255,0.1)", border: "none",
+                      color: "#fff", fontSize: 12, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >✕</button>
+                </div>
+                {/* 메타 라인 */}
+                <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.65)", marginBottom: 8, fontFamily: "ui-monospace, monospace" }}>
+                  {[
+                    meta.model ? `model: ${meta.model}` : null,
+                    meta.seed != null ? `seed: ${meta.seed}` : null,
+                    meta.createdAt ? formatLocalTime(meta.createdAt, "ymdhm") : null,
+                    meta.votes > 0 ? `👍 ${meta.votes}` : null,
+                  ].filter(Boolean).join(" · ") || "(메타 없음)"}
+                </div>
+                {/* prompt */}
+                {promptText ? (
+                  <div style={{ marginBottom: enhancedText ? 8 : 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(250,204,21,0.85)", marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      Prompt {meta.promptUsed ? "(이 시안 시점)" : item.type === "design" ? "(현 카드 — 시점 데이터 없음)" : ""}
+                    </div>
+                    <div style={{
+                      maxHeight: 130, overflowY: "auto",
+                      background: "rgba(255,255,255,0.04)",
+                      padding: "6px 8px", borderRadius: 6,
+                      whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      color: "rgba(255,255,255,0.92)",
+                    }}>{promptText}</div>
+                  </div>
+                ) : null}
+                {/* enhanced prompt — 토글 없이 펼쳐서 보여주되 작게 */}
+                {enhancedText ? (
+                  <details style={{ marginBottom: 8 }}>
+                    <summary style={{ fontSize: 10, fontWeight: 700, color: "rgba(250,204,21,0.7)", cursor: "pointer", userSelect: "none" }}>
+                      ▸ Enhanced prompt (Claude 보강) 보기
+                    </summary>
+                    <div style={{
+                      maxHeight: 110, overflowY: "auto",
+                      background: "rgba(255,255,255,0.04)",
+                      padding: "6px 8px", borderRadius: 6,
+                      marginTop: 4,
+                      whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      color: "rgba(255,255,255,0.85)", fontSize: 11,
+                    }}>{enhancedText}</div>
+                  </details>
+                ) : null}
+                {/* 디자인: sources */}
+                {sourcesArr && sourcesArr.length > 0 ? (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(250,204,21,0.85)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      참조 ({sourcesArr.length})
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {sourceCover && (
+                        <img src={sourceCover} alt="cover" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4, border: "2px solid #facc15" }} title="대표 이미지" />
+                      )}
+                      {sourceRefs.map((u) => (
+                        <img key={u} src={u} alt="ref" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4, border: "1px solid rgba(255,255,255,0.2)" }} title="참조 이미지" />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {/* 시트: source 시안 */}
+                {sheetSource ? (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(250,204,21,0.85)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      소스 시안
+                    </div>
+                    <img src={sheetSource} alt="src" style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)" }} />
+                  </div>
+                ) : null}
+                {/* fallback: 정보 전혀 없음 */}
+                {!promptText && !sourcesArr?.length && !sheetSource && (
+                  <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, fontStyle: "italic" }}>
+                    추가 메타 정보가 없습니다.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {LAYOUT.rows.map((row, ri) => (
             <div key={ri} style={{
               display: "flex", gap: LAYOUT.gap,
@@ -6338,6 +6488,9 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                     isDimmed={isDimmed}
                     offset={offset}
                     onStartTileDrag={startTileDrag}
+                    isExpanded={expandedUrl === item.url}
+                    onToggleExpand={toggleExpand}
+                    cardPrompt={card?.data?.prompt || ""}
                   />
                 );
               })}
@@ -7464,7 +7617,9 @@ function CompareOverlay({ urls, onClose, onOpenLightbox }) {
   );
 }
 
-function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, designsCount = 0, onImageLoad, onLineageHover, isHovered, isRelated, isDimmed, offset, onStartTileDrag }) {
+function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onSetCover, onCopyToRef, onOpenLightbox, selected, onToggleSelect, commentCount = 0, designsCount = 0, onImageLoad, onLineageHover, isHovered, isRelated, isDimmed, offset, onStartTileDrag, isExpanded = false, onToggleExpand, cardPrompt = "" }) {
+  // v1.10.144 — cardPrompt 는 펼침 패널의 fallback 으로만 사용 (현 렌더에서는 직접 참조 X).
+  void cardPrompt;
   // Justified 레이아웃 (v1.10.34) — 셀 크기 고정(width/height).
   // v1.10.61: 이미지를 자연 해상도로 렌더하고 transform 으로 셀에 맞춤.
   //   이전엔 width/height 100% + object-fit cover → 셀 크기로 다운샘플 → 줌인 시 GPU 업스케일로 흐림.
@@ -7666,6 +7821,28 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
             whiteSpace: "nowrap",
           }}
         >🎯 참조</button>
+      )}
+      {/* v1.10.144 — 펼침 패널 토글 ⓘ. hover 또는 펼친 상태에서만 노출. ⭐ 옆 자리. */}
+      {(hovered || isExpanded) && onToggleExpand && (
+        <button
+          data-action="expand"
+          onClick={(e) => { e.stopPropagation(); onToggleExpand(item.url); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          title={isExpanded ? "상세 패널 닫기" : "프롬프트 / 메타정보 펼치기"}
+          style={{
+            position: "absolute", top: 6, right: isCopyable ? 110 : 42,
+            width: 30, height: 30, borderRadius: 15,
+            background: isExpanded ? "rgba(250,204,21,0.92)" : "rgba(0,0,0,0.55)",
+            border: "none",
+            color: isExpanded ? "#1a1d23" : "#fff",
+            fontSize: 14, fontWeight: 800, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0, lineHeight: 1,
+            transform: `scale(${invScale})`, transformOrigin: "top right",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+          }}
+        >ⓘ</button>
       )}
       {/* v1.10.116 — 시안 순서 변경 ◀/▶ 버튼 제거. */}
     </div>

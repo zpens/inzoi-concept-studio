@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.144",
+    "date": "2026-05-01",
+    "changes": [
+      "갤러리 노드 펼침 패널 + 시안별 prompt 동결 — F키 갤러리 타일에 ⓘ 버튼 추가 (호버 시 노출). 클릭하면 노드 아래에 prompt / 메타 / sources 펼침 패널이 슬라이드 표시. 패널은 zoom 무관 일정 화면 크기 (transform: scale(invScale)). 한 번에 한 노드만 열림. 시안 생성 시 design 객체에 prompt_used / enhanced_prompt_used / model 필드 동결 저장 — 이후 카드 prompt 가 바뀌어도 시점 prompt 유지. 과거 시안은 현 카드 prompt fallback (라벨로 명시). 시트 노드는 source 시안 썸네일 표시. 펼침 패널에서 enhanced prompt 는 details 로 접어두어 화면 잡음 최소화"
+    ]
+  },
+  {
     "version": "1.10.143",
     "date": "2026-05-01",
     "changes": [
