@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.140";
+const APP_VERSION = "1.10.141";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -2411,11 +2411,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
   const save = async (patchFields) => {
     if (disabled) return;
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: { ...(card.data || {}), ...patchFields }, actor }),
-      });
+      await patchCardMerged(projectSlug, card.id, patchFields, actor);
       await onRefresh?.();
     } catch (e) { console.warn("프롬프트/참조 저장 실패:", e); }
   };
@@ -3919,16 +3915,7 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved, compact = 
   const save = async (next) => {
     setOptimistic(next); // 즉시 UI 반영
     try {
-      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), priority: next || null },
-          actor,
-        }),
-      });
-      if (!r.ok) throw new Error(`priority ${r.status}`);
-      const updated = await r.json();
+      const updated = await patchCardMerged(projectSlug, card.id, { priority: next || null }, actor);
       onSaved?.(updated);
     } catch (e) {
       console.warn("우선순위 저장 실패:", e);
@@ -4001,16 +3988,7 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
 
   const save = async (next) => {
     try {
-      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), target_update: next || null },
-          actor,
-        }),
-      });
-      if (!r.ok) throw new Error(`update ${r.status}`);
-      const updated = await r.json();
+      const updated = await patchCardMerged(projectSlug, card.id, { target_update: next || null }, actor);
       onSaved?.(updated);
       setOpen(false);
       setDraft("");
@@ -4630,11 +4608,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
   const saveData = async (fields) => {
     if (!projectSlug) return;
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: { ...(card.data || {}), ...fields }, actor }),
-      });
+      await patchCardMerged(projectSlug, card.id, fields, actor);
       await onSaved?.();
       setEditing(null);
     } catch (e) { alert("저장 실패: " + e.message); }
@@ -5190,17 +5164,12 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
         r.readAsDataURL(f);
       })));
       const urls = await Promise.all(dataUrls.map((d) => uploadDataUrl(d)));
-      const existing = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
+      // v1.10.141 — race-safe: 최신 ref_images 위에 새 URL 만 append.
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      const existing = Array.isArray(fresh?.data?.ref_images) ? fresh.data.ref_images : [];
       const merged = [...existing];
       for (const u of urls) { if (u && !merged.includes(u)) merged.push(u); }
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), ref_images: merged },
-          actor,
-        }),
-      });
+      await patchCardMerged(projectSlug, card.id, { ref_images: merged }, actor);
       await onSaved?.();
     } catch (e) {
       alert("이미지 추가 실패: " + e.message);
@@ -5509,14 +5478,7 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   const [tileDragging, setTileDragging] = React.useState(false);
   const persistLayout = React.useCallback(async (next) => {
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), gallery_layout: next },
-          actor,
-        }),
-      });
+      await patchCardMerged(projectSlug, card.id, { gallery_layout: next }, actor);
       // onSaved 호출하면 카드 새로고침되어 hovered 깜박임 — 호출 생략. 다음 진입 시 useEffect 가 server 값 반영.
     } catch (e) { console.warn("gallery_layout 저장 실패:", e.message); }
   }, [projectSlug, card?.id, card?.data, actor]);
@@ -5645,20 +5607,19 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   // 이미 ref_images 에 있는 URL 이면 무시.
   const copyToRef = async (url) => {
     if (!url) return;
-    const existing = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
-    if (existing.includes(url)) {
+    if (Array.isArray(card.data?.ref_images) && card.data.ref_images.includes(url)) {
       alert("이미 참조 이미지로 등록되어 있습니다.");
       return;
     }
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), ref_images: [...existing, url] },
-          actor,
-        }),
-      });
+      // v1.10.141 — race-safe: 최신 ref_images 위에 append.
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      const existing = Array.isArray(fresh?.data?.ref_images) ? fresh.data.ref_images : [];
+      if (existing.includes(url)) {
+        alert("이미 참조 이미지로 등록되어 있습니다.");
+        return;
+      }
+      await patchCardMerged(projectSlug, card.id, { ref_images: [...existing, url] }, actor);
       await onSaved?.();
       alert("🎯 참조 이미지에 추가됨. 다음 시안 생성에 반영됩니다.");
     } catch (e) { alert("참조 추가 실패: " + e.message); }
@@ -5667,15 +5628,12 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
   const selectDesign = async (idx) => {
     try {
       const d = card.data?.designs?.[idx];
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), selected_design: idx },
-          thumbnail_url: d?.imageUrl || card.thumbnail_url,
-          actor,
-        }),
-      });
+      await patchCardMerged(
+        projectSlug, card.id,
+        { selected_design: idx },
+        actor,
+        { thumbnail_url: d?.imageUrl || card.thumbnail_url },
+      );
       await onSaved?.();
     } catch (e) { alert("선정 실패: " + e.message); }
   };
@@ -6319,18 +6277,13 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
   // v1.10.68 — 포인트 코멘트 PATCH 헬퍼.
   const patchComments = async (nextForUrl) => {
     if (!canSaveRef) return;
-    const nextAll = { ...allPointComments, [src]: nextForUrl };
-    if (nextForUrl.length === 0) delete nextAll[src];
     try {
-      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), point_comments: nextAll },
-          actor: actor || null,
-        }),
-      });
-      if (!r.ok) throw new Error(`PATCH ${r.status}`);
+      // v1.10.141 — race-safe: 최신 point_comments 위에 이번 src 만 머지.
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      const baseAll = (fresh?.data?.point_comments && typeof fresh.data.point_comments === "object") ? fresh.data.point_comments : {};
+      const nextAll = { ...baseAll, [src]: nextForUrl };
+      if (nextForUrl.length === 0) delete nextAll[src];
+      await patchCardMerged(projectSlug, card.id, { point_comments: nextAll }, actor || null);
       await onSavedRef?.();
     } catch (e) { alert("코멘트 저장 실패: " + e.message); }
   };
@@ -6387,16 +6340,10 @@ function ImageLightbox({ src, gallery, onChange, onClose, card, projectSlug, act
       ctx.drawImage(canvas, 0, 0, off.width, off.height);
       const dataUrl = off.toDataURL("image/png");
       const url = await uploadDataUrl(dataUrl);
-      const existing = Array.isArray(card.data?.ref_images) ? card.data.ref_images : [];
-      const r = await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), ref_images: [...existing, url] },
-          actor: actor || null,
-        }),
-      });
-      if (!r.ok) throw new Error(`PATCH ${r.status}`);
+      // v1.10.141 — race-safe: 최신 ref_images 위에 append.
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      const existing = Array.isArray(fresh?.data?.ref_images) ? fresh.data.ref_images : [];
+      await patchCardMerged(projectSlug, card.id, { ref_images: [...existing, url] }, actor || null);
       await onSavedRef?.();
       alert("✏️ 참조 이미지에 추가됨. 다음 시안 생성에 반영됩니다.");
       onClose();
@@ -8010,12 +7957,9 @@ function DesignsPanel({
 
   const save = async (patchFields) => {
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: { ...(card.data || {}), ...patchFields }, actor }),
-      });
+      const updated = await patchCardMerged(projectSlug, card.id, patchFields, actor);
       await onRefresh?.();
+      return updated;
     } catch (e) { alert("저장 실패: " + e.message); }
   };
 
@@ -8090,21 +8034,12 @@ function DesignsPanel({
   const selectDesign = async (idx) => {
     if (disabled) return;
     const d = displayDesigns[idx];
-    const patch = { selected_design: idx };
     // 업로드/AI 시안을 선정하면 카드 썸네일도 같이 갱신.
     // v1.10.58 — 단계 자동 이동(drafting → sheet) 제거. 별도 패널 하단 버튼으로 분리.
     const extraPatch = {};
     if (d?.imageUrl) extraPatch.thumbnail_url = d.imageUrl;
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: { ...(card.data || {}), ...patch },
-          ...extraPatch,
-          actor,
-        }),
-      });
+      await patchCardMerged(projectSlug, card.id, { selected_design: idx }, actor, extraPatch);
       await onRefresh?.();
     } catch (e) { alert("선정 실패: " + e.message); }
   };
@@ -8113,13 +8048,14 @@ function DesignsPanel({
   const removeDesign = async (idx) => {
     if (disabled) return;
     if (!confirm("이 시안을 삭제하시겠어요?")) return;
-    const next = raw.filter((_, i) => i !== idx);
+    const target = raw[idx];
+    if (!target) return;
     try {
-      await fetch(`/api/projects/${projectSlug}/cards/${card.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: { ...(card.data || {}), designs: next }, actor }),
-      });
+      // v1.10.141 — race-safe: 최신 designs 에서 동일 imageUrl 항목 제거.
+      const fresh = await fetchCardDetail(projectSlug, card.id);
+      const freshDesigns = Array.isArray(fresh?.data?.designs) ? fresh.data.designs : [];
+      const next = freshDesigns.filter((d) => d?.imageUrl !== target.imageUrl);
+      await patchCardMerged(projectSlug, card.id, { designs: next }, actor);
       await onRefresh?.();
     } catch (e) { alert("삭제 실패: " + e.message); }
   };
@@ -8215,8 +8151,9 @@ function DesignsPanel({
           }
         }
         if (Object.keys(patch).length > 0) {
-          await save(patch);
-          workingCard = { ...card, data: { ...(card.data || {}), ...patch } };
+          // v1.10.141 — save() 가 server fresh card 반환. workingCard 도 fresh 기반으로 동기화.
+          const updated = await save(patch);
+          workingCard = updated || { ...card, data: { ...(card.data || {}), ...patch } };
           console.log("[자동 분류 + 시안 생성] 저장됨:", savedFields.join(", "));
         } else {
           console.log("[자동 분류 + 시안 생성] 채울 필드 없음 또는 응답 부족 — 스킵");
