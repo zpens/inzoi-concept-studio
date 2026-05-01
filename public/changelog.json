@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.150",
+    "date": "2026-05-01",
+    "changes": [
+      "시안 선정 시 대표 이미지 자동 갱신 환원 — v1.10.149 에서 분리했던 정책 되돌림. 시안을 선정 (selected_design) 하면 카드의 thumbnail_url 도 그 시안 이미지로 자동 갱신. DesignsPanel.selectDesign 과 GalleryCanvas.selectDesign 양쪽 모두 일관 적용. 큐 패턴 (v1.10.149) 은 그대로 유지"
+    ]
+  },
+  {
     "version": "1.10.149",
     "date": "2026-05-01",
     "changes": [

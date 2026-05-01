@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.149";
+const APP_VERSION = "1.10.150";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -5915,11 +5915,16 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
     } catch (e) { alert("참조 추가 실패: " + e.message); }
   };
   // v1.10.116 — moveDesign 제거 (갤러리 화살표 이동 UI 삭제와 함께).
-  // v1.10.149 — 시안 선정과 대표 이미지(thumbnail_url) 분리. 자동 갱신 제거.
-  // 대표 변경은 사용자가 ⭐ 버튼으로 명시적으로 수행.
+  // v1.10.150 — 시안 선정 시 카드 대표 이미지도 자동 갱신 (v1.10.149 의 분리 정책 환원).
   const selectDesign = async (idx) => {
     try {
-      await patchCardMerged(projectSlug, card.id, { selected_design: idx }, actor);
+      const d = card.data?.designs?.[idx];
+      await patchCardMerged(
+        projectSlug, card.id,
+        { selected_design: idx },
+        actor,
+        d?.imageUrl ? { thumbnail_url: d.imageUrl } : {},
+      );
       await onSaved?.();
     } catch (e) { alert("선정 실패: " + e.message); }
   };
@@ -8687,12 +8692,17 @@ function DesignsPanel({
     return () => window.removeEventListener("paste", onPaste, true);
   }, [disabled, panelActive, card.id]);
 
-  // v1.10.149 — 시안 선정과 대표 이미지(thumbnail_url) 분리. 자동 갱신 제거.
-  // 대표 변경은 사용자가 ⭐ 버튼으로 명시적으로 수행.
+  // v1.10.150 — 시안 선정 시 카드 대표 이미지도 자동 갱신 (v1.10.149 의 분리 정책 환원).
   const selectDesign = async (idx) => {
     if (disabled) return;
+    const d = displayDesigns[idx];
     try {
-      await patchCardMerged(projectSlug, card.id, { selected_design: idx }, actor);
+      await patchCardMerged(
+        projectSlug, card.id,
+        { selected_design: idx },
+        actor,
+        d?.imageUrl ? { thumbnail_url: d.imageUrl } : {},
+      );
       await onRefresh?.();
     } catch (e) { alert("선정 실패: " + e.message); }
   };
