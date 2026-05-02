@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.174",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 6b — GalleryTile 정돈. (1) 선택 ✓ 배지: #22c55e → KRAFTON --success. weight 800 → 700. boxShadow 제거 (KRAFTON flat). (2) 코멘트 수 배지 (좌하단): amber rgba(245,158,11,0.92) + weight 800 → KRAFTON --accent + weight 600. radius 12 → 999 pill. boxShadow 제거. (3) 메타 hover 패널 (좌하단): mono 폰트 → ui-monospace 표준. weight 600 → 500. boxShadow 제거. (4) item.label 배지 (좌상단): weight 700 → 600. (5) ⭐/☆ 대표 버튼 (우상단): isCover 시 #22c55e 그린 → var(--accent) (단일 액센트 정책). boxShadow 제거. fontFamily 토큰화. (6) 🎯 참조 버튼: 파랑 rgba(7,110,232,0.85) + weight 700 → KRAFTON --accent + weight 600. radius 13 → 999 pill. boxShadow 제거. (7) ⓘ 펼침 토글: amber rgba(250,204,21,0.92) + 검정 글씨 + weight 800 → var(--accent) + 흰 글씨 + weight 700. (8) selected lineage 보더: #22c55e → KRAFTON --success #1A7F4F. lineage 라인 amber 자체는 흐름선 컨벤션이라 유지"
+    ]
+  },
+  {
     "version": "1.10.173",
     "date": "2026-05-02",
     "changes": [

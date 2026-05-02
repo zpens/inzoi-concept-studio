@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.173";
+const APP_VERSION = "1.10.174";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -8023,10 +8023,12 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
   const isCopyable = item.type === "design" || item.type === "sheet" || item.type === "sheet-history";
 
   // v1.10.117 — Lineage 강조: hover 본인 = 노란 굵은 테두리, 관련 = 노란 얇은 테두리, 무관 = 30% opacity.
+  // (lineage 라인 색은 amber 컨벤션 유지 — 흐름선 SVG 와 일치)
   const lineageBox = isHovered ? "inset 0 0 0 4px #facc15"
     : isRelated  ? "inset 0 0 0 3px rgba(250,204,21,0.85)"
     : null;
-  const tileShadow = selected ? "inset 0 0 0 4px #22c55e"
+  // v1.10.174 — selected 그린 → KRAFTON success 토큰
+  const tileShadow = selected ? "inset 0 0 0 4px #1A7F4F"
     : lineageBox || "none";
 
   return (
@@ -8057,46 +8059,44 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
         onLoad={(e) => onImageLoad?.(e, item.url)}
         style={imgStyle}
       />
-      {/* v1.10.65 — 선택된 타일 ✓ badge (좌상단, label 위쪽 제외하고 우하단 사용) */}
+      {/* v1.10.65 — 선택된 타일 ✓ badge (다중 선택). v1.10.174 KRAFTON success 톤. */}
       {selected && (
         <div style={{
           position: "absolute", bottom: 6, right: 6,
           width: 26, height: 26, borderRadius: 13,
-          background: "#22c55e", color: "#fff",
-          fontSize: 14, fontWeight: 800,
+          background: "var(--success)", color: "#fff",
+          fontSize: 14, fontWeight: 700,
           display: "flex", alignItems: "center", justifyContent: "center",
           transform: `scale(${invScale})`, transformOrigin: "bottom right",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
           pointerEvents: "none",
+          fontFamily: "inherit",
         }}>✓</div>
       )}
-      {/* v1.10.68 — 코멘트 수 badge (좌하단). 클릭 시 lightbox 진입은 부모 onTileUp 처리. */}
+      {/* v1.10.68 — 코멘트 수 badge (좌하단). v1.10.174 KRAFTON danger 톤. */}
       {commentCount > 0 && (
         <div style={{
           position: "absolute", bottom: 6, left: 6,
-          padding: "3px 9px", borderRadius: 12,
-          background: "rgba(245,158,11,0.92)", color: "#fff",
-          fontSize: 11, fontWeight: 800,
+          padding: "3px 9px", borderRadius: 999,
+          background: "var(--accent)", color: "#fff",
+          fontSize: 11, fontWeight: 600,
           display: "flex", alignItems: "center", gap: 3,
           transform: `scale(${invScale})`, transformOrigin: "bottom left",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
           pointerEvents: "none",
           whiteSpace: "nowrap",
         }}>🗨 {commentCount}</div>
       )}
-      {/* v1.10.62 — 메타 hover 패널 (좌하단). 줌이 변해도 일정 크기 유지하기 위해 counter-scale. */}
+      {/* v1.10.62 — 메타 hover 패널 (좌하단). v1.10.174 mono 폰트 표준화. */}
       {showMeta && (
         <div style={{
           position: "absolute", bottom: 6, left: 6,
           padding: "4px 8px", borderRadius: 6,
           background: "rgba(0,0,0,0.78)", color: "#fff",
-          fontSize: 10, fontWeight: 600, lineHeight: 1.4,
-          fontFamily: "monospace",
+          fontSize: 10, fontWeight: 500, lineHeight: 1.4,
+          fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
           pointerEvents: "none",
           maxWidth: "calc(100% - 12px)",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           transform: `scale(${invScale})`, transformOrigin: "bottom left",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
         }}>
           {metaParts.join(" · ")}
         </div>
@@ -8106,7 +8106,7 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           position: "absolute", top: 6, left: 6,
           padding: "2px 8px", borderRadius: 4,
           background: "rgba(0,0,0,0.72)", color: "#fff",
-          fontSize: 10, fontWeight: 700, pointerEvents: "none",
+          fontSize: 10, fontWeight: 600, pointerEvents: "none",
           transform: `scale(${invScale})`, transformOrigin: "top left",
         }}>{item.label}</div>
       )}
@@ -8123,17 +8123,18 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
         style={{
           position: "absolute", top: 6, right: 6,
           width: 30, height: 30, borderRadius: 15,
-          background: item.isCover ? "#22c55e" : "rgba(0,0,0,0.55)",
+          background: item.isCover ? "var(--accent)" : "rgba(0,0,0,0.55)",
           border: "none",
           color: "#fff",
           fontSize: 15, cursor: item.isCover ? "default" : "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
           padding: 0, lineHeight: 1,
           transform: `scale(${invScale})`, transformOrigin: "top right",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+          fontFamily: "inherit",
         }}
       >{item.isCover ? "⭐" : "☆"}</button>
-      {/* v1.10.63 — 시안/시트 → 다음 시안 생성 참조로 추가 (hover 시만 노출) */}
+      {/* v1.10.63 — 시안/시트 → 다음 시안 생성 참조로 추가 (hover 시만 노출).
+          v1.10.174 — 파랑 → KRAFTON accent 액센트 톤. */}
       {hovered && isCopyable && onCopyToRef && (
         <button
           data-action="copy-ref"
@@ -8143,16 +8144,17 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           title="다음 시안 생성 참조로 추가"
           style={{
             position: "absolute", top: 6, right: 42,
-            padding: "4px 9px", borderRadius: 13,
-            background: "rgba(7,110,232,0.85)", border: "none",
-            color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+            padding: "4px 9px", borderRadius: 999,
+            background: "var(--accent)", border: "none",
+            color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
             transform: `scale(${invScale})`, transformOrigin: "top right",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
             whiteSpace: "nowrap",
+            fontFamily: "inherit",
           }}
         >🎯 참조</button>
       )}
-      {/* v1.10.144 — 펼침 패널 토글 ⓘ. hover 또는 펼친 상태에서만 노출. ⭐ 옆 자리. */}
+      {/* v1.10.144 — 펼침 패널 토글 ⓘ. hover 또는 펼친 상태에서만 노출. ⭐ 옆 자리.
+          v1.10.174 — amber → KRAFTON 액센트 (단일 액센트 정책). */}
       {(hovered || isExpanded) && onToggleExpand && (
         <button
           data-action="expand"
@@ -8163,14 +8165,14 @@ function GalleryTile({ item, width, height, naturalImgW, naturalImgH, scale, onS
           style={{
             position: "absolute", top: 6, right: isCopyable ? 130 : 42,
             width: 30, height: 30, borderRadius: 15,
-            background: isExpanded ? "rgba(250,204,21,0.92)" : "rgba(0,0,0,0.55)",
+            background: isExpanded ? "var(--accent)" : "rgba(0,0,0,0.55)",
             border: "none",
-            color: isExpanded ? "#1a1d23" : "#fff",
-            fontSize: 14, fontWeight: 800, cursor: "pointer",
+            color: "#fff",
+            fontSize: 14, fontWeight: 700, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: 0, lineHeight: 1,
             transform: `scale(${invScale})`, transformOrigin: "top right",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+            fontFamily: "inherit",
           }}
         >ⓘ</button>
       )}
