@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.165";
+const APP_VERSION = "1.10.166";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -14546,11 +14546,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   onChange={(e) => moveTo(e.target.value)}
                   disabled={confirmed}
                   style={{
-                    padding: "8px 14px", borderRadius: 10,
-                    border: "1px solid var(--surface-border)",
-                    background: "rgba(0,0,0,0.03)",
-                    color: "var(--text-main)", fontSize: 13, fontWeight: 600,
+                    height: 32, padding: "0 28px 0 12px", borderRadius: 8,
+                    border: "1px solid var(--line)",
+                    background: "var(--bg-card)",
+                    color: "var(--fg)", fontSize: 13, fontWeight: 500,
                     cursor: confirmed ? "not-allowed" : "pointer",
+                    fontFamily: "inherit", boxSizing: "border-box", outline: "none",
+                    appearance: "none", WebkitAppearance: "none", MozAppearance: "none",
+                    backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B6B73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\")",
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "right 10px center",
                   }}
                 >
                   {lists.map((l) => (
@@ -14575,9 +14580,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       } catch (e) { alert("재오픈 실패: " + e.message); }
                     }}
                     style={{
-                      padding: "8px 12px", borderRadius: 10,
-                      background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)",
-                      color: "#d97706", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      height: 32, padding: "0 12px", borderRadius: 8,
+                      background: "var(--bg-card)", border: "1px solid var(--line)",
+                      color: "var(--fg-muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                      fontFamily: "inherit", boxSizing: "border-box",
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      transition: "background-color 120ms, color 120ms",
                     }}
                     title="컨펌 해제 (편집 가능 상태로 되돌리기)"
                   >🔓 재오픈</button>
@@ -14614,9 +14622,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     } catch (e) { alert("복제 실패: " + e.message); }
                   }}
                   style={{
-                    padding: "8px 12px", borderRadius: 10,
-                    background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                    color: "var(--primary)", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    height: 32, padding: "0 12px", borderRadius: 8,
+                    background: "var(--bg-card)", border: "1px solid var(--line)",
+                    color: "var(--fg-muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    transition: "background-color 120ms, color 120ms",
                   }}
                   title="비슷한 컨셉으로 새 카드 시작 (시안/시트 비움)"
                 >📋 복제</button>
@@ -14633,9 +14644,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     } catch (e) { alert("삭제 실패: " + e.message); }
                   }}
                   style={{
-                    padding: "8px 12px", borderRadius: 10,
-                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)",
-                    color: "#dc2626", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    height: 32, padding: "0 12px", borderRadius: 8,
+                    background: "var(--danger-soft)", border: "1px solid var(--danger-soft)",
+                    color: "var(--danger)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    transition: "background-color 120ms",
                   }}
                   title="영구 삭제 (복구 불가)"
                 >🗑️ 삭제</button>
@@ -14657,9 +14671,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       } catch (e) { alert("복구 실패: " + e.message); }
                     }}
                     style={{
-                      padding: "8px 12px", borderRadius: 10,
-                      background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.4)",
-                      color: "#15803d", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      height: 32, padding: "0 12px", borderRadius: 8,
+                      background: "var(--success-soft)", border: "1px solid var(--success-soft)",
+                      color: "var(--success)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                      fontFamily: "inherit", boxSizing: "border-box",
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      transition: "background-color 120ms",
                     }}
                     title="아카이브에서 꺼내 원래 단계로 복구"
                   >📤 복구</button>
@@ -14674,9 +14691,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       } catch (e) { alert("아카이브 실패: " + e.message); }
                     }}
                     style={{
-                      padding: "8px 12px", borderRadius: 10,
-                      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                      color: "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      height: 32, padding: "0 12px", borderRadius: 8,
+                      background: "var(--bg-card)", border: "1px solid var(--line)",
+                      color: "var(--fg-muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                      fontFamily: "inherit", boxSizing: "border-box",
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      transition: "background-color 120ms, color 120ms",
                     }}
                     title="목록에서 숨김 (아카이브 뷰에서 복구 가능)"
                   >🗄️ 아카이브</button>
@@ -14684,18 +14704,21 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <button
                   onClick={() => setDetailCard(null)}
                   style={{
-                    width: 36, height: 36, borderRadius: 10,
-                    background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-                    color: "var(--text-muted)", fontSize: 18, cursor: "pointer",
+                    width: 32, height: 32, borderRadius: 8,
+                    background: "var(--bg-card)", border: "1px solid var(--line)",
+                    color: "var(--fg-muted)", fontSize: 16, cursor: "pointer",
                     display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    transition: "background-color 120ms, color 120ms",
                   }}
+                  title="닫기"
                 >✕</button>
               </div>
 
               {/* Body — v1.10.78: 우측이 시안 그리드 1열 더 수용하도록 1fr → 1.3fr 비율 (좌 ≈ 696, 우 ≈ 904). */}
               <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 0 }}>
                 {/* 왼쪽: 메타 chip · 이름 · 대표이미지 · 어셋정보 (v1.10.132 정리) */}
-                <div style={{ padding: 24, borderRight: "1px solid var(--surface-border)" }}>
+                <div style={{ padding: 24, borderRight: "1px solid var(--line)" }}>
                   {/* 1) 메타 chip 한 줄 — 일정 + 우선순위 (v1.10.132) */}
                   <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
                     <TargetUpdateField

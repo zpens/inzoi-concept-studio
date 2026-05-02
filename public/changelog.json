@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.166",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 5b — Card Detail 모달 헤더 우측 액션 7개 KRAFTON 톤 일괄 정돈. (1) 한벌시트 select: padding 8x14 / radius 10 → h32 / radius 8 / --line + --bg-card + custom SVG chevron. (2) 🔓 재오픈: amber rgba → 일반 ghost (--bg-card + --line + --fg-muted, h32). (3) 📋 복제: 파랑 rgba → 일반 ghost. (4) 🗑️ 삭제: 빨강 rgba (#dc2626) → KRAFTON --danger-soft + --danger 토큰. (5) 📤 복구: 그린 rgba → --success-soft + --success. (6) 🗄️ 아카이브: 회색 rgba → ghost 토큰. (7) ✕ 닫기: 36×36 / radius 10 → 32×32 / radius 8 / fontSize 18 → 16. 모든 버튼 fontWeight 700 → 500, padding 8px → h32 통일, 부드러운 transition. 본문 좌측 borderRight 도 var(--line) 토큰화. 기능 변경 0"
+    ]
+  },
+  {
     "version": "1.10.165",
     "date": "2026-05-02",
     "changes": [
