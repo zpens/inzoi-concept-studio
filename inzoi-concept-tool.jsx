@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.184";
+const APP_VERSION = "1.10.185";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9301,20 +9301,14 @@ function DesignsPanel({
             <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--danger)", fontSize: 11 }}>실패</div>
           )}
         </div>
-        {/* 액션 row — 시안 번호 · 대표 · 투표 · 삭제 순. v1.10.184 */}
+        {/* 액션 row — 좌: 대표 · 추천(👍) / 우: 삭제. v1.10.185 시안 번호 제거 */}
         <div style={{
           display: "flex", alignItems: "center", gap: 4,
           padding: "5px 6px",
           borderTop: "1px solid var(--line)",
           background: "var(--bg-card)",
         }}>
-          <span style={{
-            fontSize: 11, fontWeight: 600, color: "var(--fg-muted)",
-            fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
-            whiteSpace: "nowrap",
-          }}>{renderBadge(d, i)}</span>
-          <div style={{ flex: 1 }} />
-          {/* 대표 — 아이콘만 (⭐ 또는 ☆) */}
+          {/* 좌측: 대표 — 아이콘만 (⭐ / ☆) */}
           {d?.imageUrl && (
             isSelected ? (
               <span
@@ -9343,7 +9337,7 @@ function DesignsPanel({
               >☆</button>
             )
           )}
-          {/* 👍 투표 + 카운트 */}
+          {/* 좌측: 👍 추천 + 카운트 */}
           {d?.imageUrl && !disabled && (
             <button
               onClick={() => toggleVote(i)}
@@ -9366,7 +9360,8 @@ function DesignsPanel({
               {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
             </button>
           )}
-          {/* 🗑 삭제 */}
+          <div style={{ flex: 1 }} />
+          {/* 우측: 🗑 삭제 */}
           {showDelete && (
             <button
               onClick={() => removeDesign(i)}
