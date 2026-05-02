@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.162",
+    "date": "2026-05-02",
+    "changes": [
+      "DS 마이그레이션 4단계 후속 — List View 툴바 컴포넌트 정돈. (1) ViewModeToggle: 활성 색 var(--primary) 액센트 → var(--fg-strong) 검정 / fontWeight 500 / 부드러운 transition. 컨테이너 배경 토큰화 (--bg-soft / --line). (2) CardScaleSelect: 동일 톤 적용, fontWeight 700 → 600. (3) SortSelect: native select 를 KRAFTON h32 / radius 8 / --bg-card / --line 으로 통일. focus 시 border 검정. SVG chevron 아이콘 (커스텀). (4) + 새 시안 버튼: padding 12 22 → 0 14 / radius 12 → 8 / fontSize 14 → 13 / fontWeight 700 → 500 / boxShadow 제거 / hover-lift 클래스 제거. KRAFTON 액센트 버튼 톤 (h32, flat). 기능 동작 0 변경"
+    ]
+  },
+  {
     "version": "1.10.161",
     "date": "2026-05-02",
     "changes": [

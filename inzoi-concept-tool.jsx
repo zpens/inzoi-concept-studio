@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.161";
+const APP_VERSION = "1.10.162";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4821,24 +4821,28 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename, curren
 
 // 카드/리스트 뷰 토글.
 function ViewModeToggle({ value, onChange }) {
-  const btn = (mode, icon, title) => (
-    <button
-      onClick={() => onChange(mode)}
-      title={title}
-      style={{
-        padding: "4px 10px", borderRadius: 6,
-        background: value === mode ? "#fff" : "transparent",
-        border: "none", cursor: "pointer",
-        fontSize: 13,
-        color: value === mode ? "var(--primary)" : "var(--text-muted)",
-        boxShadow: value === mode ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-      }}
-    >{icon}</button>
-  );
+  const btn = (mode, icon, title) => {
+    const active = value === mode;
+    return (
+      <button
+        onClick={() => onChange(mode)}
+        title={title}
+        style={{
+          padding: "4px 10px", borderRadius: 6,
+          background: active ? "var(--bg-card)" : "transparent",
+          border: "none", cursor: "pointer",
+          fontSize: 13, fontWeight: 500,
+          color: active ? "var(--fg-strong)" : "var(--fg-muted)",
+          boxShadow: active ? "0 1px 2px rgba(20,20,26,0.08)" : "none",
+          transition: "background-color 120ms, color 120ms",
+        }}
+      >{icon}</button>
+    );
+  };
   return (
     <div style={{
       display: "flex", gap: 2, padding: 2, borderRadius: 8,
-      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+      background: "var(--bg-soft)", border: "1px solid var(--line)",
     }}>
       {btn("card", "🔲", "카드 뷰")}
       {btn("list", "☰", "리스트 뷰")}
@@ -5364,23 +5368,27 @@ function CardScaleSelect({ value, onChange }) {
   return (
     <div style={{
       display: "flex", gap: 2, padding: 2, borderRadius: 8,
-      background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
+      background: "var(--bg-soft)", border: "1px solid var(--line)",
     }}>
-      {[0.5, 1, 2].map((v) => (
-        <button
-          key={v}
-          onClick={() => onChange(v)}
-          title={`카드 크기 ${v}×`}
-          style={{
-            padding: "4px 10px", borderRadius: 6,
-            background: value === v ? "#fff" : "transparent",
-            border: "none", cursor: "pointer",
-            fontSize: 12, fontWeight: 700,
-            color: value === v ? "var(--primary)" : "var(--text-muted)",
-            boxShadow: value === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-          }}
-        >{v}×</button>
-      ))}
+      {[0.5, 1, 2].map((v) => {
+        const active = value === v;
+        return (
+          <button
+            key={v}
+            onClick={() => onChange(v)}
+            title={`카드 크기 ${v}×`}
+            style={{
+              padding: "4px 10px", borderRadius: 6,
+              background: active ? "var(--bg-card)" : "transparent",
+              border: "none", cursor: "pointer",
+              fontSize: 12, fontWeight: 600,
+              color: active ? "var(--fg-strong)" : "var(--fg-muted)",
+              boxShadow: active ? "0 1px 2px rgba(20,20,26,0.08)" : "none",
+              transition: "background-color 120ms, color 120ms",
+            }}
+          >{v}×</button>
+        );
+      })}
     </div>
   );
 }
@@ -5393,10 +5401,18 @@ function SortSelect({ value, onChange }) {
       onChange={(e) => onChange(e.target.value)}
       title="정렬 방식"
       style={{
-        padding: "6px 10px", borderRadius: 8,
-        border: "1px solid var(--surface-border)", background: "#fff",
-        color: "var(--text-main)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+        height: 32, padding: "0 28px 0 12px", borderRadius: 8,
+        border: "1px solid var(--line)", background: "var(--bg-card)",
+        color: "var(--fg)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+        fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+        appearance: "none", WebkitAppearance: "none", MozAppearance: "none",
+        backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B6B73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\")",
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: "right 10px center",
+        transition: "border-color 120ms",
       }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--fg-strong)"; }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--line)"; }}
     >
       <option value="date_desc">📅 최신순</option>
       <option value="date_asc">📅 오래된순</option>
@@ -12182,15 +12198,16 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   <ViewModeToggle value={viewMode} onChange={setViewMode} />
                   <CardScaleSelect value={cardScale} onChange={setCardScale} />
                   <SortSelect value={sortBy} onChange={setSortBy} />
-                  {/* v1.10.72 — 진행 중 탭에서 항상 노출. 새 카드는 drafting 으로 생성. */}
+                  {/* v1.10.72 — 진행 중 탭에서 항상 노출. 새 카드는 drafting 으로 생성.
+                      v1.10.162 — KRAFTON 액센트 버튼 톤 (h32 / radius 8 / 13/500 / flat). */}
                   <button
                     onClick={spawnNewJob}
-                    className="btn-primary hover-lift"
+                    className="btn-primary"
                     style={{
-                      padding: "12px 22px", borderRadius: 12, border: "none",
-                      color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 6,
-                      boxShadow: "0 4px 14px var(--primary-glow)",
+                      height: 32, padding: "0 14px", borderRadius: 8, border: "none",
+                      color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      fontFamily: "inherit", boxSizing: "border-box",
                     }}
                   >＋ 새 시안</button>
                 </div>
