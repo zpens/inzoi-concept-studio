@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.159";
+const APP_VERSION = "1.10.160";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -11851,15 +11851,19 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       )}
 
 
-      {/* Header — v1.10.158 KRAFTON DS step 3.
-          height 60 sticky, flat #fff, --line 보더. 좌→우: 브랜드 / 검색 / 카운터 칩 / spacer / 우측 액션. */}
+      {/* Header — v1.10.160 KRAFTON DS step 3.
+          height 60 sticky, flat #fff, --line 보더. grid 3컬럼 (1fr / auto / 1fr) 로 카운터 칩 정중앙. */}
       <header style={{
         height: 60, padding: "0 24px",
         background: "var(--bg-card)",
         borderBottom: "1px solid var(--line)",
-        display: "flex", alignItems: "center", gap: 16,
+        display: "grid",
+        gridTemplateColumns: "1fr auto 1fr",
+        alignItems: "center", gap: 16,
         position: "sticky", top: 0, zIndex: 100,
       }}>
+        {/* 좌측: 브랜드 + 검색 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
         <div
           style={{
             display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none",
@@ -11873,7 +11877,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           <span style={{ fontSize: 11, color: "var(--fg-faint)", fontWeight: 500 }}>v{APP_VERSION}</span>
         </div>
         {/* 헤더 전체 카드 검색 — 제목/설명/업데이트 태그/카테고리/스타일 라벨 매칭 */}
-        <div style={{ position: "relative", flex: 1, maxWidth: 480 }}>
+        <div style={{ position: "relative", flex: 1, maxWidth: 480, minWidth: 0 }}>
           <div style={{ position: "relative" }}>
             <svg
               width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -12001,6 +12005,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </div>
             )}
           </div>
+        </div>
         {/* v1.10.158 — 카운터 칩 (위시 오렌지점 / 진행중 회색점 / 완료 그린점). 클릭 = 탭 전환 (기존 기능 유지). */}
         {(() => {
           const TAB_STEP_RANGES = { progress: [0, 6] };
@@ -12061,10 +12066,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             </div>
           );
         })()}
-        <div style={{ flex: 1 }} />
 
         {/* v1.10.158 — Right: Settings / Archive / Profile. KRAFTON 토큰으로 정돈. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
           {/* 저장 상태 인디케이터 */}
           {syncStatus !== "idle" && (
             <span style={{

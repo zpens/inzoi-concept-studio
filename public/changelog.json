@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.160",
+    "date": "2026-05-02",
+    "changes": [
+      "헤더 카운터 칩 (위시 / 진행중 / 완료) 정중앙 정렬 — flex 레이아웃을 grid 3컬럼 (1fr / auto / 1fr) 으로 변경. 좌측 (브랜드 + 검색) 1fr / 중앙 카운터 칩 auto / 우측 액션 1fr justifyContent flex-end. 화면 폭과 무관하게 칩이 정확히 헤더 가운데 위치"
+    ]
+  },
+  {
     "version": "1.10.159",
     "date": "2026-05-02",
     "changes": [
