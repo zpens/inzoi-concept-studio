@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.173",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 6 — Lineage View / GalleryCanvas 툴바 정돈. 갤러리는 이미지 감상용이라 dark 배경 유지하면서 액센트만 KRAFTON 톤으로 통일. (1) 그룹 토글 칩 (참조/시안/시트): 활성 시 파랑 rgba(7,110,232,0.25) → KRAFTON 액센트 rgba(249,66,58,0.25) (단일 액센트 정책). radius 12 → 999 pill / h24 / weight 700→600. (2) 🔀 비교 버튼: 파랑/보라 그라디언트 → var(--accent) 단색, hover 시 var(--accent-press). radius 999 / h26. (3) ✓ N장 선택 칩: 그린 rgba(34,197,94,0.2) → KRAFTON success rgba(26,127,79,0.2). radius 999 pill. (4) ↺ 정렬 리셋: rgba(239,68,68) → KRAFTON danger rgba(200,51,43). weight 700→600. (5) ✕ 닫기 버튼: rgba(239,68,68) → KRAFTON danger rgba(200,51,43). weight 700→600. Lineage / 흐름선 토글의 amber 색은 lineage 라인 색상 컨벤션이라 유지. 줌 +/− / 1:1 / 전체 / 레이아웃 모드 토글 등 dark ghost 버튼은 그대로"
+    ]
+  },
+  {
     "version": "1.10.172",
     "date": "2026-05-02",
     "changes": [

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.172";
+const APP_VERSION = "1.10.173";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -6269,12 +6269,15 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
                   onClick={() => toggleGroup(g.key)}
                   title={enabled ? "이 그룹 숨기기" : "이 그룹 표시"}
                   style={{
-                    padding: "4px 10px", borderRadius: 12,
-                    background: enabled ? "rgba(7,110,232,0.25)" : "rgba(255,255,255,0.05)",
-                    border: `1px solid ${enabled ? "rgba(7,110,232,0.55)" : "rgba(255,255,255,0.18)"}`,
+                    height: 24, padding: "0 10px", borderRadius: 999,
+                    background: enabled ? "rgba(249,66,58,0.25)" : "rgba(255,255,255,0.05)",
+                    border: "1px solid " + (enabled ? "rgba(249,66,58,0.55)" : "rgba(255,255,255,0.18)"),
                     color: enabled ? "#fff" : "rgba(255,255,255,0.45)",
-                    fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    fontSize: 11, fontWeight: 600, cursor: "pointer",
                     textDecoration: enabled ? "none" : "line-through",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    display: "inline-flex", alignItems: "center",
+                    transition: "background-color 120ms, border-color 120ms, color 120ms",
                   }}
                 >{label} ({g.items.length})</button>
               );
@@ -6286,19 +6289,26 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
           {selectedUrls.size > 0 && (
             <>
               <span style={{
-                padding: "4px 10px", borderRadius: 12,
-                background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.5)",
-                color: "#86efac", fontSize: 11, fontWeight: 700,
+                height: 24, padding: "0 10px", borderRadius: 999,
+                background: "rgba(26,127,79,0.2)", border: "1px solid rgba(26,127,79,0.5)",
+                color: "#86efac", fontSize: 11, fontWeight: 600,
+                fontFamily: "inherit", boxSizing: "border-box",
+                display: "inline-flex", alignItems: "center", gap: 4,
               }}>✓ {selectedUrls.size}장 선택</span>
               {selectedUrls.size >= 2 && (
                 <button
                   onClick={() => setCompareMode(true)}
                   title="선택한 이미지 나란히 비교"
                   style={{
-                    padding: "5px 12px", borderRadius: 12,
-                    background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-                    border: "none", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    height: 26, padding: "0 12px", borderRadius: 999,
+                    background: "var(--accent)",
+                    border: "1px solid transparent", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    transition: "background-color 120ms",
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-press)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
                 >🔀 비교</button>
               )}
               <button
@@ -6364,8 +6374,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
               title="Alt+드래그로 옮긴 모든 타일 위치를 기본 정렬로 복구"
               style={{
                 padding: "5px 10px", borderRadius: 6,
-                background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)",
-                color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                background: "rgba(200,51,43,0.15)", border: "1px solid rgba(200,51,43,0.4)",
+                color: "#fca5a5", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "background-color 120ms",
               }}
             >↺ 정렬 리셋 ({Object.keys(customLayout).length})</button>
           )}
@@ -6444,8 +6456,10 @@ function GalleryCanvas({ card, projectSlug, actor, onClose, onSaved }) {
             onClick={onClose}
             style={{
               padding: "5px 10px", borderRadius: 6,
-              background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)",
-              color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer",
+              background: "rgba(200,51,43,0.15)", border: "1px solid rgba(200,51,43,0.4)",
+              color: "#fca5a5", fontSize: 11, fontWeight: 600, cursor: "pointer",
+              fontFamily: "inherit",
+              transition: "background-color 120ms",
             }}
           >✕ 닫기</button>
         </div>
