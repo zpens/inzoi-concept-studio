@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.157";
+const APP_VERSION = "1.10.158";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -11851,76 +11851,88 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       )}
 
 
-      {/* Header */}
-      <header className="glass-panel" style={{
-        padding: "12px 24px",
-        borderBottom: "1px solid var(--surface-border)",
-        // v1.10.77 — 3 컬럼 grid 로 좌/중/우 배치. 가운데 탭이 화면 중앙에 정확히 위치.
-        display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12,
+      {/* Header — v1.10.158 KRAFTON DS step 3.
+          height 60 sticky, flat #fff, --line 보더. 좌→우: 브랜드 / 검색 / 카운터 칩 / spacer / 우측 액션. */}
+      <header style={{
+        height: 60, padding: "0 24px",
+        background: "var(--bg-card)",
+        borderBottom: "1px solid var(--line)",
+        display: "flex", alignItems: "center", gap: 16,
         position: "sticky", top: 0, zIndex: 100,
-        boxShadow: "0 4px 30px rgba(0, 0, 0, 0.5)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div
-            style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", userSelect: "none" }}
-            onClick={() => setVersionOpen(true)}
-            title="버전 정보 보기"
-          >
-            <img src="/InZOI_Logo.png" alt="inZOI" style={{ height: 28, objectFit: "contain" }} />
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="text-gradient" style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em" }}>
-                  Asset Studio
-                </span>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, color: "var(--accent)",
-                  background: "rgba(152,166,255,0.1)", border: "1px solid rgba(152,166,255,0.25)",
-                  padding: "1px 7px", borderRadius: 6, letterSpacing: "0.02em",
-                }}>
-                  v{APP_VERSION}
-                </span>
-              </div>
-              {/* v1.10.77 — tagline 제거로 좌측 브랜딩 폭 축소 */}
-            </div>
-          </div>
-          {/* 헤더 전체 카드 검색 — 제목/설명/업데이트 태그/카테고리/스타일 라벨 매칭 */}
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none",
+            flexShrink: 0,
+          }}
+          onClick={() => setVersionOpen(true)}
+          title="버전 정보 보기"
+        >
+          <span style={{
+            fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em",
+            color: "var(--fg-strong)", lineHeight: 1,
+          }}>
+            in<span style={{ color: "var(--accent)" }}>ZOI</span>
+          </span>
+          <span style={{ fontSize: 13, color: "var(--fg-muted)", fontWeight: 500 }}>Asset Studio</span>
+          <span style={{ fontSize: 11, color: "var(--fg-faint)", fontWeight: 500 }}>v{APP_VERSION}</span>
+        </div>
+        {/* 헤더 전체 카드 검색 — 제목/설명/업데이트 태그/카테고리/스타일 라벨 매칭 */}
+        <div style={{ position: "relative", flex: 1, maxWidth: 480 }}>
           <div style={{ position: "relative" }}>
-            <div style={{ position: "relative" }}>
-              <span style={{
-                position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
-                fontSize: 13, pointerEvents: "none", opacity: 0.6,
-              }}>🔍</span>
-              <input
-                type="text"
-                value={globalSearch}
-                onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchOpen(true); }}
-                onFocus={() => setGlobalSearchOpen(true)}
-                onBlur={() => setTimeout(() => setGlobalSearchOpen(false), 200)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") { setGlobalSearch(""); setGlobalSearchOpen(false); e.currentTarget.blur(); }
-                }}
-                placeholder="전체 카드 검색 (제목 / 설명 / 태그 / 카테고리)"
+            <svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="var(--fg-muted)" strokeWidth="1.75"
+              strokeLinecap="round" strokeLinejoin="round"
+              style={{
+                position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+                pointerEvents: "none",
+              }}
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              value={globalSearch}
+              onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchOpen(true); }}
+              onFocus={(e) => {
+                setGlobalSearchOpen(true);
+                e.currentTarget.style.background = "var(--bg-card)";
+                e.currentTarget.style.borderColor = "var(--fg-strong)";
+              }}
+              onBlur={(e) => {
+                setTimeout(() => setGlobalSearchOpen(false), 200);
+                e.currentTarget.style.background = "var(--bg-soft)";
+                e.currentTarget.style.borderColor = "var(--line)";
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setGlobalSearch(""); setGlobalSearchOpen(false); e.currentTarget.blur(); }
+              }}
+              placeholder="전체 카드 검색 (제목 / 설명 / 태그 / 카테고리)"
+              style={{
+                width: "100%", height: 36, padding: "0 32px 0 38px", borderRadius: 8,
+                border: "1px solid var(--line)",
+                background: "var(--bg-soft)",
+                fontSize: 13, color: "var(--fg)", outline: "none", boxSizing: "border-box",
+                fontFamily: "inherit",
+                transition: "background-color 120ms, border-color 120ms",
+              }}
+            />
+            {globalSearch && (
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setGlobalSearch(""); setGlobalSearchOpen(false); }}
+                title="지우기"
                 style={{
-                  width: 238, padding: "8px 28px 8px 32px", borderRadius: 10,
-                  border: "1px solid var(--surface-border)",
-                  background: "rgba(0,0,0,0.03)",
-                  fontSize: 12, color: "var(--text-main)", outline: "none", boxSizing: "border-box",
+                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                  width: 18, height: 18, borderRadius: 9,
+                  background: "var(--chip-bg)", border: "none",
+                  color: "var(--fg-muted)", fontSize: 10, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
                 }}
-              />
-              {globalSearch && (
-                <button
-                  onMouseDown={(e) => { e.preventDefault(); setGlobalSearch(""); setGlobalSearchOpen(false); }}
-                  title="지우기"
-                  style={{
-                    position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
-                    width: 18, height: 18, borderRadius: 9,
-                    background: "rgba(0,0,0,0.08)", border: "none",
-                    color: "var(--text-muted)", fontSize: 10, cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                >✕</button>
-              )}
-            </div>
+              >✕</button>
+            )}
+          </div>
             {globalSearchOpen && globalSearch.trim() && (
               <div style={{
                 position: "absolute", top: "calc(100% + 4px)", left: 0,
@@ -11994,17 +12006,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               </div>
             )}
           </div>
-        </div>
-        {/* Tab Navigation — 5-step workflow */}
+        {/* v1.10.158 — 카운터 칩 (위시 오렌지점 / 진행중 회색점 / 완료 그린점). 클릭 = 탭 전환 (기존 기능 유지). */}
         {(() => {
-          // 각 탭이 "담당하는" step 범위. 탭 클릭 시 해당 범위의 작업으로
-          // active 를 옮기고, 범위 밖이면 empty 상태 UI 가 표시된다.
-          const TAB_STEP_RANGES = {
-            progress: [0, 6], // v1.10.72 — 통합 탭은 step 0~6 전체 커버
-          };
-          // 자연스러운 흐름: 아이디어(위시) → 시안 → 투표 → 컨셉시트 → 완료
-          // count 는 legacy jobs + 새 카드 시스템 합산.
-          // v1.10.72 — 3 탭(시안 생성 / 투표 및 선정 / 컨셉시트 생성) 을 "🚀 진행 중" 단일 탭으로 통합.
+          const TAB_STEP_RANGES = { progress: [0, 6] };
           const draftingListId = lists.find((l) => l.status_key === "drafting")?.id;
           const sheetListId    = lists.find((l) => l.status_key === "sheet")?.id;
           const activeDraftingCards = draftingListId
@@ -12015,13 +12019,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             : 0;
           const progressCount = activeDraftingCards.length + sheetCount + jobs.filter(j => j.step >= 0 && j.step <= 6).length;
           const TABS = [
-            { id: "wishlist",  label: "위시",     icon: "⭐", count: wishlist.length },
-            { id: "progress",  label: "진행 중",  icon: "🚀", count: progressCount },
-            { id: "completed", label: "완료",     icon: "✅", count: completedList.length },
+            { id: "wishlist",  label: "위시",    count: wishlist.length,    dot: "var(--accent)"  },
+            { id: "progress",  label: "진행 중", count: progressCount,      dot: "var(--fg-muted)" },
+            { id: "completed", label: "완료",    count: completedList.length, dot: "var(--success)" },
           ];
           const switchTab = (id) => {
             setActiveTab(id);
-            // 명시적 탭 이동 시에는 상세 뷰를 닫고 그리드만 보이게 한다.
             setShowWorkflowDetail(false);
             const range = TAB_STEP_RANGES[id];
             if (range && (step < range[0] || step > range[1])) {
@@ -12030,48 +12033,51 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             }
           };
           return (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: 14, border: "1px solid var(--surface-border)" }}>
-              {TABS.map((tab, idx) => (
-                <React.Fragment key={tab.id}>
-                  {(idx === 1 || idx === 2) && <div style={{ width: 1, height: 20, background: "var(--surface-border)", margin: "0 2px" }} />}
-                  <button onClick={() => switchTab(tab.id)} style={{
-                    padding: "8px 14px", borderRadius: 10,
-                    background: activeTab === tab.id ? "#fff" : "transparent",
-                    border: "none",
-                    color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
-                    fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 500,
-                    cursor: "pointer", transition: "all 0.2s",
-                    display: "flex", alignItems: "center", gap: 6,
-                    boxShadow: activeTab === tab.id ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
-                    whiteSpace: "nowrap",
-                  }}>
-                    <span style={{ fontSize: 14 }}>{tab.icon}</span>
-                    {tab.label}
-                    {tab.count > 0 && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 7,
-                        background: activeTab === tab.id ? "rgba(7,110,232,0.14)" : "rgba(0,0,0,0.06)",
-                        color: activeTab === tab.id ? "var(--primary)" : "var(--text-muted)",
-                      }}>
-                        {tab.count}
-                      </span>
-                    )}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {TABS.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => switchTab(tab.id)}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      height: 32, padding: "0 12px", borderRadius: 999,
+                      background: isActive ? "var(--fg-strong)" : "var(--bg-soft)",
+                      border: "1px solid " + (isActive ? "var(--fg-strong)" : "var(--line)"),
+                      color: isActive ? "#fff" : "var(--fg)",
+                      fontSize: 12, fontWeight: 500, cursor: "pointer",
+                      fontFamily: "inherit", whiteSpace: "nowrap",
+                      transition: "background-color 120ms, color 120ms, border-color 120ms",
+                    }}
+                  >
+                    <span style={{
+                      width: 6, height: 6, borderRadius: 999, background: tab.dot, flexShrink: 0,
+                    }} />
+                    <span>{tab.label}</span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700,
+                      color: isActive ? "#fff" : "var(--fg)",
+                      opacity: isActive ? 1 : 0.85,
+                    }}>{tab.count}</span>
                   </button>
-                </React.Fragment>
-              ))}
+                );
+              })}
             </div>
           );
         })()}
+        <div style={{ flex: 1 }} />
 
-        {/* Right: Settings + New Start button */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
-          {/* 저장 상태 작은 인디케이터 (프로젝트는 전체 공유 하나라 URL 공유 UI 는 제거). */}
+        {/* v1.10.158 — Right: Settings / Archive / Profile. KRAFTON 토큰으로 정돈. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {/* 저장 상태 인디케이터 */}
           {syncStatus !== "idle" && (
             <span style={{
-              fontSize: 11, fontWeight: 700,
-              padding: "6px 10px", borderRadius: 8,
-              background: syncStatus === "error" ? "rgba(239,68,68,0.1)" : "rgba(7,110,232,0.08)",
-              color: syncStatus === "error" ? "#ef4444" : "var(--primary)",
+              fontSize: 11, fontWeight: 600,
+              padding: "4px 10px", borderRadius: 8,
+              background: syncStatus === "error" ? "var(--danger-soft)" : "var(--bg-soft)",
+              color: syncStatus === "error" ? "var(--danger)" : "var(--fg-muted)",
+              border: "1px solid " + (syncStatus === "error" ? "var(--danger-soft)" : "var(--line)"),
             }}>
               {syncStatus === "saving" ? "저장중..." : "저장 실패"}
             </span>
@@ -12086,36 +12092,38 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               }
               setArchiveOpen(true);
             }}
-            className="hover-lift"
-            style={{
-              padding: "5px 10px", borderRadius: 8,
-              background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)",
-              color: "var(--text-muted)", fontSize: 11, fontWeight: 600, cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 4,
-            }}
             title="아카이브된 카드 목록"
+            style={{
+              height: 32, padding: "0 12px", borderRadius: 8,
+              background: "var(--bg-card)", border: "1px solid var(--line)",
+              color: "var(--fg-muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontFamily: "inherit", boxSizing: "border-box",
+              transition: "background-color 120ms, color 120ms",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-muted)"; e.currentTarget.style.color = "var(--fg)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-card)"; e.currentTarget.style.color = "var(--fg-muted)"; }}
           >
             <span style={{ fontSize: 12 }}>🗄️</span>
             아카이브
           </button>
           <button
             onClick={() => setShowApiSettings(true)}
-            className="hover-lift"
             style={{
-              padding: "5px 10px", borderRadius: 8,
-              background: geminiApiKey ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
-              border: `1px solid ${geminiApiKey ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
-              color: geminiApiKey ? "#10b981" : "#ef4444",
-              fontSize: 11, fontWeight: 600, cursor: "pointer",
-              transition: "all 0.3s",
-              display: "flex", alignItems: "center", gap: 4,
+              height: 32, padding: "0 12px", borderRadius: 8,
+              background: geminiApiKey ? "var(--success-soft)" : "var(--accent-soft)",
+              border: "1px solid " + (geminiApiKey ? "var(--success-soft)" : "var(--accent-soft)"),
+              color: geminiApiKey ? "var(--success)" : "var(--accent-press)",
+              fontSize: 12, fontWeight: 500, cursor: "pointer",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontFamily: "inherit", boxSizing: "border-box",
+              transition: "background-color 120ms",
             }}
+            title={geminiApiKey ? "API 키 설정됨" : "API 키 미설정 — 클릭하여 입력"}
           >
             <span style={{ fontSize: 12 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
             API 설정
           </button>
-          {/* 헤더의 ＋ 새 시안 버튼은 v1.10.12 제거 — 시안 생성 탭 본문에 동일 버튼 존재 */}
-          {/* 프로필 선택기 — 헤더 맨 오른쪽 끝 (v1.10.8) */}
           <ProfilePicker
             profiles={profiles}
             current={currentProfile}

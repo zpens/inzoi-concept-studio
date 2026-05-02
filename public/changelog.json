@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.158",
+    "date": "2026-05-02",
+    "changes": [
+      "DS 마이그레이션 3단계 — Global Header. height 60px sticky / flat #fff / --line 보더로 정돈. 좌측 InZOI_Logo.png + text-gradient + 보라 칩 배지를 KRAFTON 텍스트 워드마크 (in + ZOI 액센트) + Asset Studio + v버전 으로 교체. 검색 박스: max-width 480 / soft 배경 / focus 시 흰+검정 보더 / 좌측 16px SVG 검색 아이콘 / 우측 ✕ 칩. 가운데 5단계 탭을 KRAFTON 카운터 칩 (위시 오렌지점·진행중 회색점·완료 그린점) 으로 교체 — 클릭 시 탭 전환 기존 기능 그대로. 우측 아카이브 / API 설정 버튼 — KRAFTON 토큰 (--bg-card / --line / --fg-muted / --success-soft / --accent-soft) 으로 색감 통일, 호버 시 부드러운 회색 전환. ProfilePicker 는 그대로 유지. glass-panel / hover-lift / btn-primary 같은 utility class 제거. 기능·라우팅 변경 0"
+    ]
+  },
+  {
     "version": "1.10.157",
     "date": "2026-05-02",
     "changes": [
