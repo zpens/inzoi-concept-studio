@@ -294,3 +294,12 @@ textarea {
   opacity: 1;
 }
 
+/* v1.10.164 — KRAFTON List View row. hover 시 bg-muted 로 부드럽게 전환. */
+.card-list-row {
+  transition: background-color 120ms, border-color 120ms;
+}
+.card-list-row:hover {
+  background: var(--bg-muted) !important;
+  border-color: var(--line-strong) !important;
+}
+

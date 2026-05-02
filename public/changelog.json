@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.164",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 4d — CardListRow 톤 정돈. (1) row root: className hover-lift → card-list-row. background var(--surface-color) → var(--bg-card), border var(--surface-border) → var(--line). transition all 0.15s → CSS class 의 부드러운 background-color/border-color 120ms. hover 시 var(--bg-muted) + var(--line-strong). (2) 제목 텍스트: fontWeight 700 → 600, color var(--text-main) → var(--fg-strong), letter-spacing -0.01em (KRAFTON H2 톤). hover bg rgba(0,0,0,0.04) → var(--bg-soft). 부드러운 transition. (3) 제목 인라인 편집 input: border var(--primary) 액센트 → var(--fg-strong) 검정 (KRAFTON focus 톤). color/background 토큰화. List View 행 hover/편집 인터랙션이 KRAFTON 톤으로 통일"
+    ]
+  },
+  {
     "version": "1.10.163",
     "date": "2026-05-02",
     "changes": [

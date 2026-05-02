@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.163";
+const APP_VERSION = "1.10.164";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -5010,15 +5010,15 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
     <div
       ref={rowRef}
       onClick={onClick}
-      className="hover-lift"
+      className="card-list-row"
       style={{
         display: "grid",
         gridTemplateColumns: getListGrid(scale),
         gap: 14, alignItems: "center",
         padding: `${rowPadV}px 18px`, borderRadius: 12,
-        border: "1px solid var(--surface-border)",
-        background: "var(--surface-color)",
-        cursor: "pointer", transition: "all 0.15s",
+        border: "1px solid var(--line)",
+        background: "var(--bg-card)",
+        cursor: "pointer",
         position: "relative",
         // 팝오버 열릴 때 이 row 를 다른 row 보다 위로 올림 (v1.10.47).
         zIndex: editing ? 100 : "auto",
@@ -5055,9 +5055,10 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
             }}
             style={{
               width: "100%", padding: "6px 10px", borderRadius: 8,
-              border: "1px solid var(--primary)", outline: "none",
-              fontSize: 15, fontWeight: 700, color: "var(--text-main)",
-              background: "#fff", boxSizing: "border-box",
+              border: "1px solid var(--fg-strong)", outline: "none",
+              fontSize: 15, fontWeight: 700, color: "var(--fg)",
+              background: "var(--bg-card)", boxSizing: "border-box",
+              fontFamily: "inherit",
             }}
           />
         ) : (
@@ -5066,12 +5067,14 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
               onClick={(e) => openCell(e, "title")}
               title="클릭해서 제목 수정"
               style={{
-                fontSize: 15, fontWeight: 700, color: "var(--text-main)",
+                fontSize: 15, fontWeight: 600, color: "var(--fg-strong)",
                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                 cursor: "text", display: "inline-block", maxWidth: "100%",
                 padding: "2px 4px", marginLeft: -4, borderRadius: 4,
+                letterSpacing: "-0.01em",
+                transition: "background-color 120ms",
               }}
-              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "var(--bg-soft)"; }}
               onMouseOut={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {card.title || "(제목 없음)"}
