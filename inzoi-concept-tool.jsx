@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.175";
+const APP_VERSION = "1.10.176";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -12132,9 +12132,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             : 0;
           const progressCount = activeDraftingCards.length + sheetCount + jobs.filter(j => j.step >= 0 && j.step <= 6).length;
           const TABS = [
-            { id: "wishlist",  label: "위시",    count: wishlist.length,    dot: "var(--accent)"  },
-            { id: "progress",  label: "진행 중", count: progressCount,      dot: "var(--fg-muted)" },
-            { id: "completed", label: "완료",    count: completedList.length, dot: "var(--success)" },
+            { id: "wishlist",  label: "위시",    count: wishlist.length },
+            { id: "progress",  label: "진행 중", count: progressCount },
+            { id: "completed", label: "완료",    count: completedList.length },
           ];
           const switchTab = (id) => {
             setActiveTab(id);
@@ -12154,8 +12154,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     key={tab.id}
                     onClick={() => switchTab(tab.id)}
                     style={{
-                      display: "inline-flex", alignItems: "center", gap: 8,
-                      height: 32, padding: "0 12px", borderRadius: 999,
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      height: 32, padding: "0 14px", borderRadius: 999,
                       background: isActive ? "var(--fg-strong)" : "var(--bg-soft)",
                       border: "1px solid " + (isActive ? "var(--fg-strong)" : "var(--line)"),
                       color: isActive ? "#fff" : "var(--fg)",
@@ -12164,9 +12164,6 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       transition: "background-color 120ms, color 120ms, border-color 120ms",
                     }}
                   >
-                    <span style={{
-                      width: 6, height: 6, borderRadius: 999, background: tab.dot, flexShrink: 0,
-                    }} />
                     <span>{tab.label}</span>
                     <span style={{
                       fontSize: 11, fontWeight: 700,
@@ -13724,16 +13721,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <SortSelect value={sortBy} onChange={setSortBy} />
                 <button
                   onClick={() => setActiveTab("progress")}
-                  className="btn-primary hover-lift"
+                  className="btn-primary"
                   style={{
-                    padding: "12px 24px", borderRadius: 14, border: "none",
-                    color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                    boxShadow: "0 4px 20px var(--primary-glow)",
-                    display: "flex", alignItems: "center", gap: 8,
+                    height: 32, padding: "0 14px", borderRadius: 8, border: "none",
+                    color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    fontFamily: "inherit", boxSizing: "border-box",
                   }}
-                >
-                  <span>✨</span> 새 시안
-                </button>
+                >＋ 새 시안</button>
               </div>
             </div>
             {completedList.length > 0 && (() => {
@@ -13865,13 +13860,12 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 <SortSelect value={sortBy} onChange={setSortBy} />
                 <button
                   onClick={() => setWishAddOpen(true)}
-                  className="hover-lift"
+                  className="btn-primary"
                   style={{
-                    padding: "12px 22px", borderRadius: 12, border: "none",
-                    background: "linear-gradient(135deg, #eab308, #f59e0b)",
-                    color: "#000", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                    display: "flex", alignItems: "center", gap: 6,
-                    boxShadow: "0 4px 14px rgba(234,179,8,0.3)",
+                    height: 32, padding: "0 14px", borderRadius: 8, border: "none",
+                    color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    fontFamily: "inherit", boxSizing: "border-box",
                   }}
                 >＋ 새 위시</button>
               </div>
