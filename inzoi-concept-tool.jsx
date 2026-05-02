@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.185";
+const APP_VERSION = "1.10.186";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9301,10 +9301,10 @@ function DesignsPanel({
             <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--danger)", fontSize: 11 }}>실패</div>
           )}
         </div>
-        {/* 액션 row — 좌: 대표 · 추천(👍) / 우: 삭제. v1.10.185 시안 번호 제거 */}
+        {/* 액션 row — 좌: 대표 · 추천(👍) / 우: 삭제. v1.10.186 더 컴팩트 (h18). */}
         <div style={{
-          display: "flex", alignItems: "center", gap: 4,
-          padding: "5px 6px",
+          display: "flex", alignItems: "center", gap: 3,
+          padding: "3px 5px",
           borderTop: "1px solid var(--line)",
           background: "var(--bg-card)",
         }}>
@@ -9314,10 +9314,10 @@ function DesignsPanel({
               <span
                 title="현재 대표 시안"
                 style={{
-                  width: 22, height: 22, borderRadius: 4,
+                  width: 18, height: 18, borderRadius: 4,
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
                   background: "var(--accent)", color: "#fff",
-                  fontSize: 13, lineHeight: 1,
+                  fontSize: 11, lineHeight: 1,
                 }}
               >⭐</span>
             ) : !disabled && (
@@ -9325,9 +9325,9 @@ function DesignsPanel({
                 onClick={() => selectDesign(i)}
                 title="이 시안을 카드 대표 이미지(썸네일)로 지정"
                 style={{
-                  width: 22, height: 22, borderRadius: 4,
+                  width: 18, height: 18, borderRadius: 4,
                   background: "transparent", border: "1px solid var(--line)",
-                  color: "var(--fg-muted)", fontSize: 13, cursor: "pointer",
+                  color: "var(--fg-muted)", fontSize: 11, cursor: "pointer",
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
                   fontFamily: "inherit", lineHeight: 1, padding: 0,
                   transition: "background-color 120ms, color 120ms",
@@ -9343,12 +9343,12 @@ function DesignsPanel({
               onClick={() => toggleVote(i)}
               title={voters.length > 0 ? `투표: ${voters.join(", ")}` : (actor ? "투표하기" : "프로필 선택 후 투표 가능")}
               style={{
-                display: "inline-flex", alignItems: "center", gap: 3,
-                height: 22, padding: "0 8px", borderRadius: 999,
+                display: "inline-flex", alignItems: "center", gap: 2,
+                height: 18, padding: "0 6px", borderRadius: 999,
                 background: mine ? "var(--accent)" : "var(--chip-bg)",
                 border: "none",
                 color: mine ? "#fff" : "var(--fg)",
-                fontSize: 11, fontWeight: 600,
+                fontSize: 10, fontWeight: 600,
                 cursor: actor ? "pointer" : "not-allowed",
                 opacity: actor ? 1 : 0.6,
                 fontFamily: "inherit", boxSizing: "border-box",
@@ -9357,7 +9357,7 @@ function DesignsPanel({
             >
               <span>👍</span>
               <span>{n}</span>
-              {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
+              {isLeader && <span style={{ fontSize: 9 }}>🏆</span>}
             </button>
           )}
           <div style={{ flex: 1 }} />
@@ -9367,9 +9367,9 @@ function DesignsPanel({
               onClick={() => removeDesign(i)}
               title={d?.imageUrl ? "이 시안 삭제" : "실패한 시안 삭제"}
               style={{
-                width: 22, height: 22, borderRadius: 4,
+                width: 18, height: 18, borderRadius: 4,
                 background: "transparent", border: "1px solid var(--line)",
-                color: "var(--fg-muted)", fontSize: 12, cursor: "pointer",
+                color: "var(--fg-muted)", fontSize: 10, cursor: "pointer",
                 display: "inline-flex", alignItems: "center", justifyContent: "center",
                 fontFamily: "inherit", lineHeight: 1, padding: 0,
                 transition: "background-color 120ms, color 120ms, border-color 120ms",
