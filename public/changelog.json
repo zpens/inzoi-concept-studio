@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.169",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 5d-2 — DesignsPanel 시안 생성 영역 정돈. (1) 추가 prompt 박스: 파랑/보라 그라디언트 → flat var(--bg-soft) + var(--line). radius 10 → 12. (2) 추가 prompt input: bg #fff/0.03 → var(--bg-card)/var(--bg-muted), border 토큰화, fontFamily inherit. (3) 최종 prompt 미리보기 박스: rgba 0.03 + 점선 surface-border → var(--bg-card) + 점선 var(--line). '→ 최종' 라벨 색 var(--primary) → var(--accent-press). (4) 변형 칩: 라운드 12 → 999 pill / h24 / weight 800→500. active=검정 채움 (KRAFTON 표준), 비활성=chip-bg. transition. (5) 갯수 버튼 (1·2·4): 라운드 7 → 6 / h28 / weight 700→500. active=검정 채움, 비활성=흰+line. (6) 🎨 생성 버튼: 그라디언트 → --accent 단색, hover 시 --accent-press. h32 / radius 8 / weight 700→500. (7) ModeBtn (보기 모드 grid/compare/single): active 색 액센트 → fg-strong, weight 700→500, KRAFTON shadow. (8) 빈 상태 박스: rgba 0.02 + surface-border → bg-soft + line"
+    ]
+  },
+  {
     "version": "1.10.168",
     "date": "2026-05-02",
     "changes": [

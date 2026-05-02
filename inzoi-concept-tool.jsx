@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.168";
+const APP_VERSION = "1.10.169";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9189,20 +9189,25 @@ function DesignsPanel({
     await selectDesign(voteLeaderIdx);
   };
 
-  // 보기 모드 토글 버튼.
-  const ModeBtn = ({ mode, icon, title }) => (
-    <button
-      onClick={() => setViewMode(mode)}
-      title={title}
-      style={{
-        padding: "3px 8px", borderRadius: 6, border: "none",
-        background: viewMode === mode ? "#fff" : "transparent",
-        color: viewMode === mode ? "var(--primary)" : "var(--text-muted)",
-        fontSize: 12, fontWeight: 700, cursor: "pointer",
-        boxShadow: viewMode === mode ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-      }}
-    >{icon}</button>
-  );
+  // 보기 모드 토글 버튼. v1.10.169 KRAFTON 톤.
+  const ModeBtn = ({ mode, icon, title }) => {
+    const active = viewMode === mode;
+    return (
+      <button
+        onClick={() => setViewMode(mode)}
+        title={title}
+        style={{
+          padding: "3px 8px", borderRadius: 6, border: "none",
+          background: active ? "var(--bg-card)" : "transparent",
+          color: active ? "var(--fg-strong)" : "var(--fg-muted)",
+          fontSize: 12, fontWeight: 500, cursor: "pointer",
+          boxShadow: active ? "0 1px 2px rgba(20,20,26,0.08)" : "none",
+          transition: "background-color 120ms, color 120ms",
+          fontFamily: "inherit",
+        }}
+      >{icon}</button>
+    );
+  };
 
   const renderBadge = (d, i) => d._sheet ? "📑 시트"
     : d._legacy ? "🗂 레거시"
@@ -9411,9 +9416,9 @@ function DesignsPanel({
           시트 단계에서 시안을 더 보강할 수 있어야 한다는 사용자 요구. */}
       {statusKey !== "done" && !disabled && (
         <div style={{
-          marginBottom: 10, padding: 10, borderRadius: 10,
-          background: "linear-gradient(135deg, rgba(7,110,232,0.05), rgba(139,92,246,0.03))",
-          border: "1px solid rgba(7,110,232,0.18)",
+          marginBottom: 10, padding: 10, borderRadius: 12,
+          background: "var(--bg-soft)",
+          border: "1px solid var(--line)",
         }}>
           <input
             type="text"
@@ -9424,10 +9429,12 @@ function DesignsPanel({
             placeholder="추가 프롬프트 (선택) — 예: 더 단순하게, 파스텔 톤, 다리 없애기"
             style={{
               width: "100%", padding: "7px 10px", borderRadius: 8,
-              border: "1px solid var(--surface-border)",
-              background: busy ? "rgba(0,0,0,0.03)" : "#fff",
-              fontSize: 12, color: "var(--text-main)", outline: "none",
+              border: "1px solid var(--line)",
+              background: busy ? "var(--bg-muted)" : "var(--bg-card)",
+              fontSize: 12, color: "var(--fg)", outline: "none",
               marginBottom: 6, boxSizing: "border-box",
+              fontFamily: "inherit",
+              transition: "border-color 120ms",
             }}
           />
           {extraPrompt.trim() && (() => {
@@ -9435,11 +9442,11 @@ function DesignsPanel({
             return (
               <div style={{
                 marginBottom: 8, padding: "6px 10px", borderRadius: 6,
-                background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
-                fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5,
+                background: "var(--bg-card)", border: "1px dashed var(--line)",
+                fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5,
                 whiteSpace: "pre-wrap", wordBreak: "break-word",
               }}>
-                <span style={{ fontWeight: 700, color: "var(--primary)" }}>→ 최종: </span>
+                <span style={{ fontWeight: 700, color: "var(--accent-press)" }}>→ 최종: </span>
                 {`${base}. Additionally apply: ${extraPrompt.trim()}`}
               </div>
             );
@@ -9447,7 +9454,7 @@ function DesignsPanel({
           {/* v1.10.147 — 변형 칩 행. 갯수 행 위에 별도 한 줄. 모델이 seed 미지원이라 prompt-level 다양성 확보 수단. */}
           {/* v1.10.150 — busy 중에도 변경 가능 (다음 큐 push 부터 적용). */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>변형:</span>
+            <span style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, marginRight: 2 }}>변형:</span>
             {[
               { id: "",            label: "없음" },
               { id: "proportions", label: "📐 비율" },
@@ -9462,12 +9469,15 @@ function DesignsPanel({
                   onClick={() => setVariation(v.id)}
                   title={v.id ? VARIATION_HINTS[v.id] : "변형 hint 없이 카드 prompt 그대로 N장 생성"}
                   style={{
-                    padding: "3px 9px", borderRadius: 12,
-                    background: active ? "rgba(7,110,232,0.12)" : "rgba(0,0,0,0.03)",
-                    border: active ? "1px solid var(--primary)" : "1px solid var(--surface-border)",
-                    color: active ? "var(--primary)" : "var(--text-muted)",
-                    fontSize: 11, fontWeight: active ? 800 : 600, cursor: "pointer",
+                    height: 24, padding: "0 10px", borderRadius: 999,
+                    background: active ? "var(--fg-strong)" : "var(--chip-bg)",
+                    border: "1px solid " + (active ? "var(--fg-strong)" : "transparent"),
+                    color: active ? "#fff" : "var(--chip-fg)",
+                    fontSize: 11, fontWeight: 500, cursor: "pointer",
                     whiteSpace: "nowrap",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    display: "inline-flex", alignItems: "center",
+                    transition: "background-color 120ms, color 120ms, border-color 120ms",
                   }}
                 >{v.label}</button>
               );
@@ -9479,30 +9489,40 @@ function DesignsPanel({
                 key={n}
                 onClick={() => setCount(n)}
                 style={{
-                  padding: "5px 11px", borderRadius: 7,
-                  background: count === n ? "var(--primary)" : "rgba(0,0,0,0.04)",
-                  border: count === n ? "none" : "1px solid var(--surface-border)",
-                  color: count === n ? "#fff" : "var(--text-muted)",
-                  fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  height: 28, padding: "0 12px", borderRadius: 6,
+                  background: count === n ? "var(--fg-strong)" : "var(--bg-card)",
+                  border: "1px solid " + (count === n ? "var(--fg-strong)" : "var(--line)"),
+                  color: count === n ? "#fff" : "var(--fg-muted)",
+                  fontSize: 12, fontWeight: 500, cursor: "pointer",
+                  fontFamily: "inherit", boxSizing: "border-box",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  minWidth: 32,
+                  transition: "background-color 120ms, color 120ms, border-color 120ms",
                 }}
               >{n}</button>
             ))}
             <button
               onClick={doGenerate}
               style={{
-                marginLeft: "auto", padding: "7px 14px", borderRadius: 9,
-                background: "linear-gradient(135deg, var(--primary), var(--secondary))",
-                border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
+                marginLeft: "auto",
+                height: 32, padding: "0 14px", borderRadius: 8,
+                background: "var(--accent)",
+                border: "1px solid transparent", color: "#fff", fontSize: 13, fontWeight: 500,
                 cursor: "pointer",
                 whiteSpace: "nowrap",
+                fontFamily: "inherit", boxSizing: "border-box",
+                display: "inline-flex", alignItems: "center", gap: 4,
+                transition: "background-color 120ms",
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-press)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
             >
               {`🎨 ${count}개 생성${variation ? ` (${VARIATION_LABELS[variation].replace(/^.\s*/, "")})` : ""}${queueLen > 0 ? ` · 대기 ${queueLen}` : ""}`}
             </button>
           </div>
           {/* v1.10.150 — 진행 표시 별도 줄. busy 중에 현재 작업 progress + 큐 잔량 노출. */}
           {busy && (
-            <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+            <div style={{ marginTop: 6, fontSize: 11, color: "var(--fg-muted)", fontWeight: 500 }}>
               {progress?.label
                 ? progress.label
                 : `🎨 생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`}
@@ -9515,8 +9535,8 @@ function DesignsPanel({
       {displayDesigns.length === 0 ? (
         <div style={{
           padding: 20, borderRadius: 8, textAlign: "center",
-          background: "rgba(0,0,0,0.02)", border: "1px dashed var(--surface-border)",
-          fontSize: 12, color: "var(--text-muted)",
+          background: "var(--bg-soft)", border: "1px dashed var(--line)",
+          fontSize: 12, color: "var(--fg-muted)",
         }}>
           시안이 아직 없습니다. 위의 시안 생성 버튼 또는 ＋ 이미지 추가로 시작하세요.
         </div>
