@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.161",
+    "date": "2026-05-02",
+    "changes": [
+      "DS 마이그레이션 4단계 — utility class 정돈. (1) .text-gradient 보라/파랑 그라디언트 → 단색 --fg-strong 검정 + letter-spacing -0.01em (KRAFTON H1/H2 톤). (2) .btn-primary 보라/파랑 그라디언트 → --accent 단색, hover 시 --accent-press 만 변경, translateY/box-shadow 제거 flat. (3) .hover-lift 의 translateY(-4px)+scale(1.02) hover 효과 제거 — 부드러운 배경 색상 전환만. (4) .glass-panel 의 반투명 + backdrop-filter blur(16px) → flat #fff + KRAFTON 보더, 그림자 거의 없음. 19곳 glass-panel 사용처가 자동으로 KRAFTON 톤으로 전환. jsx 변경 0줄, CSS 4개 정의만 수정"
+    ]
+  },
+  {
     "version": "1.10.160",
     "date": "2026-05-02",
     "changes": [

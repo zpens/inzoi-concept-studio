@@ -139,62 +139,58 @@ body {
 }
 
 /* Utility Classes */
+/* v1.10.161 — KRAFTON DS step 4: .glass-panel flat. backdrop-filter blur 제거,
+   --bg-card 단색, 그림자 거의 없음 (--shadow card token). */
 .glass-panel {
-    background: var(--surface-color);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--surface-border);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    background: var(--bg-card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--line);
+    box-shadow: 0 1px 2px rgba(20, 20, 26, 0.04), 0 1px 1px rgba(20, 20, 26, 0.02);
 }
 
 .hover-lift {
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background-color 120ms, border-color 120ms, color 120ms;
 }
 
 .hover-lift:hover {
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+    transform: none;
+    box-shadow: none;
 }
 
+/* v1.10.161 — KRAFTON DS step 4: utility class 정돈.
+   .text-gradient → 단색 fg-strong, .btn-primary → 액센트 단색 flat,
+   .hover-lift → translateY / scale 제거하고 부드러운 배경 전환만. */
 .text-gradient {
-    background: auto;
-    background-image: linear-gradient(135deg, #076ee8 0%, #4da3e8 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
+    background: none;
+    background-image: none;
+    -webkit-background-clip: initial;
+    background-clip: initial;
+    -webkit-text-fill-color: initial;
+    color: var(--fg-strong);
+    letter-spacing: -0.01em;
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
-    transition: all 0.3s ease;
+    background: var(--accent);
+    color: #fff;
+    transition: background-color 120ms;
     position: relative;
-    overflow: hidden;
 }
 
 .btn-primary::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.btn-primary:hover::before {
-    opacity: 1;
+    display: none;
 }
 
 .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px var(--primary-glow);
+    background: var(--accent-press);
+    transform: none;
+    box-shadow: none;
 }
 
 .btn-primary:active {
-    transform: translateY(0);
+    background: var(--accent-press);
+    transform: none;
 }
 
 button {
