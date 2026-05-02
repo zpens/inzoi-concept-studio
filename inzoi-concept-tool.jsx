@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.156";
+const APP_VERSION = "1.10.157";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -689,6 +689,128 @@ function generateConceptSheetCanvas(canvas, images, metadata) {
 }
 
 // ─── Components ───
+
+// ─── DS Atoms (KRAFTON Design System v1.10.157) ───
+// Button / Chip / Badge / Input / Select — 표준 토큰만 쓰는 원자 컴포넌트.
+// step 3+ 에서 기존 인라인 style 들을 점진 교체. 정의만 추가했으므로 step 2 자체는 시각 변화 없음.
+
+const _DS_BTN_BASE = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center",
+  gap: 6, height: 32, padding: "0 14px", borderRadius: 8,
+  fontSize: 13, fontWeight: 500,
+  border: "1px solid var(--line)", background: "var(--bg-card)",
+  color: "var(--fg)", cursor: "pointer", fontFamily: "inherit",
+  whiteSpace: "nowrap", boxSizing: "border-box",
+  transition: "background-color 120ms, border-color 120ms, color 120ms",
+};
+const _DS_BTN_SIZE = {
+  sm: { height: 26, padding: "0 10px", borderRadius: 4, fontSize: 12 },
+  md: {},
+  lg: { height: 38, padding: "0 18px", fontSize: 14 },
+};
+const _DS_BTN_VARIANT = {
+  default: {},
+  primary: { background: "var(--fg-strong)", color: "#fff", border: "1px solid transparent" },
+  accent:  { background: "var(--accent)",    color: "#fff", border: "1px solid transparent" },
+  ghost:   { background: "transparent",      color: "var(--fg-muted)", border: "1px solid transparent" },
+  danger:  { color: "var(--danger)" },
+};
+function Button({ variant = "default", size = "md", style, children, ...rest }) {
+  return (
+    <button
+      style={{
+        ..._DS_BTN_BASE,
+        ...(_DS_BTN_SIZE[size] || {}),
+        ...(_DS_BTN_VARIANT[variant] || {}),
+        ...(style || {}),
+      }}
+      {...rest}
+    >{children}</button>
+  );
+}
+
+// Chip — pill, height 24, soft bg. active=검정, accent=오렌지.
+function Chip({ active, accent, style, children, ...rest }) {
+  const bg = accent ? "var(--accent)" : active ? "var(--fg-strong)" : "var(--chip-bg)";
+  const fg = (accent || active) ? "#fff" : "var(--chip-fg)";
+  return (
+    <button
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        height: 24, padding: "0 10px", borderRadius: 999,
+        fontSize: 12, fontWeight: 500, border: "none",
+        background: bg, color: fg,
+        cursor: "pointer", fontFamily: "inherit",
+        whiteSpace: "nowrap", boxSizing: "border-box",
+        transition: "background-color 120ms, color 120ms",
+        ...(style || {}),
+      }}
+      {...rest}
+    >{children}</button>
+  );
+}
+
+// Badge — small label, radius 4. content-only.
+const _DS_BADGE_VARIANT = {
+  neutral: { background: "var(--chip-bg)",     color: "var(--chip-fg)",     border: "1px solid transparent" },
+  success: { background: "var(--success-soft)", color: "var(--success)",    border: "1px solid transparent" },
+  accent:  { background: "var(--accent-soft)",  color: "var(--accent-press)", border: "1px solid transparent" },
+  danger:  { background: "var(--danger-soft)",  color: "var(--danger)",     border: "1px solid transparent" },
+  outline: { background: "transparent",         color: "var(--fg-strong)",  border: "1px solid var(--line)" },
+};
+function Badge({ variant = "neutral", style, children }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      height: 22, padding: "0 8px", borderRadius: 4,
+      fontSize: 11, fontWeight: 600, lineHeight: 1,
+      ..._DS_BADGE_VARIANT[variant] || _DS_BADGE_VARIANT.neutral,
+      ...(style || {}),
+    }}>{children}</span>
+  );
+}
+
+// Input — height 32, focus border #fg-strong.
+function Input({ style, onFocus, onBlur, ...rest }) {
+  return (
+    <input
+      style={{
+        height: 32, padding: "0 12px", borderRadius: 8,
+        border: "1px solid var(--line)", background: "var(--bg-card)",
+        color: "var(--fg)", fontSize: 13, fontFamily: "inherit",
+        outline: "none", boxSizing: "border-box",
+        transition: "border-color 120ms",
+        ...(style || {}),
+      }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--fg-strong)"; onFocus?.(e); }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--line)"; onBlur?.(e); }}
+      {...rest}
+    />
+  );
+}
+
+// Select — same look as Input. native <select> with custom chevron.
+function Select({ style, children, onFocus, onBlur, ...rest }) {
+  return (
+    <select
+      style={{
+        height: 32, padding: "0 28px 0 12px", borderRadius: 8,
+        border: "1px solid var(--line)", background: "var(--bg-card)",
+        color: "var(--fg)", fontSize: 13, fontFamily: "inherit",
+        outline: "none", boxSizing: "border-box", cursor: "pointer",
+        appearance: "none", WebkitAppearance: "none", MozAppearance: "none",
+        backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B6B73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\")",
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: "right 10px center",
+        transition: "border-color 120ms",
+        ...(style || {}),
+      }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--fg-strong)"; onFocus?.(e); }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--line)"; onBlur?.(e); }}
+      {...rest}
+    >{children}</select>
+  );
+}
 
 // v1.10.142 — 버전 모달 내부 사용 설명서 탭 컨텐츠.
 // 정적 React JSX. CHANGELOG 와 달리 자주 바뀌지 않으므로 인라인 유지.

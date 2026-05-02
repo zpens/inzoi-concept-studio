@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.157",
+    "date": "2026-05-02",
+    "changes": [
+      "DS 마이그레이션 2단계 — 원자 컴포넌트 정의 추가. inzoi-concept-tool.jsx 의 Components 섹션 시작부에 Button / Chip / Badge / Input / Select 5개 표준 원자 컴포넌트 정의. 새 KRAFTON 토큰 (--accent / --fg / --line / --chip-bg 등) 만 사용. Button: variant default·primary·accent·ghost·danger / size sm·md·lg. Chip: pill (h24, radius 999, soft bg), active=검정 / accent=오렌지. Badge: 작은 라벨 (h22, radius 4) — neutral·success·accent·danger·outline. Input/Select: h32, focus 시 border 검정. step 3 부터 기존 696곳 인라인 style 을 점진 교체. 정의만 추가했으므로 step 2 자체는 시각 변화 없음 (사용처 0)"
+    ]
+  },
+  {
     "version": "1.10.156",
     "date": "2026-05-02",
     "changes": [
