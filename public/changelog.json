@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.172",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 5d-5 — 댓글 영역 (CommentRow / CardCommentInput) 정돈. (1) CommentRow: rgba(0,0,0,0.03) → var(--bg-soft) + var(--line) 보더. 작성자 이름 색 var(--text-lighter) → var(--fg). 메타 텍스트 토큰화. (2) 댓글 편집 textarea: border var(--primary) → var(--fg-strong) (KRAFTON focus). bg #fff → var(--bg-card). (3) 수정/삭제 아이콘 버튼: 18×18 / radius 9 → 20×20 / radius 4. hover 시 부드러운 배경 전환 (수정=bg-card / 삭제=danger-soft). (4) CardCommentInput: 작성자 아이콘 - 파랑 rgba 또는 회색 rgba → KRAFTON --bg-soft + --line 통일. input 높이 토큰화 h32, border focus 검정. 보내기 버튼: 파랑 var(--primary) → var(--accent), disabled --bg-muted + --line + --fg-muted, weight 700 → 500. (5) 댓글 헤더 라벨: weight 700 → 600 / fontSize 12 → 11 / uppercase + letter-spacing 0.04em (KRAFTON caption 톤). (6) 빈 상태 텍스트: italic + var(--fg-faint)"
+    ]
+  },
+  {
     "version": "1.10.171",
     "date": "2026-05-02",
     "changes": [

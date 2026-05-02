@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.171";
+const APP_VERSION = "1.10.172";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9664,16 +9664,17 @@ function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, on
   return (
     <div style={{
       padding: "8px 12px", borderRadius: 10,
-      background: "rgba(0,0,0,0.03)", fontSize: 13,
+      background: "var(--bg-soft)", fontSize: 13, color: "var(--fg)",
+      border: "1px solid var(--line)",
       position: "relative",
     }}>
       <div style={{
-        fontSize: 11, color: "var(--text-muted)", marginBottom: 4,
+        fontSize: 11, color: "var(--fg-muted)", marginBottom: 4,
         paddingRight: mine ? 46 : 0,
         display: "flex", alignItems: "center", gap: 4,
       }}>
         <span style={{ fontSize: 13 }}>{authorIcon}</span>
-        <span style={{ fontWeight: 600, color: "var(--text-lighter)" }}>
+        <span style={{ fontWeight: 600, color: "var(--fg)" }}>
           {comment.actor || "익명"}
         </span>
         <span>· {formatLocalTime(comment.created_at, "full")}</span>
@@ -9693,10 +9694,10 @@ function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, on
           style={{
             width: "100%", minHeight: 60,
             padding: "6px 8px", borderRadius: 8,
-            border: "1px solid var(--primary)", outline: "none",
-            fontSize: 13, color: "var(--text-main)", lineHeight: 1.6,
+            border: "1px solid var(--fg-strong)", outline: "none",
+            fontSize: 13, color: "var(--fg)", lineHeight: 1.6,
             fontFamily: "inherit", resize: "vertical", boxSizing: "border-box",
-            background: "#fff",
+            background: "var(--bg-card)",
           }}
         />
       ) : (
@@ -9718,11 +9719,14 @@ function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, on
             onClick={() => setEditing(true)}
             title="내 댓글 수정"
             style={{
-              width: 18, height: 18, borderRadius: 9,
+              width: 20, height: 20, borderRadius: 4,
               border: "none", background: "transparent",
-              color: "var(--text-muted)", fontSize: 10, cursor: "pointer",
+              color: "var(--fg-muted)", fontSize: 10, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+              transition: "background-color 120ms",
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-card)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
           >✏️</button>
           <button
             onClick={async () => {
@@ -9734,11 +9738,14 @@ function CommentRow({ comment, projectSlug, cardId, actorName, profileByName, on
             }}
             title="내 댓글 삭제"
             style={{
-              width: 18, height: 18, borderRadius: 9,
+              width: 20, height: 20, borderRadius: 4,
               border: "none", background: "transparent",
-              color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+              color: "var(--fg-muted)", fontSize: 11, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+              transition: "background-color 120ms, color 120ms",
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--danger-soft)"; e.currentTarget.style.color = "var(--danger)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--fg-muted)"; }}
           >✕</button>
         </div>
       )}
@@ -9751,16 +9758,17 @@ function CardCommentInput({ onSubmit, disabled, currentProfile }) {
   const [val, setVal] = React.useState("");
   const icon = currentProfile?.icon || "👤";
   const tooltip = currentProfile?.name || "프로필 미선택 — 헤더에서 선택하세요";
+  const canSubmit = !disabled && val.trim();
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      {/* 현재 작성자 아이콘 — 마우스 올리면 이름 tooltip (v1.10.14) */}
+      {/* 현재 작성자 아이콘 — 마우스 올리면 이름 tooltip (v1.10.14). v1.10.172 KRAFTON ghost. */}
       <div
         title={tooltip}
         style={{
           width: 32, height: 32, borderRadius: 16,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: currentProfile ? "rgba(7,110,232,0.08)" : "rgba(0,0,0,0.04)",
-          border: `1px solid ${currentProfile ? "rgba(7,110,232,0.2)" : "var(--surface-border)"}`,
+          background: "var(--bg-soft)",
+          border: "1px solid var(--line)",
           fontSize: 16, cursor: "help", flexShrink: 0,
           opacity: currentProfile ? 1 : 0.55,
         }}
@@ -9778,22 +9786,29 @@ function CardCommentInput({ onSubmit, disabled, currentProfile }) {
         disabled={disabled}
         placeholder={disabled ? "완료된 카드는 댓글 불가" : "댓글 작성 (Enter)"}
         style={{
-          flex: 1, padding: "8px 12px", borderRadius: 8,
-          border: "1px solid var(--surface-border)",
-          background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
-          fontSize: 13, outline: "none",
-          color: disabled ? "var(--text-muted)" : "var(--text-main)",
+          flex: 1, height: 32, padding: "0 12px", borderRadius: 8,
+          border: "1px solid var(--line)",
+          background: disabled ? "var(--bg-muted)" : "var(--bg-card)",
+          fontSize: 13, outline: "none", boxSizing: "border-box",
+          color: disabled ? "var(--fg-muted)" : "var(--fg)",
+          fontFamily: "inherit",
+          transition: "border-color 120ms",
         }}
+        onFocus={(e) => { if (!disabled) e.currentTarget.style.borderColor = "var(--fg-strong)"; }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--line)"; }}
       />
       <button
         onClick={() => { if (val.trim()) { onSubmit(val); setVal(""); } }}
         disabled={disabled || !val.trim()}
         style={{
-          padding: "8px 14px", borderRadius: 8,
-          background: (!disabled && val.trim()) ? "var(--primary)" : "rgba(0,0,0,0.08)",
-          border: "none",
-          color: (!disabled && val.trim()) ? "#fff" : "var(--text-muted)",
-          fontSize: 12, fontWeight: 700, cursor: (!disabled && val.trim()) ? "pointer" : "not-allowed",
+          height: 32, padding: "0 14px", borderRadius: 8,
+          background: canSubmit ? "var(--accent)" : "var(--bg-muted)",
+          border: "1px solid " + (canSubmit ? "transparent" : "var(--line)"),
+          color: canSubmit ? "#fff" : "var(--fg-muted)",
+          fontSize: 12, fontWeight: 500,
+          cursor: canSubmit ? "pointer" : "not-allowed",
+          fontFamily: "inherit", boxSizing: "border-box",
+          transition: "background-color 120ms, color 120ms",
         }}
       >보내기</button>
     </div>
@@ -14987,9 +15002,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   />
 
-                  {/* 3) 댓글 */}
+                  {/* 3) 댓글 — v1.10.172 KRAFTON section 톤 */}
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                       댓글 ({card.comments?.length || 0})
                     </div>
                     <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
@@ -15008,7 +15023,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         />
                       ))}
                       {(!card.comments || card.comments.length === 0) && (
-                        <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "16px 0" }}>
+                        <div style={{ fontSize: 12, color: "var(--fg-faint)", textAlign: "center", padding: "16px 0", fontStyle: "italic" }}>
                           아직 댓글이 없습니다.
                         </div>
                       )}
