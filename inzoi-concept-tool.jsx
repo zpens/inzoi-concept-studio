@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.174";
+const APP_VERSION = "1.10.175";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -11980,13 +11980,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           style={{
             display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none",
             flexShrink: 0,
+            height: 24,
           }}
           onClick={() => setVersionOpen(true)}
           title="버전 정보 보기"
         >
-          <img src="/InZOI_Logo.png" alt="inZOI" style={{ height: 28, objectFit: "contain", display: "block" }} />
-          <span style={{ fontSize: 13, color: "var(--fg-muted)", fontWeight: 500 }}>Asset Studio</span>
-          <span style={{ fontSize: 11, color: "var(--fg-faint)", fontWeight: 500 }}>v{APP_VERSION}</span>
+          <img src="/InZOI_Logo.png" alt="inZOI" style={{ height: 20, objectFit: "contain", display: "block" }} />
+          <span style={{ fontSize: 13, color: "var(--fg-muted)", fontWeight: 500, lineHeight: 1 }}>Asset Studio</span>
+          <span style={{ fontSize: 11, color: "var(--fg-faint)", fontWeight: 500, lineHeight: 1 }}>v{APP_VERSION}</span>
         </div>
         {/* 헤더 전체 카드 검색 — 제목/설명/업데이트 태그/카테고리/스타일 라벨 매칭 */}
         <div style={{ position: "relative", flex: 1, maxWidth: 480, minWidth: 0 }}>

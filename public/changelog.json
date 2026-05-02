@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.175",
+    "date": "2026-05-02",
+    "changes": [
+      "헤더 좌측 로고 영역 높이 정렬 수정 — InZOI_Logo.png height 28 → 20 으로 축소. wrapper 에 height 24 명시 + 자식 텍스트 (Asset Studio · v버전) 에 lineHeight 1 명시해 baseline 정확히 중앙 정렬. 이미지·텍스트가 같은 수직선 상에서 깔끔하게 정렬"
+    ]
+  },
+  {
     "version": "1.10.174",
     "date": "2026-05-02",
     "changes": [
