@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.177";
+const APP_VERSION = "1.10.178";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4813,7 +4813,6 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename, curren
   };
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
-      <span style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 500, marginRight: 4 }}>🗓️ 업데이트:</span>
       <button onClick={() => onChange([])} style={allStyle}>전체 · {totalCount}</button>
       {chips.map((c) => {
         const faded = c.value === "__unspecified";
