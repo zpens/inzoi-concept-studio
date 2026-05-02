@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.166";
+const APP_VERSION = "1.10.167";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -3088,12 +3088,12 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
     return (
       <div style={{
         marginBottom: 14, padding: "12px 14px", borderRadius: 12,
-        background: "rgba(34,197,94,0.04)", border: "1px solid rgba(34,197,94,0.25)",
+        background: "var(--bg-soft)", border: "1px solid var(--line)",
       }}>
         {/* 헤더 + 단계 세그먼트 + 추천 받기 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: picked ? 10 : 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: "#15803d" }}>🏷 어셋명</span>
-          <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 6, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)" }}>🏷 어셋명</span>
+          <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 6, background: "var(--bg-card)", border: "1px solid var(--line)" }}>
             {stageBtn("ref", "참조", availability.ref)}
             {stageBtn("draft", "시안", availability.draft)}
             {stageBtn("final", "최종", availability.final)}
@@ -3105,11 +3105,14 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
               disabled={loading || (!stageImage && stage !== "ref")}
               title="Gemini 가 단계별 이미지를 분석해 한글명+영문명+짧은 설명 5개 추천"
               style={{
-                padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700,
-                background: loading ? "rgba(0,0,0,0.06)" : "rgba(34,197,94,0.12)",
-                border: "1px solid rgba(34,197,94,0.4)",
-                color: loading ? "var(--text-muted)" : "#15803d",
+                height: 26, padding: "0 10px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+                background: loading ? "var(--chip-bg)" : "var(--accent-soft)",
+                border: "1px solid " + (loading ? "var(--line)" : "var(--accent-soft)"),
+                color: loading ? "var(--fg-muted)" : "var(--accent-press)",
                 cursor: loading ? "wait" : "pointer",
+                fontFamily: "inherit", boxSizing: "border-box",
+                display: "inline-flex", alignItems: "center", gap: 4,
+                transition: "background-color 120ms",
               }}
             >
               {loading ? "⏳ 추천 중…" : (stageSugg ? "🔄 다시 추천" : "🤖 추천 받기")}
@@ -3117,21 +3120,21 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
           )}
         </div>
 
-        {/* 채택된 이름 — 강조 (있으면) */}
+        {/* 채택된 이름 — 강조 (있으면). 채택 = success 톤. */}
         {picked ? (
-          <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)" }}>
+          <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--success-soft)", border: "1px solid var(--success-soft)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ color: "#15803d", fontSize: 11, fontWeight: 800 }}>✓</span>
-              <strong style={{ fontSize: 14 }}>{picked.ko}</strong>
-              <code style={{ fontSize: 11, padding: "2px 6px", background: "rgba(0,0,0,0.06)", borderRadius: 4, fontFamily: "Space Mono, monospace" }}>{picked.en}</code>
-              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>· {picked.stage} · {picked.picked_at?.slice(0, 10)}</span>
+              <span style={{ color: "var(--success)", fontSize: 11, fontWeight: 700 }}>✓</span>
+              <strong style={{ fontSize: 14, color: "var(--fg-strong)" }}>{picked.ko}</strong>
+              <code style={{ fontSize: 11, padding: "2px 6px", background: "rgba(0,0,0,0.06)", borderRadius: 4, fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace", color: "var(--fg)" }}>{picked.en}</code>
+              <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>· {picked.stage} · {picked.picked_at?.slice(0, 10)}</span>
             </div>
             {picked.desc && (
-              <div style={{ marginTop: 4, color: "var(--text-lighter)", fontSize: 12, lineHeight: 1.5 }}>{picked.desc}</div>
+              <div style={{ marginTop: 4, color: "var(--fg)", fontSize: 12, lineHeight: 1.5 }}>{picked.desc}</div>
             )}
           </div>
         ) : (
-          <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 12 }}>
+          <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-card)", border: "1px dashed var(--line)", color: "var(--fg-muted)", fontSize: 12 }}>
             아직 채택된 이름이 없습니다. 단계 선택 후 '🤖 추천 받기'.
           </div>
         )}
@@ -3139,7 +3142,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
         {/* 후보 리스트 — details 안에 접힘 기본 (있을 때만 노출) */}
         {stageSugg && cardCount > 0 && (
           <details style={{ marginTop: 8 }}>
-            <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", padding: "4px 0" }}>
+            <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", padding: "4px 0" }}>
               ▼ 후보 보기 ({cardCount}{picked ? " · 다른 이름으로 변경" : ""})
             </summary>
             <div style={{ marginTop: 6 }}>{renderCandidates()}</div>
@@ -14772,15 +14775,17 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     }}
                   />
 
-                  {/* 3) 대표이미지 — v1.10.97: 명시 thumbnail_url 우선, 없으면 단일 시안. */}
+                  {/* 3) 대표이미지 — v1.10.97: 명시 thumbnail_url 우선, 없으면 단일 시안.
+                      v1.10.167 KRAFTON: --bg-soft hero box, KRAFTON shadow. */}
                   {(() => {
                     const ds = Array.isArray(card.data?.designs) ? card.data.designs : [];
                     const single = ds.length === 1 && ds[0]?.imageUrl ? ds[0].imageUrl : null;
                     const src = card.thumbnail_url || single;
                     return src ? (
                       <div style={{
-                        background: "rgba(0,0,0,0.04)", padding: 16, borderRadius: 12,
+                        background: "var(--bg-soft)", padding: 16, borderRadius: 12,
                         marginBottom: 20, textAlign: "center",
+                        border: "1px solid var(--line)",
                       }}>
                         <img
                           src={src}
@@ -14788,8 +14793,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                           onClick={() => setPreviewImage(src)}
                           style={{
                             maxWidth: "100%", maxHeight: 340, objectFit: "contain",
-                            borderRadius: 10, background: "#fff",
-                            boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+                            borderRadius: 8, background: "var(--bg-card)",
+                            boxShadow: "0 1px 2px rgba(20,20,26,0.04), 0 1px 1px rgba(20,20,26,0.02)",
                             cursor: "zoom-in",
                           }}
                         />

@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.167",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 5c — Card Detail 좌측 컬럼 정돈. (1) 대표 이미지 hero 박스: background rgba(0,0,0,0.04) → var(--bg-soft) + 1px var(--line) 보더. img boxShadow 0 4px 20px rgba(0,0,0,0.12) → KRAFTON shadow card token (거의 없음). img radius 10 → 8. (2) AssetNameSuggester standalone (어셋명 박스): 그린 rgba(34,197,94,0.04) + 그린 보더 → KRAFTON --bg-soft + --line. 헤더 라벨 색 #15803d → var(--fg-strong). 단계 세그먼트 (참조/시안/최종) 컨테이너 배경 토큰화. (3) 추천 받기 버튼: 그린 rgba 채움 → --accent-soft + --accent-press 액센트 톤. h28 → h26 / fontWeight 700 → 600. (4) 채택된 이름 박스: 그린 0.1 + 그린 보더 → --success-soft 토큰화. mono code 폰트도 KRAFTON 표준 (ui-monospace). 텍스트 컬러 var(--fg-strong) / var(--fg-muted) 토큰. (5) 빈 상태 점선 박스: rgba(0,0,0,0.03) + var(--surface-border) → var(--bg-card) + 점선 var(--line)"
+    ]
+  },
+  {
     "version": "1.10.166",
     "date": "2026-05-02",
     "changes": [
