@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.181";
+const APP_VERSION = "1.10.182";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4896,11 +4896,11 @@ const LIST_GRID = getListGrid(1); // 기본
 // 진행 단계 옵션 (v1.10.44) — 리스트 뷰 인라인 편집용. 시안/투표는 같은 drafting 상태.
 // v1.10.74 — 위시 단계 추가, "투표 및 선정" → "투표" 로 단축. 5단계 단일 어휘.
 const STAGE_OPTIONS = [
-  { key: "wishlist", label: "⭐ 위시",  statusKey: "wishlist" },
-  { key: "drafting", label: "🎨 시안",  statusKey: "drafting" },
-  { key: "voting",   label: "🗳️ 투표",  statusKey: "drafting" },
-  { key: "sheet",    label: "📑 시트",  statusKey: "sheet" },
-  { key: "done",     label: "✅ 완료",  statusKey: "done" },
+  { key: "wishlist", label: "위시",  statusKey: "wishlist" },
+  { key: "drafting", label: "시안",  statusKey: "drafting" },
+  { key: "voting",   label: "투표",  statusKey: "drafting" },
+  { key: "sheet",    label: "시트",  statusKey: "sheet" },
+  { key: "done",     label: "완료",  statusKey: "done" },
 ];
 function computeStage(card) {
   const confirmedAt = card.confirmed_at;
@@ -5172,7 +5172,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
               padding: "2px 8px", borderRadius: 10,
               background: "rgba(180,83,9,0.1)", color: "#b45309", fontWeight: 600,
               overflow: "hidden", textOverflow: "ellipsis", display: "inline-block", maxWidth: 110,
-            }}>🗓️ {tu}</span>
+            }}>{tu}</span>
           );
         })()}
         {editing === "update" && (
@@ -5265,7 +5265,7 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
       >
         {(() => {
           const stage = computeStage(card);
-          const opt = STAGE_OPTIONS.find((o) => o.key === stage) || { label: "⭐ 아이디어" };
+          const opt = STAGE_OPTIONS.find((o) => o.key === stage) || { label: "아이디어" };
           return (
             <span style={{
               padding: "2px 8px", borderRadius: 10,
