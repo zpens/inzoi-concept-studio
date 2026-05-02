@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.169";
+const APP_VERSION = "1.10.170";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9242,9 +9242,9 @@ function DesignsPanel({
     return (
       <div key={i} style={{
         position: "relative", borderRadius: 8, overflow: "hidden",
-        border: isSelected ? "2px solid #fbbf24"
-          : isLeader ? "2px solid #22c55e"
-          : "1px solid var(--surface-border)",
+        border: isSelected ? "2px solid var(--accent)"
+          : isLeader ? "2px solid var(--success)"
+          : "1px solid var(--line)",
         background: "#000",
       }}>
         {d?.imageUrl ? (
@@ -9255,20 +9255,22 @@ function DesignsPanel({
             style={{ width: "100%", height, objectFit: "contain", display: "block", cursor: "zoom-in", background: "#000" }}
           />
         ) : (
-          <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: 11 }}>실패</div>
+          <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--danger)", fontSize: 11 }}>실패</div>
         )}
         <div style={{
           position: "absolute", top: 4, left: 4,
           padding: "1px 6px", borderRadius: 4,
-          background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9, fontFamily: "monospace",
+          background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9,
+          fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
           pointerEvents: "none",
         }}>{renderBadge(d, i)}</div>
-        {/* v1.10.102 — 라벨 '선정' → '대표' 로 변경. 카드 썸네일(thumbnail_url) 지정 의미 명확화. */}
+        {/* v1.10.102 — 라벨 '선정' → '대표' 로 변경. 카드 썸네일(thumbnail_url) 지정 의미 명확화.
+            v1.10.170 — KRAFTON 톤 (active=accent, weight 800→700). */}
         {isSelected ? (
           <div style={{
             position: "absolute", top: 4, right: 4,
             padding: "1px 6px", borderRadius: 4,
-            background: "#fbbf24", color: "#000", fontSize: 10, fontWeight: 800,
+            background: "var(--accent)", color: "#fff", fontSize: 10, fontWeight: 700,
           }}>⭐ 대표</div>
         ) : !disabled && d?.imageUrl && (
           <button
@@ -9277,25 +9279,29 @@ function DesignsPanel({
             style={{
               position: "absolute", top: 4, right: 4,
               padding: "2px 8px", borderRadius: 4,
-              background: "rgba(255,255,255,0.92)", border: "1px solid rgba(0,0,0,0.12)",
-              color: "var(--text-main)", fontSize: 10, fontWeight: 700, cursor: "pointer",
+              background: "rgba(255,255,255,0.92)", border: "1px solid var(--line)",
+              color: "var(--fg)", fontSize: 10, fontWeight: 600, cursor: "pointer",
+              fontFamily: "inherit",
             }}
           >☆ 대표</button>
         )}
-        {/* 👍 투표 버튼 + 카운트 — 좌측 하단 (v1.10.41) */}
+        {/* 👍 투표 버튼 + 카운트 — 좌측 하단 (v1.10.41).
+            v1.10.170 — mine = accent (오렌지), 비투표 = 검은 반투명. radius 999 pill. */}
         {d?.imageUrl && !disabled && (
           <button
             onClick={() => toggleVote(i)}
             title={voters.length > 0 ? `투표: ${voters.join(", ")}` : (actor ? "투표하기" : "프로필 선택 후 투표 가능")}
             style={{
               position: "absolute", bottom: 6, left: 6,
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 9px", borderRadius: 14,
-              background: mine ? "var(--primary)" : "rgba(0,0,0,0.72)",
+              display: "inline-flex", alignItems: "center", gap: 4,
+              padding: "3px 9px", borderRadius: 999,
+              background: mine ? "var(--accent)" : "rgba(0,0,0,0.72)",
               border: "none",
-              color: "#fff", fontSize: 11, fontWeight: 700,
+              color: "#fff", fontSize: 11, fontWeight: 600,
               cursor: actor ? "pointer" : "not-allowed",
               opacity: actor ? 1 : 0.6,
+              fontFamily: "inherit",
+              transition: "background-color 120ms",
             }}
           >
             <span>👍</span>
@@ -9303,17 +9309,23 @@ function DesignsPanel({
             {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
           </button>
         )}
-        {/* 🗑 삭제 — 우측 하단. v1.10.81: imageUrl 없는(생성 실패) 시안도 삭제 가능. */}
+        {/* 🗑 삭제 — 우측 하단. v1.10.81: imageUrl 없는(생성 실패) 시안도 삭제 가능.
+            v1.10.170 — KRAFTON --danger 토큰. */}
         {!disabled && !d._sheet && !d._legacy && i < raw.length && (
           <button
             onClick={() => removeDesign(i)}
             title={d?.imageUrl ? "이 시안 삭제" : "실패한 시안 삭제"}
             style={{
               position: "absolute", bottom: 6, right: 6,
-              padding: "3px 9px", borderRadius: 14,
-              background: "rgba(239,68,68,0.85)", border: "none",
-              color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+              padding: "3px 9px", borderRadius: 999,
+              background: "var(--danger)", border: "none",
+              color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
+              fontFamily: "inherit",
+              opacity: 0.92,
+              transition: "opacity 120ms",
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.92"; }}
           >🗑</button>
         )}
       </div>

@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.170",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 5d-3 — 시안 타일 (DesignsPanel renderTile) 정돈. (1) 컨테이너 보더: ⭐ 대표(isSelected) #fbbf24 amber → var(--accent) (단일 액센트 정책 통일). 투표 1위(isLeader) #22c55e → var(--success). 일반 var(--surface-border) → var(--line). (2) 실패 시안 텍스트 #f87171 → var(--danger). (3) 좌상단 #N 배지 mono 폰트 → ui-monospace + Menlo + Consolas. (4) ⭐ 대표 active 배지: amber+검정 → --accent + 흰. weight 800 → 700. (5) ☆ 대표 inactive 버튼: 흰 배경 + var(--surface-border) → 흰 + var(--line). 텍스트 var(--text-main) → var(--fg). weight 700 → 600. (6) 👍 투표 버튼: mine 일 때 var(--primary) 액센트 그대로 / 비투표 시 검은 반투명 그대로. radius 14 → 999 pill. weight 700 → 600. transition 추가. (7) 🗑 삭제 버튼: rgba(239,68,68,0.85) → var(--danger). radius 14 → 999 pill. weight 700 → 600. hover 시 opacity 0.92 → 1 부드러운 전환"
+    ]
+  },
+  {
     "version": "1.10.169",
     "date": "2026-05-02",
     "changes": [
