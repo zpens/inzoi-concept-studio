@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.176";
+const APP_VERSION = "1.10.177";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -12132,9 +12132,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             : 0;
           const progressCount = activeDraftingCards.length + sheetCount + jobs.filter(j => j.step >= 0 && j.step <= 6).length;
           const TABS = [
-            { id: "wishlist",  label: "위시",    count: wishlist.length },
-            { id: "progress",  label: "진행 중", count: progressCount },
-            { id: "completed", label: "완료",    count: completedList.length },
+            { id: "wishlist",  label: "위시",    count: wishlist.length,    dot: "var(--accent)"  },
+            { id: "progress",  label: "진행 중", count: progressCount,      dot: "var(--fg-muted)" },
+            { id: "completed", label: "완료",    count: completedList.length, dot: "var(--success)" },
           ];
           const switchTab = (id) => {
             setActiveTab(id);
@@ -12154,8 +12154,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                     key={tab.id}
                     onClick={() => switchTab(tab.id)}
                     style={{
-                      display: "inline-flex", alignItems: "center", gap: 6,
-                      height: 32, padding: "0 14px", borderRadius: 999,
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      height: 32, padding: "0 12px", borderRadius: 999,
                       background: isActive ? "var(--fg-strong)" : "var(--bg-soft)",
                       border: "1px solid " + (isActive ? "var(--fg-strong)" : "var(--line)"),
                       color: isActive ? "#fff" : "var(--fg)",
@@ -12164,6 +12164,9 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       transition: "background-color 120ms, color 120ms, border-color 120ms",
                     }}
                   >
+                    <span style={{
+                      width: 6, height: 6, borderRadius: 999, background: tab.dot, flexShrink: 0,
+                    }} />
                     <span>{tab.label}</span>
                     <span style={{
                       fontSize: 11, fontWeight: 700,
@@ -12282,7 +12285,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
                   <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>
-                    {tabMeta.icon} {tabMeta.title}
+                    {tabMeta.title}
                   </h2>
                   <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
                     {totalCount > 0 ? `${totalCount}개` : tabMeta.desc}
@@ -13710,7 +13713,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>✅ 완료</h2>
+                <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>완료</h2>
                 <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
                   {completedList.length > 0 ? `${completedList.length}개` : "완료된 시트가 없습니다"}
                 </span>
@@ -13849,7 +13852,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>⭐ 위시</h2>
+                <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>위시</h2>
                 <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
                   {wishlist.length > 0 ? `${wishlist.length}개` : "만들고 싶은 가구 아이디어를 기록하세요."}
                 </span>
