@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.187";
+const APP_VERSION = "1.10.188";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -2288,10 +2288,10 @@ async function patchCardComment(slug, cardId, commentId, body, actor) {
 
 // v1.10.74 — 용어 통일: 위시 / 시안 / 투표 / 시트 / 완료
 const STATUS_META = {
-  wishlist: { label: "위시",  icon: "⭐", color: "#f59e0b" },
-  drafting: { label: "시안",  icon: "🎨", color: "#7c3aed" },
-  sheet:    { label: "시트",  icon: "📑", color: "#076ee8" },
-  done:     { label: "완료",  icon: "✅", color: "#22c55e" },
+  wishlist: { label: "위시",  icon: "", color: "#f59e0b" },
+  drafting: { label: "시안",  icon: "", color: "#7c3aed" },
+  sheet:    { label: "시트",  icon: "", color: "#076ee8" },
+  done:     { label: "완료",  icon: "", color: "#22c55e" },
 };
 
 // 카드 내부 "시안 생성" 액션.
@@ -2781,7 +2781,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
       border: "1px solid var(--line)",
     }}>
       <div style={{ marginBottom: 12 }}>
-        <div style={fieldLabel}>📝 프롬프트 <span style={{ color: "var(--fg-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
+        <div style={fieldLabel}>프롬프트 <span style={{ color: "var(--fg-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
         <textarea
           value={prompt}
           disabled={disabled}
@@ -2798,7 +2798,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
       </div>
 
       <div>
-        <div style={fieldLabel}>🖼️ 참조 이미지 ({refImages.length}) <span style={{ color: "var(--fg-muted)", fontWeight: 500 }}>(Gemini multimodal · Ctrl+V 로 붙여넣기)</span></div>
+        <div style={fieldLabel}>참조 이미지 ({refImages.length}) <span style={{ color: "var(--fg-muted)", fontWeight: 500 }}>(Gemini multimodal · Ctrl+V 로 붙여넣기)</span></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {refImages.map((url, i) => {
             const isCover = card.thumbnail_url === url;
@@ -3086,7 +3086,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
   ) : (
     <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "6px 0" }}>
       {availability[stage]
-        ? "이 단계의 이름 추천을 받지 않았습니다. '🤖 추천 받기' 클릭."
+        ? "이 단계의 이름 추천을 받지 않았습니다. '추천 받기' 클릭."
         : `이 단계의 이미지가 아직 없습니다 (${stage === "draft" ? "시안 생성 필요" : stage === "final" ? "시트 생성 필요" : "참조 이미지 추가 필요"}).`}
     </div>
   );
@@ -3101,7 +3101,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
       }}>
         {/* 헤더 + 단계 세그먼트 + 추천 받기 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: picked ? 10 : 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)" }}>🏷 어셋명</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)" }}>어셋명</span>
           <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 6, background: "var(--bg-card)", border: "1px solid var(--line)" }}>
             {stageBtn("ref", "참조", availability.ref)}
             {stageBtn("draft", "시안", availability.draft)}
@@ -3124,7 +3124,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
                 transition: "background-color 120ms",
               }}
             >
-              {loading ? "⏳ 추천 중…" : (stageSugg ? "🔄 다시 추천" : "🤖 추천 받기")}
+              {loading ? "추천 중…" : (stageSugg ? "다시 추천" : "추천 받기")}
             </button>
           )}
         </div>
@@ -3144,7 +3144,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
           </div>
         ) : (
           <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-card)", border: "1px dashed var(--line)", color: "var(--fg-muted)", fontSize: 12 }}>
-            아직 채택된 이름이 없습니다. 단계 선택 후 '🤖 추천 받기'.
+            아직 채택된 이름이 없습니다. 단계 선택 후 '추천 받기'.
           </div>
         )}
 
@@ -3188,7 +3188,7 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
               cursor: loading ? "wait" : "pointer",
             }}
           >
-            {loading ? "⏳ 추천 중…" : (stageSugg ? "🔄 다시 추천" : "🤖 추천 받기")}
+            {loading ? "추천 중…" : (stageSugg ? "다시 추천" : "추천 받기")}
           </button>
         )}
       </div>
@@ -3408,7 +3408,7 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 color: suggesting ? "var(--text-muted)" : "var(--primary)",
                 cursor: (suggesting || noImage) ? "not-allowed" : "pointer",
               }}
-            >{suggesting ? "⏳ 분석 중…" : "🤖 자동 분류"}</button>
+            >{suggesting ? "분석 중…" : "자동 분류"}</button>
           );
         })()}
       </div>
@@ -3568,9 +3568,9 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                   <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>
                       {useMatches
-                        ? (usingImage ? "🎯 유사 에셋 (DINOv2 카드 이미지 직접)"
-                          : usingVisual ? "🎯 유사 에셋 (DINOv2 시각 유사)"
-                          : "🎯 유사 에셋 (posmap 매칭)")
+                        ? (usingImage ? "유사 에셋 (DINOv2 카드 이미지 직접)"
+                          : usingVisual ? "유사 에셋 (DINOv2 시각 유사)"
+                          : "유사 에셋 (posmap 매칭)")
                         : "📦 기존 제작 에셋"}
                       <span style={{ color: "var(--text-muted)", fontWeight: 500 }}> ({items.length}{useMatches ? "" : ` / ${spec.asset_count}`})</span>
                     </span>
@@ -3829,7 +3829,7 @@ function SheetPanel({
         {/* 헤더 한 줄 — 제목 / 소스 / 생성 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)" }}>
-            📑 시트{hasViews ? ` (${hasSingle ? "1 legacy" : `${tileItems.length}뷰${hasScale ? " · 스케일" : ""}`})` : ""}
+            시트{hasViews ? ` (${hasSingle ? "1 legacy" : `${tileItems.length}뷰${hasScale ? " · 스케일" : ""}`})` : ""}
           </div>
           {sourceLabel && !hasViews && (
             <div style={{ fontSize: 10, color: "var(--fg-muted)" }}>
@@ -3852,7 +3852,7 @@ function SheetPanel({
               display: "inline-flex", alignItems: "center", gap: 4,
               transition: "background-color 120ms, color 120ms",
             }}
-          >📄 3D 사양서</a>
+          >3D 사양서</a>
           <button
             onClick={makeSheet}
             disabled={busy || !canMakeSheet}
@@ -3872,7 +3872,7 @@ function SheetPanel({
           >
             {busy
               ? (progress?.label || `생성 중… ${progress ? `(${progress.done}/${progress.total})` : ""}`)
-              : hasViews ? "🔄 재생성" : "🎨 시트 생성"}
+              : hasViews ? "재생성" : "시트 생성"}
           </button>
         </div>
 
@@ -4270,7 +4270,7 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved, compact = 
           fontWeight: 800, color: "#dc2626",
           minWidth: compact ? "auto" : 130,
         }}>
-          🔥 {compact ? "" : "우선순위"}
+          {compact ? "" : "우선순위"}
         </span>
         <div style={{ display: "flex", gap: compact ? 3 : 6, flexWrap: "wrap" }}>
           {PRIORITY_OPTIONS.map((p) => {
@@ -4345,7 +4345,7 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
           minWidth: compact ? "auto" : 130,
           whiteSpace: "nowrap",
         }}>
-          🗓️ {compact ? "" : "업데이트 일정"}
+          {compact ? "" : "업데이트 일정"}
         </span>
         <button
           onClick={() => !disabled && setOpen((v) => !v)}
@@ -4497,7 +4497,7 @@ function SizeInfoPanel({ card, disabled, categoryId, onSave }) {
       background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.3)",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "#047857" }}>📏 크기 정보</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "#047857" }}>크기 정보</span>
         <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>(중요)</span>
         {si.source && (
           <span style={{
@@ -5244,11 +5244,11 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         {styleInfo ? (
           <span style={{
             padding: "2px 8px", borderRadius: 10,
-            background: "rgba(7,110,232,0.08)", color: "var(--primary)", fontWeight: 600,
+            background: "var(--chip-bg)", color: "var(--chip-fg)", fontWeight: 600,
           }}>{styleInfo.label}</span>
-        ) : <span style={{ color: "var(--text-muted)" }}>—</span>}
+        ) : <span style={{ color: "var(--fg-muted)" }}>—</span>}
       </div>
-      <div style={{ fontSize: 11, color: sizeSrcColor, fontFamily: "monospace", display: "flex", alignItems: "center", gap: 4 }}>
+      <div style={{ fontSize: 11, color: "var(--fg-muted)", fontFamily: "monospace", display: "flex", alignItems: "center", gap: 4 }}>
         {sizeLabel ? (
           <>
             <span style={{ fontSize: 10 }}>{sizeSrcIcon}</span>
@@ -9400,7 +9400,7 @@ function DesignsPanel({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
-          🎨 시안 ({displayDesigns.length}개)
+          시안 ({displayDesigns.length}개)
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
           {panelActive ? "📋 Ctrl+V 로 붙여넣기 가능" : "AI 생성 + 외부 업로드 · ☆ 선정 / 👍 투표 / 🗑 삭제"}

@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.188",
+    "date": "2026-05-03",
+    "changes": [
+      "상세페이지 라벨 좌측 이모지 일괄 삭제. (1) PromptRefEditor: '📝 프롬프트' / '🖼️ 참조 이미지' → 이모지 제거. (2) AssetNameSuggester: '🏷 어셋명' / '🤖 추천 받기' / '🔄 다시 추천' / '⏳ 추천 중…' → 이모지 제거. (3) AssetInfoEditor: '🤖 자동 분류' / '🎯 유사 에셋' / '📏 크기 정보' → 이모지 제거. (4) SheetPanel: '📑 시트' / '📄 3D 사양서' / '🎨 시트 생성' / '🔄 재생성' → 이모지 제거. (5) DesignsPanel 헤더: '🎨 시안' → '시안'. (6) PriorityField: '🔥 우선순위' → 이모지 제거. (7) TargetUpdateField: '🗓️ 업데이트 일정' → 이모지 제거. (8) STATUS_META icon 모두 빈값으로 — 위시/시안/시트/완료 단계 표시에 사용되던 ⭐ 🎨 📑 ✅ 자동 제거. 리스트뷰 카드 셀 색상 정돈: 스타일 chip 의 var(--primary) 빨강 → KRAFTON chip 톤 (--chip-bg + --chip-fg) 으로 통일, 크기 셀의 sizeSrcColor (AI=빨강·카탈로그=호박색·수동=검정) → 단일 var(--fg-muted) 회색 (sizeSrcIcon 🤖/📚/✏️ 으로 source 구분 유지). 카테고리·업데이트 셀과 시각적 일관성 확보"
+    ]
+  },
+  {
     "version": "1.10.187",
     "date": "2026-05-03",
     "changes": [
