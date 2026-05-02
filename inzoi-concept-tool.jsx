@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.178";
+const APP_VERSION = "1.10.179";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9942,29 +9942,7 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
         ) : (
           <span style={{ fontSize: Math.round(72 * scale), opacity: 0.5 }}>{catInfo?.icon || "📇"}</span>
         )}
-        {/* v1.10.72 — stage badge (좌상단). progress 탭에서 단계 식별에 핵심. */}
-        {(() => {
-          const stage = computeStage(card);
-          const opt = STAGE_OPTIONS.find((o) => o.key === stage);
-          if (!opt) return null;
-          return (
-            <div style={{
-              position: "absolute", top: 10, left: 10,
-              padding: "3px 10px", borderRadius: 10,
-              background: "rgba(124,58,237,0.92)", color: "#fff",
-              fontSize: Math.round(11 * Math.sqrt(scale)), fontWeight: 800,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-              whiteSpace: "nowrap",
-            }}>{opt.label}</div>
-          );
-        })()}
-        {designs.length > 0 && (
-          <div style={{
-            position: "absolute", top: 10, right: 10,
-            padding: "3px 10px", borderRadius: 10,
-            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: Math.round(11 * Math.sqrt(scale)), fontWeight: 700,
-          }}>시안 {designs.length}</div>
-        )}
+        {/* v1.10.179 — 좌상단 stage 배지 / 우상단 '시안 N' 배지 삭제 (사용자 요청). */}
       </div>
       <div style={{ padding: `${Math.round(10 * scale)}px ${Math.round(14 * scale)}px` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
@@ -10052,20 +10030,7 @@ function WorkflowJobCard({ job, active, onSelect, tabId }) {
         ) : (
           <span style={{ fontSize: 56, opacity: 0.5 }}>{icon}</span>
         )}
-        {designs.length > 1 && (
-          <div style={{
-            position: "absolute", top: 10, right: 10,
-            padding: "3px 10px", borderRadius: 10,
-            background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 11, fontWeight: 700,
-          }}>시안 {designs.length}</div>
-        )}
-        {active && (
-          <div style={{
-            position: "absolute", top: 10, left: 10,
-            padding: "3px 10px", borderRadius: 10,
-            background: "var(--primary)", color: "#fff", fontSize: 11, fontWeight: 800, letterSpacing: "0.05em",
-          }}>선택됨</div>
-        )}
+        {/* v1.10.179 — '시안 N' 배지 / '선택됨' 배지 삭제 (사용자 요청). */}
       </div>
       <div style={{ padding: "14px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
