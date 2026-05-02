@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.182";
+const APP_VERSION = "1.10.183";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4116,6 +4116,17 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title", 
       return designs.length > 0 ? 2 : 1;
     };
     cpy.sort((a, b) => dir * cmpNum(stageRank(card(a)), stageRank(card(b))));
+  } else if (sortBy === "actor_asc" || sortBy === "actor_desc") {
+    // v1.10.183 — 작성자 정렬. created_by → updated_by fallback. 빈 값은 항상 뒤로.
+    const dir = sortBy === "actor_asc" ? 1 : -1;
+    cpy.sort((a, b) => {
+      const aA = card(a)?.created_by || card(a)?.updated_by || "";
+      const bA = card(b)?.created_by || card(b)?.updated_by || "";
+      if (!aA && !bA) return 0;
+      if (!aA) return 1;
+      if (!bA) return -1;
+      return dir * cmpStr(aA, bA);
+    });
   } else {
     cpy.sort((a, b) => cmpStr(b[dateKey], a[dateKey]));
   }
@@ -5331,9 +5342,13 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
 }
 
 // sortBy 를 특정 컬럼 기준으로 toggle. 같은 컬럼 재클릭 = asc → desc → 해제 (기본 date_desc).
+// v1.10.183 — 컬럼 키가 defaultSort 와 같은 경우 (예: 생성일 = date_desc 가 default) 는
+// 3단계 cycle 의 '취소' 상태가 시각적으로 무의미하므로 asc ↔ desc 양방향 토글로 처리.
 function cycleSortBy(currentSortBy, ascKey, descKey, defaultSort = "date_desc") {
   if (currentSortBy === ascKey) return descKey;
-  if (currentSortBy === descKey) return defaultSort;
+  if (currentSortBy === descKey) {
+    return descKey === defaultSort ? ascKey : defaultSort;
+  }
   return ascKey;
 }
 
@@ -5359,7 +5374,7 @@ function CardListHeader({ tabId, sortBy, onSortChange, scale = 1 }) {
           userSelect: "none",
           color: activeDir ? "var(--primary)" : cellBase.color,
           display: "flex", alignItems: "center",
-          justifyContent: align === "right" ? "flex-end" : "flex-start",
+          justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start",
           gap: 4,
         }}
         title={clickable ? "클릭해서 정렬" : undefined}
@@ -5390,7 +5405,7 @@ function CardListHeader({ tabId, sortBy, onSortChange, scale = 1 }) {
       <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
       <SortCell label="진행" ascKey="stage_asc" descKey="stage_desc" />
       <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
-      <div style={{ ...cellBase, textAlign: "center" }} title="작성자">👤</div>
+      <SortCell label="작성자" ascKey="actor_asc" descKey="actor_desc" align="center" />
     </div>
   );
 }

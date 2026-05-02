@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.183",
+    "date": "2026-05-02",
+    "changes": [
+      "리스트 뷰 헤더 정렬 수정 + 작성자 정렬 추가. (1) 생성일 컬럼 클릭 시 정렬 토글이 동작하지 않던 버그 수정 — descKey 가 defaultSort 와 같은 컬럼은 3단계 cycle 의 '취소' 가 시각적으로 무의미하므로 asc ↔ desc 양방향 토글로 처리. 이제 생성일 클릭 → 오래된순 → 다시 클릭 → 최신순 → 다시 → 오래된순 으로 토글. (2) 작성자 컬럼 정렬 기능 추가 — 기존 👤 정적 아이콘 → SortCell '작성자' (asc/desc 클릭 정렬). sortCardArray 에 actor_asc/actor_desc 분기 추가 (created_by → updated_by fallback, 빈 값은 항상 뒤로). (3) SortCell align='center' 지원 추가 (justifyContent: center)"
+    ]
+  },
+  {
     "version": "1.10.182",
     "date": "2026-05-02",
     "changes": [
