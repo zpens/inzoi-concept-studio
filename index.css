@@ -2,21 +2,52 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 
 :root {
-    --bg-color: #f5f7fa;
-    --bg-gradient:
-        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(7, 110, 232, 0.06) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 50%, rgba(132, 197, 255, 0.04) 0%, transparent 50%),
-        linear-gradient(180deg, #ffffff 0%, #f0f2f5 100%);
-    --surface-color: rgba(255, 255, 255, 0.8);
-    --surface-border: rgba(0, 0, 0, 0.08);
-    --primary: #076ee8;
-    --primary-hover: #0560cc;
-    --primary-glow: rgba(7, 110, 232, 0.2);
-    --secondary: #4da3e8;
-    --accent: #6875f5;
-    --text-main: #1a1d23;
-    --text-muted: #6b7280;
-    --text-lighter: #4b5563;
+    /* === KRAFTON Design System tokens (v1.10.156, design_handoff_inzoi) === */
+
+    /* Backgrounds */
+    --bg-app:   #F4F5F7;   /* 페이지 배경 */
+    --bg-card:  #FFFFFF;   /* 카드/패널 */
+    --bg-soft:  #F7F7F7;   /* input·panel soft */
+    --bg-muted: #FAFAFA;   /* row hover */
+
+    /* Borders */
+    --line:        #E8E8EA;
+    --line-strong: #D6D6DA;
+    --line-soft:   #F0F0F2;
+
+    /* Foreground */
+    --fg:        #14141A;
+    --fg-strong: #000000;
+    --fg-muted:  #6B6B73;
+    --fg-faint:  #9A9AA3;
+
+    /* Single accent — KRAFTON Pantone Warm Red C */
+    --accent:       #F9423A;
+    --accent-press: #D43229;
+    --accent-soft:  #FEEBEA;
+
+    /* Status */
+    --success:      #1A7F4F;
+    --success-soft: #E6F4ED;
+    --danger:       #C8332B;
+    --danger-soft:  #FBEAE8;
+
+    /* Chip */
+    --chip-bg: #F1F1F3;
+    --chip-fg: #2E2E33;
+
+    /* === Legacy aliases — 기존 696곳 인라인 style 호환용. step 2~6 에서 점진 교체. === */
+    --bg-color:       var(--bg-app);
+    --bg-gradient:    var(--bg-app); /* radial gradient → flat */
+    --surface-color:  var(--bg-card);
+    --surface-border: var(--line);
+    --primary:        var(--accent);
+    --primary-hover:  var(--accent-press);
+    --primary-glow:   rgba(249, 66, 58, 0.20);
+    --secondary:      var(--accent-press); /* gradient 한 쌍이 모두 액센트 → 단색 */
+    --text-main:      var(--fg);
+    --text-muted:     var(--fg-muted);
+    --text-lighter:   var(--fg);
 }
 
 * {

@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.156",
+    "date": "2026-05-02",
+    "changes": [
+      "KRAFTON Design System 마이그레이션 1단계 — 디자인 토큰 이식. index.css 의 :root 에 새 KRAFTON 토큰 추가 (--bg-app / --bg-card / --bg-soft / --bg-muted, --line / --line-strong / --line-soft, --fg / --fg-strong / --fg-muted / --fg-faint, --accent #F9423A / --accent-press / --accent-soft, --success / --danger, --chip-bg / --chip-fg). 기존 변수 (--primary / --secondary / --accent / --text-main / --text-muted / --text-lighter / --surface-color / --surface-border / --bg-color / --bg-gradient / --primary-glow) 는 모두 새 토큰으로 alias 매핑되어 696곳의 인라� style 이 즉시 새 컬러로 자동 반영. 파랑 #076ee8 + 보라 #6875f5 였던 두 액센트가 단일 KRAFTON Warm Red #F9423A 로 통일. radial gradient 배경은 flat 회색 #F4F5F7 로 교체. 빌드 변경 코드 0 줄 — 토큰 alias 만으로 시각 인상이 한 번에 KRAFTON 톤으로 전환. 다음 단계 (원자 컴포넌트, Header, List/Detail, Lineage) 검수 위한 1차 베이스라인"
+    ]
+  },
+  {
     "version": "1.10.155",
     "date": "2026-05-01",
     "changes": [
