@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.159",
+    "date": "2026-05-02",
+    "changes": [
+      "헤더 좌측 inZOI 워드마크 → 원래 InZOI_Logo.png 이미지로 환원. height 28px 유지. Asset Studio + v버전 텍스트는 그대로"
+    ]
+  },
+  {
     "version": "1.10.158",
     "date": "2026-05-02",
     "changes": [

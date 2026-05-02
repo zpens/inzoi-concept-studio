@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.158";
+const APP_VERSION = "1.10.159";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -11868,12 +11868,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           onClick={() => setVersionOpen(true)}
           title="버전 정보 보기"
         >
-          <span style={{
-            fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em",
-            color: "var(--fg-strong)", lineHeight: 1,
-          }}>
-            in<span style={{ color: "var(--accent)" }}>ZOI</span>
-          </span>
+          <img src="/InZOI_Logo.png" alt="inZOI" style={{ height: 28, objectFit: "contain", display: "block" }} />
           <span style={{ fontSize: 13, color: "var(--fg-muted)", fontWeight: 500 }}>Asset Studio</span>
           <span style={{ fontSize: 11, color: "var(--fg-faint)", fontWeight: 500 }}>v{APP_VERSION}</span>
         </div>
