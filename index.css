@@ -258,7 +258,7 @@ textarea {
     right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(4px);
+    /* v1.10.165 — backdrop-filter blur 제거 (KRAFTON flat 톤) */
     z-index: 200;
     animation: overlayFadeIn 0.3s ease;
 }

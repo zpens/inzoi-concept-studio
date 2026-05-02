@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.164";
+const APP_VERSION = "1.10.165";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -14468,21 +14468,22 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         return (
           <>
             <div className="sidebar-overlay" onClick={() => setDetailCard(null)} />
+            {/* v1.10.165 KRAFTON DS step 5a — 모달 컨테이너. backdrop-filter blur 제거,
+                flat var(--bg-card), KRAFTON modal shadow, 보더 var(--line). */}
             <div style={{
               position: "fixed", top: "50%", left: "50%",
               transform: "translate(-50%, -50%)",
               // v1.10.78 — 폭 1440 → 1600. 우측 프레임이 시안 그리드 1열(160px) 추가 수용.
               width: 1600, maxWidth: "96vw", maxHeight: "94vh",
-              background: "rgba(255, 255, 255, 0.98)",
-              backdropFilter: "blur(20px)",
-              border: "1px solid var(--surface-border)",
-              borderRadius: 20, zIndex: 202,
-              boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+              background: "var(--bg-card)",
+              border: "1px solid var(--line)",
+              borderRadius: 16, zIndex: 202,
+              boxShadow: "0 24px 64px rgba(0,0,0,0.18)",
               display: "flex", flexDirection: "column", overflow: "hidden",
             }}>
               {/* Header — 상태 아이콘 프리픽스 제거 (v1.10.30) */}
               <div style={{
-                padding: "14px 24px", borderBottom: "1px solid var(--surface-border)",
+                padding: "14px 24px", borderBottom: "1px solid var(--line)",
                 display: "flex", alignItems: "center", gap: 14, flexShrink: 0,
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -14521,11 +14522,13 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       onClick={() => setGalleryOpen(true)}
                       title="이 카드의 모든 이미지 갤러리 (단축키: F)"
                       style={{
-                        padding: "2px 6px", borderRadius: 6,
-                        background: "transparent", border: "1px solid var(--surface-border)",
-                        color: "var(--text-muted)", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                        padding: "2px 6px", borderRadius: 4,
+                        background: "transparent", border: "1px solid var(--line)",
+                        color: "var(--fg-muted)", fontSize: 10, fontWeight: 600, cursor: "pointer",
                         display: "inline-flex", alignItems: "center", gap: 3, lineHeight: 1,
                         whiteSpace: "nowrap",
+                        fontFamily: "inherit",
+                        transition: "background-color 120ms, color 120ms",
                       }}
                     >
                       <span style={{ fontSize: 11 }}>🖼</span>
