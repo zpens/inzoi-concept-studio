@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.171",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 5d-4 — SheetPanel 정돈. (1) 외곽 sectionStyle: rgba(0,0,0,0.02) → var(--bg-soft) + var(--line). (2) 헤더 라벨 weight 800 → 700, color text-main → fg-strong. 소스 라벨 색 토큰화. (3) 📄 3D 사양서 a 링크: 파랑 rgba(7,110,232,0.1) + 파랑 보더 → KRAFTON ghost (--bg-card + --line + --fg-muted). h28. (4) 🎨 시트 생성 / 🔄 재생성 버튼: 파랑 var(--primary) → KRAFTON --accent. h28 / weight 700→600 / disabled 시 --bg-muted + --line + --fg-muted. (5) 시트 타일 컨테이너: surface-border → --line, background #fff → --bg-card. (6) 빈 상태 점선 박스: rgba 0.03 + surface-border → --bg-card + 점선 --line. fg-muted. (7) legacy single 이미지 보더 토큰화. (8) 이전 시트 history details: summary weight 700→600 + fg-muted. 카드 컨테이너 rgba 0.02 → --bg-card + --line. 메타 텍스트 토큰화. 모든 inner 보더 토큰화. (9) 라벨 배지 weight 700→600"
+    ]
+  },
+  {
     "version": "1.10.170",
     "date": "2026-05-02",
     "changes": [

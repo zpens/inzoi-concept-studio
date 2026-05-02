@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.170";
+const APP_VERSION = "1.10.171";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -3737,10 +3737,11 @@ function SheetPanel({
       : card.thumbnail_url ? "카드 썸네일" : null;
 
   // v1.10.113 — DesignsPanel 톤과 일관된 컴팩트 스타일.
+  // v1.10.171 — KRAFTON 토큰화.
   const sectionStyle = {
     padding: 14, borderRadius: 12,
-    background: "rgba(0,0,0,0.02)",
-    border: "1px solid var(--surface-border)",
+    background: "var(--bg-soft)",
+    border: "1px solid var(--line)",
   };
 
   const makeSheet = async () => {
@@ -3827,26 +3828,29 @@ function SheetPanel({
       <div style={sectionStyle}>
         {/* 헤더 한 줄 — 제목 / 소스 / 생성 버튼 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-main)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)" }}>
             📑 시트{hasViews ? ` (${hasSingle ? "1 legacy" : `${tileItems.length}뷰${hasScale ? " · 스케일" : ""}`})` : ""}
           </div>
           {sourceLabel && !hasViews && (
-            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+            <div style={{ fontSize: 10, color: "var(--fg-muted)" }}>
               소스: {sourceLabel}
             </div>
           )}
           <div style={{ flex: 1 }} />
-          {/* v1.10.129 — 3D 모델러 발주 사양서 페이지 */}
+          {/* v1.10.129 — 3D 모델러 발주 사양서 페이지. v1.10.171 KRAFTON ghost. */}
           <a
             href={`/p/${projectSlug}/cards/${encodeURIComponent(card.id)}/spec`}
             target="_blank"
             rel="noreferrer"
             title="외주 모델러 발주용 사양서 (새 탭)"
             style={{
-              padding: "6px 12px", borderRadius: 8,
-              background: "rgba(7,110,232,0.1)", border: "1px solid rgba(7,110,232,0.3)",
-              color: "var(--primary)", fontSize: 11, fontWeight: 700,
+              height: 28, padding: "0 12px", borderRadius: 8,
+              background: "var(--bg-card)", border: "1px solid var(--line)",
+              color: "var(--fg-muted)", fontSize: 11, fontWeight: 600,
               textDecoration: "none", whiteSpace: "nowrap",
+              fontFamily: "inherit", boxSizing: "border-box",
+              display: "inline-flex", alignItems: "center", gap: 4,
+              transition: "background-color 120ms, color 120ms",
             }}
           >📄 3D 사양서</a>
           <button
@@ -3854,13 +3858,16 @@ function SheetPanel({
             disabled={busy || !canMakeSheet}
             title={!geminiApiKey ? "Gemini API 키 필요" : disabled ? "완료 상태에서는 편집 불가" : canMakeSheet ? `${sourceLabel} 으로 직교 뷰 시트 생성` : "시안 또는 카드 이미지 필요"}
             style={{
-              padding: "6px 14px", borderRadius: 8,
-              background: busy || !canMakeSheet ? "rgba(0,0,0,0.08)" : "var(--primary)",
-              border: "none",
-              color: busy || !canMakeSheet ? "var(--text-muted)" : "#fff",
-              fontSize: 11, fontWeight: 700,
+              height: 28, padding: "0 14px", borderRadius: 8,
+              background: busy || !canMakeSheet ? "var(--bg-muted)" : "var(--accent)",
+              border: "1px solid " + (busy || !canMakeSheet ? "var(--line)" : "transparent"),
+              color: busy || !canMakeSheet ? "var(--fg-muted)" : "#fff",
+              fontSize: 11, fontWeight: 600,
               cursor: busy ? "wait" : (!canMakeSheet ? "not-allowed" : "pointer"),
               whiteSpace: "nowrap",
+              fontFamily: "inherit", boxSizing: "border-box",
+              display: "inline-flex", alignItems: "center",
+              transition: "background-color 120ms",
             }}
           >
             {busy
@@ -3873,7 +3880,7 @@ function SheetPanel({
         {tileItems.length > 0 ? (
           <>
             {views.view_decision?.reasoning && (
-              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6, fontStyle: "italic" }}>
+              <div style={{ fontSize: 10, color: "var(--fg-muted)", marginBottom: 6, fontStyle: "italic" }}>
                 💭 {views.view_decision.reasoning}
               </div>
             )}
@@ -3881,7 +3888,7 @@ function SheetPanel({
               {tileItems.map((it) => (
                 <div key={it.id} style={{
                   position: "relative", borderRadius: 8, overflow: "hidden",
-                  border: "1px solid var(--surface-border)", background: "#fff",
+                  border: "1px solid var(--line)", background: "var(--bg-card)",
                 }}>
                   <img
                     src={it.url}
@@ -3916,7 +3923,7 @@ function SheetPanel({
           <div>
             <div style={{
               position: "relative", borderRadius: 8, overflow: "hidden",
-              border: "1px solid var(--surface-border)", background: "#000",
+              border: "1px solid var(--line)", background: "#000",
             }}>
               <img
                 src={views.single}
@@ -3942,12 +3949,12 @@ function SheetPanel({
                 title="PNG 저장"
               >📥</a>
             </div>
-            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
+            <div style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 4, fontStyle: "italic" }}>
               재생성하면 새 다중 직교 뷰 형식으로 변환됩니다.
             </div>
           </div>
         ) : (
-          <div style={{ padding: 12, textAlign: "center", borderRadius: 8, background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)", color: "var(--text-muted)", fontSize: 11 }}>
+          <div style={{ padding: 12, textAlign: "center", borderRadius: 8, background: "var(--bg-card)", border: "1px dashed var(--line)", color: "var(--fg-muted)", fontSize: 11 }}>
             시안 또는 카드 이미지가 있으면 정면 + (필요시 측/후/상) + 스케일 참조 1장을 생성합니다.
           </div>
         )}
@@ -3955,7 +3962,7 @@ function SheetPanel({
         {/* 이전 시트 기록 — 접힘 기본, 컴팩트 */}
         {Array.isArray(card.data?.concept_sheet_history) && card.data.concept_sheet_history.length > 0 && (
           <details style={{ marginTop: 10 }}>
-            <summary style={{ cursor: "pointer", fontSize: 10, fontWeight: 700, color: "var(--text-muted)" }}>
+            <summary style={{ cursor: "pointer", fontSize: 10, fontWeight: 600, color: "var(--fg-muted)" }}>
               📚 이전 시트 ({card.data.concept_sheet_history.length})
             </summary>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
@@ -3963,8 +3970,8 @@ function SheetPanel({
                 const histKeys = [...SHEET_VIEWS.map((v) => v.id), "scale"].filter((k) => h[k]);
                 const histLabel = (k) => k === "scale" ? "📏" : (SHEET_VIEWS.find((v) => v.id === k)?.label || k);
                 return (
-                  <div key={i} style={{ padding: 6, borderRadius: 6, background: "rgba(0,0,0,0.02)", border: "1px solid var(--surface-border)" }}>
-                    <div style={{ fontSize: 9, color: "var(--text-muted)", marginBottom: 3 }}>
+                  <div key={i} style={{ padding: 6, borderRadius: 6, background: "var(--bg-card)", border: "1px solid var(--line)" }}>
+                    <div style={{ fontSize: 9, color: "var(--fg-muted)", marginBottom: 3 }}>
                       {h.generated_at ? formatLocalTime(h.generated_at, "full") : "시점 불명"}
                       {h.model && ` · ${h.model}`}
                       {h.single ? " · 단일 (legacy)" : ` · ${histKeys.length}뷰`}
@@ -3974,7 +3981,7 @@ function SheetPanel({
                         src={h.single}
                         alt="이전 시트"
                         onClick={() => onOpenImage?.(h.single)}
-                        style={{ width: "100%", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
+                        style={{ width: "100%", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--line)" }}
                       />
                     ) : histKeys.length > 0 ? (
                       <div style={{ display: "grid", gridTemplateColumns: `repeat(${histKeys.length}, 1fr)`, gap: 3 }}>
@@ -3985,12 +3992,12 @@ function SheetPanel({
                               alt={histLabel(k)}
                               title={histLabel(k)}
                               onClick={() => onOpenImage?.(h[k])}
-                              style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--surface-border)" }}
+                              style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 4, cursor: onOpenImage ? "zoom-in" : "default", border: "1px solid var(--line)" }}
                             />
                             <div style={{
                               position: "absolute", top: 1, left: 1,
                               padding: "0 4px", borderRadius: 3,
-                              background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 8, fontWeight: 700,
+                              background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 8, fontWeight: 600,
                               pointerEvents: "none",
                             }}>{histLabel(k)}</div>
                           </div>
