@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.162";
+const APP_VERSION = "1.10.163";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4681,13 +4681,16 @@ function UpdateChipItem({ chip, active, faded, onToggle, onRename }) {
   const [editing, setEditing] = React.useState(false);
   const [input, setInput] = React.useState(chip.label);
   React.useEffect(() => { setInput(chip.label); }, [chip.label]);
+  // v1.10.163 — KRAFTON 칩 톤. active=검정 채움, 비활성=회색 chip-bg, faded=더 옅음.
   const baseStyle = {
     display: "inline-flex", alignItems: "center", gap: 4,
-    padding: "4px 4px 4px 10px", borderRadius: 14,
-    background: active ? "var(--primary)" : (faded ? "rgba(0,0,0,0.04)" : "rgba(7,110,232,0.08)"),
-    border: `1px solid ${active ? "var(--primary)" : "rgba(7,110,232,0.18)"}`,
-    color: active ? "#fff" : (faded ? "var(--text-muted)" : "var(--primary)"),
-    fontSize: 11, fontWeight: 700, transition: "all 0.15s",
+    padding: "0 4px 0 10px", height: 24, borderRadius: 999,
+    background: active ? "var(--fg-strong)" : (faded ? "var(--bg-soft)" : "var(--chip-bg)"),
+    border: "1px solid " + (active ? "var(--fg-strong)" : (faded ? "var(--line)" : "transparent")),
+    color: active ? "#fff" : (faded ? "var(--fg-faint)" : "var(--chip-fg)"),
+    fontSize: 12, fontWeight: 500,
+    transition: "background-color 120ms, color 120ms, border-color 120ms",
+    boxSizing: "border-box",
   };
   const commit = () => {
     const next = input.trim();
@@ -4710,7 +4713,7 @@ function UpdateChipItem({ chip, active, faded, onToggle, onRename }) {
   };
   if (editing) {
     return (
-      <span style={{ ...baseStyle, padding: "2px 6px", background: "#fff", border: "1px solid var(--primary)" }}>
+      <span style={{ ...baseStyle, padding: "0 6px", background: "var(--bg-card)", border: "1px solid var(--fg-strong)", color: "var(--fg)" }}>
         <input
           autoFocus
           value={input}
@@ -4721,8 +4724,9 @@ function UpdateChipItem({ chip, active, faded, onToggle, onRename }) {
           }}
           onBlur={() => { if (editing) commit(); }}
           style={{
-            border: "none", outline: "none", fontSize: 11, fontWeight: 700,
-            background: "transparent", color: "var(--text-main)", padding: "2px 2px",
+            border: "none", outline: "none", fontSize: 12, fontWeight: 500,
+            background: "transparent", color: "var(--fg)", padding: "2px 2px",
+            fontFamily: "inherit",
             width: `${Math.max(input.length, chip.label.length, 4) + 2}ch`,
           }}
         />
@@ -4758,12 +4762,16 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename, curren
     if (selected.includes(value)) onChange(selected.filter((v) => v !== value));
     else onChange([...selected, value]);
   };
+  // v1.10.163 — KRAFTON 칩 톤 (active=검정 채움 / 비활성=회색 chip-bg).
   const allStyle = {
-    padding: "4px 10px", borderRadius: 14,
-    background: selected.length === 0 ? "var(--primary)" : "rgba(7,110,232,0.08)",
-    border: `1px solid ${selected.length === 0 ? "var(--primary)" : "rgba(7,110,232,0.18)"}`,
-    color: selected.length === 0 ? "#fff" : "var(--primary)",
-    fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
+    height: 24, padding: "0 10px", borderRadius: 999,
+    background: selected.length === 0 ? "var(--fg-strong)" : "var(--chip-bg)",
+    border: "1px solid " + (selected.length === 0 ? "var(--fg-strong)" : "transparent"),
+    color: selected.length === 0 ? "#fff" : "var(--chip-fg)",
+    fontSize: 12, fontWeight: 500, cursor: "pointer",
+    transition: "background-color 120ms, color 120ms, border-color 120ms",
+    fontFamily: "inherit", boxSizing: "border-box",
+    display: "inline-flex", alignItems: "center",
   };
   // v1.10.87 — 현재 필터 상태 그대로 URL 복사 (외부 동료에게 공유).
   // v1.10.88 — HTTP 환경 호환을 위해 copyToClipboard 헬퍼 사용 (legacy execCommand fallback).
@@ -4786,7 +4794,7 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename, curren
   };
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
-      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginRight: 4 }}>🗓️ 업데이트:</span>
+      <span style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 500, marginRight: 4 }}>🗓️ 업데이트:</span>
       <button onClick={() => onChange([])} style={allStyle}>전체 · {totalCount}</button>
       {chips.map((c) => {
         const faded = c.value === "__unspecified";
@@ -4802,17 +4810,20 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename, curren
           />
         );
       })}
-      {/* v1.10.87 — 현재 탭 + 선택된 태그 필터 상태로 공유 URL 복사 */}
+      {/* v1.10.87 — 현재 탭 + 선택된 태그 필터 상태로 공유 URL 복사. v1.10.163 KRAFTON 칩 톤. */}
       <button
         onClick={copyShare}
         title={selected.length > 0 ? `선택된 태그(${selected.length}) 필터 URL 복사` : "현재 탭 URL 복사"}
         style={{
           marginLeft: "auto",
-          padding: "4px 10px", borderRadius: 14,
-          background: copied ? "rgba(34,197,94,0.15)" : "rgba(0,0,0,0.04)",
-          border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : "var(--surface-border)"}`,
-          color: copied ? "#15803d" : "var(--text-muted)",
-          fontSize: 11, fontWeight: 700, cursor: "pointer",
+          height: 24, padding: "0 10px", borderRadius: 999,
+          background: copied ? "var(--success-soft)" : "var(--chip-bg)",
+          border: "1px solid " + (copied ? "var(--success-soft)" : "transparent"),
+          color: copied ? "var(--success)" : "var(--fg-muted)",
+          fontSize: 12, fontWeight: 500, cursor: "pointer",
+          fontFamily: "inherit", boxSizing: "border-box",
+          display: "inline-flex", alignItems: "center", gap: 4,
+          transition: "background-color 120ms, color 120ms",
         }}
       >{copied ? "✓ 복사됨" : "🔗 링크 복사"}</button>
     </div>

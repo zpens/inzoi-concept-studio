@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.163",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 4c — UpdateChipBar / UpdateChipItem 칩 톤 정돈. 기존 파랑/오렌지 액센트 칩 → KRAFTON 표준 칩 (active=검정 채움 흰 글씨 / 비활성=회색 chip-bg / faded=옅은 bg-soft). h24 / radius 999 / fontSize 12 / fontWeight 500 / padding 0 10 (right 4 for ✏️ 버튼). 편집 모드: 흰 배경 + 검정 보더. '전체 · N' 칩과 '🔗 링크 복사' 칩도 동일 톤. 복사 성공 표시는 success-soft + success 텍스트로. 칩이 화면에 항상 보이는 영역이라 List View 인상이 KRAFTON 톤으로 정착"
+    ]
+  },
+  {
     "version": "1.10.162",
     "date": "2026-05-02",
     "changes": [
