@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.179";
+const APP_VERSION = "1.10.180";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -3923,7 +3923,7 @@ function SheetPanel({
           <div>
             <div style={{
               position: "relative", borderRadius: 8, overflow: "hidden",
-              border: "1px solid var(--line)", background: "#000",
+              border: "1px solid var(--line)", background: "var(--bg-soft)",
             }}>
               <img
                 src={views.single}
@@ -9267,14 +9267,14 @@ function DesignsPanel({
         border: isSelected ? "2px solid var(--accent)"
           : isLeader ? "2px solid var(--success)"
           : "1px solid var(--line)",
-        background: "#000",
+        background: "var(--bg-soft)",
       }}>
         {d?.imageUrl ? (
           <img
             src={d.imageUrl}
             alt=""
             onClick={() => onOpenImage?.(d.imageUrl)}
-            style={{ width: "100%", height, objectFit: "contain", display: "block", cursor: "zoom-in", background: "#000" }}
+            style={{ width: "100%", height, objectFit: "contain", display: "block", cursor: "zoom-in", background: "var(--bg-soft)" }}
           />
         ) : (
           <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--danger)", fontSize: 11 }}>실패</div>

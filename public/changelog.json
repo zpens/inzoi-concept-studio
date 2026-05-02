@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.180",
+    "date": "2026-05-02",
+    "changes": [
+      "상세페이지 시안 썸네일 letterbox 색 정돈. DesignsPanel.renderTile 의 컨테이너 + img background #000 → var(--bg-soft) 회색. 시안 이미지 비례가 카드 격자와 다를 때 위·아래 (또는 좌·우) 빈 공간이 KRAFTON 회색으로 자연스럽게 표시됨 (이전엔 검정). SheetPanel 의 legacy single 시트 컨테이너도 동일 적용. objectFit: contain 은 그대로 유지 (시안 디테일 잘리지 않음)"
+    ]
+  },
+  {
     "version": "1.10.179",
     "date": "2026-05-02",
     "changes": [
