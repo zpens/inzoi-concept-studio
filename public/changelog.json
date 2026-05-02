@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.168",
+    "date": "2026-05-02",
+    "changes": [
+      "DS step 5d-1 — PromptRefEditor 정돈. (1) 외곽 컨테이너: 파랑 rgba(7,110,232,0.04) + 파랑 보더 → KRAFTON --bg-soft + --line. (2) fieldLabel: weight 700 → 600 / color --text-muted → --fg-muted. (3) fieldBox (textarea): border --surface-border → --line / disabled bg → --bg-soft / 일반 bg → --bg-card / fontFamily inherit / focus border 부드러운 transition. (4) 참조 이미지 카드: 1) ⭐ 대표 보더 amber #fbbf24 → KRAFTON --accent (오렌지 단색 정책 통일) 2) 좌상단 ⭐ 대표 배지: amber + 검정 글씨 → --accent + 흰 글씨 3) hover overlay 의 ⭐ 대표 active 버튼: amber → --accent / radius 6 → 4 / weight 700 → 600 4) ✕ 삭제 버튼: rgba(239,68,68,0.9) → var(--danger) 토큰 / radius 4 / weight 600. (5) + 추가 버튼 (점선 박스): rgba 0.03 + var(--surface-border) 점선 → --bg-card + 점선 --line / hover 시 부드러운 회색 전환 / radius 10 → 8"
+    ]
+  },
+  {
     "version": "1.10.167",
     "date": "2026-05-02",
     "changes": [

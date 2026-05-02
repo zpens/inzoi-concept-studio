@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.167";
+const APP_VERSION = "1.10.168";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -2763,22 +2763,25 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.id, disabled]);
 
-  const fieldLabel = { fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 };
+  // v1.10.168 KRAFTON DS step 5d-1 — 라벨/필드 토큰화.
+  const fieldLabel = { fontSize: 12, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 6 };
   const fieldBox = {
     width: "100%", padding: "8px 10px", borderRadius: 8,
-    border: "1px solid var(--surface-border)",
-    background: disabled ? "rgba(0,0,0,0.03)" : "#fff",
-    fontSize: 13, color: "var(--text-main)", outline: "none", boxSizing: "border-box",
+    border: "1px solid var(--line)",
+    background: disabled ? "var(--bg-soft)" : "var(--bg-card)",
+    fontSize: 13, color: "var(--fg)", outline: "none", boxSizing: "border-box",
+    fontFamily: "inherit",
+    transition: "border-color 120ms",
   };
 
   return (
     <div style={{
       padding: 14, borderRadius: 12,
-      background: "rgba(7,110,232,0.04)",
-      border: "1px solid rgba(7,110,232,0.18)",
+      background: "var(--bg-soft)",
+      border: "1px solid var(--line)",
     }}>
       <div style={{ marginBottom: 12 }}>
-        <div style={fieldLabel}>📝 프롬프트 <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
+        <div style={fieldLabel}>📝 프롬프트 <span style={{ color: "var(--fg-muted)", fontWeight: 500 }}>(재질·색상·치수 등 자세히)</span></div>
         <textarea
           value={prompt}
           disabled={disabled}
@@ -2795,7 +2798,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
       </div>
 
       <div>
-        <div style={fieldLabel}>🖼️ 참조 이미지 ({refImages.length}) <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>(Gemini multimodal · Ctrl+V 로 붙여넣기)</span></div>
+        <div style={fieldLabel}>🖼️ 참조 이미지 ({refImages.length}) <span style={{ color: "var(--fg-muted)", fontWeight: 500 }}>(Gemini multimodal · Ctrl+V 로 붙여넣기)</span></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {refImages.map((url, i) => {
             const isCover = card.thumbnail_url === url;
@@ -2804,7 +2807,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
                 key={i}
                 onMouseEnter={(e) => { const ov = e.currentTarget.querySelector(".ref-hover-overlay"); if (ov) ov.style.opacity = 1; }}
                 onMouseLeave={(e) => { const ov = e.currentTarget.querySelector(".ref-hover-overlay"); if (ov) ov.style.opacity = 0; }}
-                style={{ position: "relative", borderRadius: 10, overflow: "hidden" }}
+                style={{ position: "relative", borderRadius: 8, overflow: "hidden" }}
               >
                 <img
                   src={url}
@@ -2812,7 +2815,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
                   onClick={() => onOpenImage?.(url)}
                   style={{
                     width: 144, height: 144, objectFit: "cover", display: "block",
-                    border: isCover ? "2px solid #fbbf24" : "1px solid var(--surface-border)",
+                    border: isCover ? "2px solid var(--accent)" : "1px solid var(--line)",
                     cursor: onOpenImage ? "zoom-in" : "default",
                   }}
                 />
@@ -2820,7 +2823,7 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
                   <div style={{
                     position: "absolute", top: 4, left: 4,
                     padding: "2px 6px", borderRadius: 4,
-                    background: "#fbbf24", color: "#000", fontSize: 9, fontWeight: 800,
+                    background: "var(--accent)", color: "#fff", fontSize: 9, fontWeight: 700,
                     pointerEvents: "none",
                   }}>⭐ 대표</div>
                 )}
@@ -2852,10 +2855,11 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
                         disabled={isCover}
                         title={isCover ? "이미 대표" : "카드 썸네일로 지정"}
                         style={{
-                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                          background: isCover ? "#fbbf24" : "rgba(255,255,255,0.9)",
-                          border: "none", color: isCover ? "#000" : "var(--text-main)",
+                          padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                          background: isCover ? "var(--accent)" : "rgba(255,255,255,0.95)",
+                          border: "none", color: isCover ? "#fff" : "var(--fg)",
                           cursor: isCover ? "default" : "pointer",
+                          fontFamily: "inherit",
                         }}
                       >{isCover ? "⭐ 대표" : "☆ 대표"}</button>
                       <button
@@ -2867,8 +2871,9 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
                         }}
                         title="참조 이미지 삭제"
                         style={{
-                          padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-                          background: "rgba(239,68,68,0.9)", border: "none", color: "#fff", cursor: "pointer",
+                          padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                          background: "var(--danger)", border: "none", color: "#fff", cursor: "pointer",
+                          fontFamily: "inherit",
                         }}
                       >✕ 삭제</button>
                     </div>
@@ -2890,10 +2895,14 @@ function PromptRefEditor({ card, projectSlug, actor, disabled, onRefresh, onOpen
               <button
                 onClick={() => fileRef.current?.click()}
                 style={{
-                  width: 144, height: 144, borderRadius: 10,
-                  background: "rgba(0,0,0,0.03)", border: "1px dashed var(--surface-border)",
-                  color: "var(--text-muted)", fontSize: 11, cursor: "pointer",
+                  width: 144, height: 144, borderRadius: 8,
+                  background: "var(--bg-card)", border: "1px dashed var(--line)",
+                  color: "var(--fg-muted)", fontSize: 11, cursor: "pointer",
+                  fontFamily: "inherit",
+                  transition: "background-color 120ms, border-color 120ms",
                 }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-muted)"; e.currentTarget.style.borderColor = "var(--line-strong)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-card)"; e.currentTarget.style.borderColor = "var(--line)"; }}
               >+ 추가</button>
             </>
           )}
