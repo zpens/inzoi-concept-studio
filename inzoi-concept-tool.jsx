@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.180";
+const APP_VERSION = "1.10.181";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -12243,7 +12243,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
           <main style={{ padding: "20px 40px 0", maxWidth: 1600, margin: "0 auto" }}>
             {/* v1.10.86 — 헤더 상하 폭 축소 + 카운트 제목 옆으로 인라인. */}
             <div style={{
-              position: "sticky", top: 64, zIndex: 50,
+              position: "sticky", top: 60, zIndex: 50,
               background: "var(--bg-color)", paddingTop: 2, paddingBottom: 2,
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
