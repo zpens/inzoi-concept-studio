@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.183";
+const APP_VERSION = "1.10.184";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -9276,95 +9276,114 @@ function DesignsPanel({
     const mine = iVoted(i);
     const isLeader = voteLeaderIdx === i && voteLeaderCount > 0;
     const voters = votersOf(i);
+    // v1.10.184 — 이미지 위 오버레이 (시안번호·대표·투표·삭제) → 이미지 아래 한 줄로 이동.
+    // 대표 버튼은 아이콘만 (⭐/☆), 라벨 '대표' 제거.
+    const showDelete = !disabled && !d._sheet && !d._legacy && i < raw.length;
     return (
       <div key={i} style={{
-        position: "relative", borderRadius: 8, overflow: "hidden",
+        display: "flex", flexDirection: "column",
+        borderRadius: 8, overflow: "hidden",
         border: isSelected ? "2px solid var(--accent)"
           : isLeader ? "2px solid var(--success)"
           : "1px solid var(--line)",
-        background: "var(--bg-soft)",
+        background: "var(--bg-card)",
       }}>
-        {d?.imageUrl ? (
-          <img
-            src={d.imageUrl}
-            alt=""
-            onClick={() => onOpenImage?.(d.imageUrl)}
-            style={{ width: "100%", height, objectFit: "contain", display: "block", cursor: "zoom-in", background: "var(--bg-soft)" }}
-          />
-        ) : (
-          <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--danger)", fontSize: 11 }}>실패</div>
-        )}
+        {/* 이미지 영역 */}
+        <div style={{ position: "relative", background: "var(--bg-soft)" }}>
+          {d?.imageUrl ? (
+            <img
+              src={d.imageUrl}
+              alt=""
+              onClick={() => onOpenImage?.(d.imageUrl)}
+              style={{ width: "100%", height, objectFit: "contain", display: "block", cursor: "zoom-in", background: "var(--bg-soft)" }}
+            />
+          ) : (
+            <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--danger)", fontSize: 11 }}>실패</div>
+          )}
+        </div>
+        {/* 액션 row — 시안 번호 · 대표 · 투표 · 삭제 순. v1.10.184 */}
         <div style={{
-          position: "absolute", top: 4, left: 4,
-          padding: "1px 6px", borderRadius: 4,
-          background: "rgba(0,0,0,0.7)", color: "#fff", fontSize: 9,
-          fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
-          pointerEvents: "none",
-        }}>{renderBadge(d, i)}</div>
-        {/* v1.10.102 — 라벨 '선정' → '대표' 로 변경. 카드 썸네일(thumbnail_url) 지정 의미 명확화.
-            v1.10.170 — KRAFTON 톤 (active=accent, weight 800→700). */}
-        {isSelected ? (
-          <div style={{
-            position: "absolute", top: 4, right: 4,
-            padding: "1px 6px", borderRadius: 4,
-            background: "var(--accent)", color: "#fff", fontSize: 10, fontWeight: 700,
-          }}>⭐ 대표</div>
-        ) : !disabled && d?.imageUrl && (
-          <button
-            onClick={() => selectDesign(i)}
-            title="이 시안을 카드 대표 이미지(썸네일)로 지정"
-            style={{
-              position: "absolute", top: 4, right: 4,
-              padding: "2px 8px", borderRadius: 4,
-              background: "rgba(255,255,255,0.92)", border: "1px solid var(--line)",
-              color: "var(--fg)", fontSize: 10, fontWeight: 600, cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >☆ 대표</button>
-        )}
-        {/* 👍 투표 버튼 + 카운트 — 좌측 하단 (v1.10.41).
-            v1.10.170 — mine = accent (오렌지), 비투표 = 검은 반투명. radius 999 pill. */}
-        {d?.imageUrl && !disabled && (
-          <button
-            onClick={() => toggleVote(i)}
-            title={voters.length > 0 ? `투표: ${voters.join(", ")}` : (actor ? "투표하기" : "프로필 선택 후 투표 가능")}
-            style={{
-              position: "absolute", bottom: 6, left: 6,
-              display: "inline-flex", alignItems: "center", gap: 4,
-              padding: "3px 9px", borderRadius: 999,
-              background: mine ? "var(--accent)" : "rgba(0,0,0,0.72)",
-              border: "none",
-              color: "#fff", fontSize: 11, fontWeight: 600,
-              cursor: actor ? "pointer" : "not-allowed",
-              opacity: actor ? 1 : 0.6,
-              fontFamily: "inherit",
-              transition: "background-color 120ms",
-            }}
-          >
-            <span>👍</span>
-            <span>{n}</span>
-            {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
-          </button>
-        )}
-        {/* 🗑 삭제 — 우측 하단. v1.10.81: imageUrl 없는(생성 실패) 시안도 삭제 가능.
-            v1.10.170 — KRAFTON --danger 토큰. */}
-        {!disabled && !d._sheet && !d._legacy && i < raw.length && (
-          <button
-            onClick={() => removeDesign(i)}
-            title={d?.imageUrl ? "이 시안 삭제" : "실패한 시안 삭제"}
-            style={{
-              position: "absolute", bottom: 6, right: 6,
-              padding: "3px 9px", borderRadius: 999,
-              background: "var(--danger)", border: "none",
-              color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
-              fontFamily: "inherit",
-              opacity: 0.92,
-              transition: "opacity 120ms",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.92"; }}
-          >🗑</button>
-        )}
+          display: "flex", alignItems: "center", gap: 4,
+          padding: "5px 6px",
+          borderTop: "1px solid var(--line)",
+          background: "var(--bg-card)",
+        }}>
+          <span style={{
+            fontSize: 11, fontWeight: 600, color: "var(--fg-muted)",
+            fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+            whiteSpace: "nowrap",
+          }}>{renderBadge(d, i)}</span>
+          <div style={{ flex: 1 }} />
+          {/* 대표 — 아이콘만 (⭐ 또는 ☆) */}
+          {d?.imageUrl && (
+            isSelected ? (
+              <span
+                title="현재 대표 시안"
+                style={{
+                  width: 22, height: 22, borderRadius: 4,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  background: "var(--accent)", color: "#fff",
+                  fontSize: 13, lineHeight: 1,
+                }}
+              >⭐</span>
+            ) : !disabled && (
+              <button
+                onClick={() => selectDesign(i)}
+                title="이 시안을 카드 대표 이미지(썸네일)로 지정"
+                style={{
+                  width: 22, height: 22, borderRadius: 4,
+                  background: "transparent", border: "1px solid var(--line)",
+                  color: "var(--fg-muted)", fontSize: 13, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "inherit", lineHeight: 1, padding: 0,
+                  transition: "background-color 120ms, color 120ms",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-muted)"; e.currentTarget.style.color = "var(--fg)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--fg-muted)"; }}
+              >☆</button>
+            )
+          )}
+          {/* 👍 투표 + 카운트 */}
+          {d?.imageUrl && !disabled && (
+            <button
+              onClick={() => toggleVote(i)}
+              title={voters.length > 0 ? `투표: ${voters.join(", ")}` : (actor ? "투표하기" : "프로필 선택 후 투표 가능")}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 3,
+                height: 22, padding: "0 8px", borderRadius: 999,
+                background: mine ? "var(--accent)" : "var(--chip-bg)",
+                border: "none",
+                color: mine ? "#fff" : "var(--fg)",
+                fontSize: 11, fontWeight: 600,
+                cursor: actor ? "pointer" : "not-allowed",
+                opacity: actor ? 1 : 0.6,
+                fontFamily: "inherit", boxSizing: "border-box",
+                transition: "background-color 120ms, color 120ms",
+              }}
+            >
+              <span>👍</span>
+              <span>{n}</span>
+              {isLeader && <span style={{ fontSize: 10 }}>🏆</span>}
+            </button>
+          )}
+          {/* 🗑 삭제 */}
+          {showDelete && (
+            <button
+              onClick={() => removeDesign(i)}
+              title={d?.imageUrl ? "이 시안 삭제" : "실패한 시안 삭제"}
+              style={{
+                width: 22, height: 22, borderRadius: 4,
+                background: "transparent", border: "1px solid var(--line)",
+                color: "var(--fg-muted)", fontSize: 12, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "inherit", lineHeight: 1, padding: 0,
+                transition: "background-color 120ms, color 120ms, border-color 120ms",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--danger-soft)"; e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger-soft)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--fg-muted)"; e.currentTarget.style.borderColor = "var(--line)"; }}
+            >🗑</button>
+          )}
+        </div>
       </div>
     );
   };
