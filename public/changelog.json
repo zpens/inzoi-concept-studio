@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.190",
+    "date": "2026-05-03",
+    "changes": [
+      "상세페이지 색상 KRAFTON 가이드 통일 — '액센트는 진짜 강조에만' 원칙 적용. (1) 추천 받기 버튼: --accent-soft + --accent-press 옅은 빨강 → ghost (--bg-card + --line + --fg). (2) 자동 분류 버튼: 파랑 rgba(7,110,232) → ghost. h26 통일. (3) 시안 패널 외곽 (DesignsPanel): rgba(0,0,0,0.02) + 파랑 active 보더 → --bg-soft + --line / panelActive 시 --line-strong. (4) 시안 정렬 select / 보기 모드 토글 컨테이너: 흰 배경 + surface-border → --bg-card + --line. select option 의 📋 / 🆕 / 👍 이모지 제거. (5) 시안 패널 '붙여넣기' / '＋ 이미지 추가': 파랑 rgba 채움 → ghost. h26 통일. (6) PriorityField 외곽 박스: rgba(220,38,38,0.06) 빨강 → --bg-soft + --line. 라벨 색 #dc2626 → --fg-muted. (7) priorityBadgeStyle 통일: 1/2/3/미정/보류 비활성 모두 회색 chip-bg + chip-fg. active 시 1·2·3 = --accent (오렌지) / 미정·보류 = --fg-strong (검정 채움). KRAFTON 가이드 '현재 선택된 우선순위 = 액센트 사용' 정책 반영. (8) TargetUpdateField 외곽 박스: rgba(234,179,8) amber → --bg-soft + --line. 라벨 색 #b45309 → --fg-muted"
+    ]
+  },
+  {
     "version": "1.10.189",
     "date": "2026-05-03",
     "changes": [

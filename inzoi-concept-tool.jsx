@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.189";
+const APP_VERSION = "1.10.190";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -3115,13 +3115,13 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
               title="Gemini 가 단계별 이미지를 분석해 한글명+영문명+짧은 설명 5개 추천"
               style={{
                 height: 26, padding: "0 10px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-                background: loading ? "var(--chip-bg)" : "var(--accent-soft)",
-                border: "1px solid " + (loading ? "var(--line)" : "var(--accent-soft)"),
-                color: loading ? "var(--fg-muted)" : "var(--accent-press)",
+                background: "var(--bg-card)",
+                border: "1px solid var(--line)",
+                color: loading ? "var(--fg-muted)" : "var(--fg)",
                 cursor: loading ? "wait" : "pointer",
                 fontFamily: "inherit", boxSizing: "border-box",
                 display: "inline-flex", alignItems: "center", gap: 4,
-                transition: "background-color 120ms",
+                transition: "background-color 120ms, color 120ms",
               }}
             >
               {loading ? "추천 중…" : (stageSugg ? "다시 추천" : "추천 받기")}
@@ -3402,11 +3402,14 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 : "대표 이미지 기준으로 카테고리·스타일·크기·프롬프트 자동 분류 (Gemini Vision). 기존 값은 덮어씀"}
               style={{
                 marginLeft: "auto",
-                padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700,
-                background: suggesting ? "rgba(0,0,0,0.06)" : "rgba(7,110,232,0.08)",
-                border: "1px solid rgba(7,110,232,0.3)",
-                color: suggesting ? "var(--text-muted)" : "var(--primary)",
+                height: 26, padding: "0 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                background: "var(--bg-card)",
+                border: "1px solid var(--line)",
+                color: suggesting ? "var(--fg-muted)" : "var(--fg)",
                 cursor: (suggesting || noImage) ? "not-allowed" : "pointer",
+                fontFamily: "inherit", boxSizing: "border-box",
+                display: "inline-flex", alignItems: "center", gap: 4,
+                transition: "background-color 120ms, color 120ms",
               }}
             >{suggesting ? "분석 중…" : "자동 분류"}</button>
           );
@@ -4225,15 +4228,11 @@ function getCardPriority(card) {
   if (v && PRIORITY_OPTIONS.includes(v)) return v;
   return "미정";
 }
-// 우선순위 뱃지 색상 — 1/2/3 은 경고 레벨, 미정/보류는 눈에 보이는 중립 배경.
+// 우선순위 뱃지 색상 — v1.10.190 KRAFTON 가이드: 비활성은 모두 회색 chip 으로 통일,
+// '현재 선택된 우선순위' 만 액센트 (KRAFTON 가이드의 단일 강조 영역) 또는 검정 채움.
 function priorityBadgeStyle(p) {
-  switch (p) {
-    case "1": return { bg: "rgba(220,38,38,0.12)",  fg: "#dc2626", border: "rgba(220,38,38,0.3)" };
-    case "2": return { bg: "rgba(234,88,12,0.12)",  fg: "#ea580c", border: "rgba(234,88,12,0.3)" };
-    case "3": return { bg: "rgba(202,138,4,0.12)",  fg: "#a16207", border: "rgba(202,138,4,0.3)" };
-    case "보류": return { bg: "rgba(100,116,139,0.1)", fg: "#64748b", border: "rgba(100,116,139,0.3)" };
-    default: return { bg: "rgba(0,0,0,0.04)",          fg: "#64748b", border: "rgba(0,0,0,0.15)" };
-  }
+  // 모든 옵션 동일 회색. active 만 활성 색으로.
+  return { bg: "var(--chip-bg)", fg: "var(--chip-fg)", border: "transparent" };
 }
 
 // 우선순위 필드 — 어셋 정보 섹션 위에 별도로 노출. 5개 버튼 중 선택.
@@ -4261,13 +4260,13 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved, compact = 
       marginBottom: compact ? 0 : 14,
       padding: compact ? "6px 10px" : "10px 14px",
       borderRadius: 10,
-      background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.22)",
+      background: "var(--bg-soft)", border: "1px solid var(--line)",
       flex: compact ? "1 1 auto" : undefined,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: compact ? 6 : 8, flexWrap: "wrap" }}>
         <span style={{
           fontSize: compact ? 11 : 13,
-          fontWeight: 800, color: "#dc2626",
+          fontWeight: 600, color: "var(--fg-muted)",
           minWidth: compact ? "auto" : 130,
         }}>
           {compact ? "" : "우선순위"}
@@ -4276,6 +4275,9 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved, compact = 
           {PRIORITY_OPTIONS.map((p) => {
             const active = current === p;
             const s = priorityBadgeStyle(p);
+            const isNumber = p === "1" || p === "2" || p === "3";
+            // v1.10.190 — KRAFTON 가이드: 숫자 active = 액센트 (오렌지),
+            // 미정/보류 active = 검정 채움 (강조 자체는 의미 있되 색은 중립).
             return (
               <button
                 key={p}
@@ -4284,12 +4286,17 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved, compact = 
                 style={{
                   padding: compact ? "2px 8px" : "5px 12px",
                   borderRadius: compact ? 5 : 8,
-                  background: active ? s.fg : s.bg,
+                  background: active
+                    ? (isNumber ? "var(--accent)" : "var(--fg-strong)")
+                    : s.bg,
                   color: active ? "#fff" : s.fg,
-                  border: `1px solid ${active ? s.fg : s.border}`,
-                  fontSize: compact ? 11 : 12, fontWeight: 700, cursor: disabled ? "default" : "pointer",
-                  minWidth: compact ? 28 : 40, transition: "all 0.15s",
-                  boxShadow: active ? "0 1px 4px rgba(0,0,0,0.12)" : "none",
+                  border: "1px solid " + (active
+                    ? (isNumber ? "var(--accent)" : "var(--fg-strong)")
+                    : s.border),
+                  fontSize: compact ? 11 : 12, fontWeight: 600, cursor: disabled ? "default" : "pointer",
+                  minWidth: compact ? 28 : 40,
+                  fontFamily: "inherit",
+                  transition: "background-color 120ms, color 120ms, border-color 120ms",
                 }}
               >{p}</button>
             );
@@ -4334,14 +4341,14 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
       marginBottom: compact ? 0 : 14,
       padding: compact ? "6px 10px" : "10px 14px",
       borderRadius: 10,
-      background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)",
+      background: "var(--bg-soft)", border: "1px solid var(--line)",
       position: "relative",
       flex: compact ? "1 1 auto" : undefined,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: compact ? 6 : 8 }}>
         <span style={{
           fontSize: compact ? 11 : 13,
-          fontWeight: 800, color: "#b45309",
+          fontWeight: 600, color: "var(--fg-muted)",
           minWidth: compact ? "auto" : 130,
           whiteSpace: "nowrap",
         }}>
@@ -9392,8 +9399,8 @@ function DesignsPanel({
       onMouseDown={() => setPanelActive(true)}
       style={{
         padding: 14, borderRadius: 12,
-        background: "rgba(0,0,0,0.02)",
-        border: `1px solid ${panelActive ? "rgba(7,110,232,0.3)" : "var(--surface-border)"}`,
+        background: "var(--bg-soft)",
+        border: `1px solid ${panelActive ? "var(--line-strong)" : "var(--line)"}`,
         outline: "none",
         transition: "border-color 0.15s",
       }}
@@ -9424,18 +9431,23 @@ function DesignsPanel({
               onChange={(e) => setSortMode(e.target.value)}
               title="시안 정렬"
               style={{
-                padding: "3px 8px", borderRadius: 6,
-                border: "1px solid var(--surface-border)", background: "#fff",
-                color: "var(--text-muted)", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                height: 26, padding: "0 24px 0 10px", borderRadius: 6,
+                border: "1px solid var(--line)", background: "var(--bg-card)",
+                color: "var(--fg)", fontSize: 11, fontWeight: 500, cursor: "pointer",
+                fontFamily: "inherit", boxSizing: "border-box", outline: "none",
+                appearance: "none", WebkitAppearance: "none",
+                backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236B6B73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\")",
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 8px center",
               }}
             >
-              <option value="created">📋 생성순</option>
-              <option value="newest">🆕 최신순</option>
-              <option value="votes">👍 투표순</option>
+              <option value="created">생성순</option>
+              <option value="newest">최신순</option>
+              <option value="votes">투표순</option>
             </select>
           )}
           {displayDesigns.length > 0 && (
-            <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "rgba(0,0,0,0.04)", border: "1px solid var(--surface-border)" }}>
+            <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 7, background: "var(--bg-card)", border: "1px solid var(--line)" }}>
               <ModeBtn mode="grid" icon="🔲" title="그리드" />
               <ModeBtn mode="compare" icon="⬛⬛" title="나란히 (2열)" />
               <ModeBtn mode="single" icon="🖼" title="하나씩" />
@@ -9447,17 +9459,23 @@ function DesignsPanel({
                 onClick={pasteFromClipboard}
                 title="클립보드의 이미지를 시안으로 붙여넣기"
                 style={{
-                  padding: "4px 10px", borderRadius: 6,
-                  background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                  color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  height: 26, padding: "0 10px", borderRadius: 6,
+                  background: "var(--bg-card)", border: "1px solid var(--line)",
+                  color: "var(--fg)", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  fontFamily: "inherit", boxSizing: "border-box",
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  transition: "background-color 120ms",
                 }}
-              >📋 붙여넣기</button>
+              >붙여넣기</button>
               <label
                 title="다른 곳에서 만든 이미지 파일을 시안으로 추가"
                 style={{
-                  padding: "4px 10px", borderRadius: 6,
-                  background: "rgba(7,110,232,0.08)", border: "1px solid rgba(7,110,232,0.25)",
-                  color: "var(--primary)", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  height: 26, padding: "0 10px", borderRadius: 6,
+                  background: "var(--bg-card)", border: "1px solid var(--line)",
+                  color: "var(--fg)", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  fontFamily: "inherit", boxSizing: "border-box",
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  transition: "background-color 120ms",
                 }}
               >
                 ＋ 이미지 추가
