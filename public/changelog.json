@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.210",
+    "date": "2026-05-03",
+    "changes": [
+      "v1.10.209 의 paste 동작을 의미적으로 수정 — 단순 썸네일이 아니라 참조이미지(ref_images)에 누적. (1) matDraft.thumb (단일 dataUrl) → matDraft.refs (배열) 로 변경. (2) Ctrl+V 마다 새 이미지가 배열에 append (이전엔 교체였음). (3) UI 가 다중 썸네일 그리드 (72×72) 로 변경, 각각 ✕ 제거 버튼. 빈 상태는 dashed 박스에 'Ctrl+V 로 이미지를 붙여넣어 참조이미지 추가' 안내. (4) POST 시 매 url 을 uploadDataUrl 로 업로드 후 data.ref_images 배열로 저장 — thumbnail_url 은 비워둠 (사용자가 시안 생성 후 대표를 직접 선택). 시안 생성 시 generateMaterialVariants 가 refImages 로 자동 활용 — 첫 단계부터 정확한 참조 컨텍스트 제공"
+    ]
+  },
+  {
     "version": "1.10.209",
     "date": "2026-05-03",
     "changes": [
