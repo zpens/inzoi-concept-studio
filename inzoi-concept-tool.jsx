@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.190";
+const APP_VERSION = "1.10.191";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4120,11 +4120,11 @@ function sortCardArray(arr, sortBy, dateKey = "created_at", titleKey = "title", 
     };
     cpy.sort((a, b) => dir * cmpNum(stageRank(card(a)), stageRank(card(b))));
   } else if (sortBy === "actor_asc" || sortBy === "actor_desc") {
-    // v1.10.183 — 작성자 정렬. created_by → updated_by fallback. 빈 값은 항상 뒤로.
+    // v1.10.183 — 작성자 정렬. v1.10.191 — 담당자 (data.assignee) 우선, 없으면 created_by/updated_by fallback.
     const dir = sortBy === "actor_asc" ? 1 : -1;
     cpy.sort((a, b) => {
-      const aA = card(a)?.created_by || card(a)?.updated_by || "";
-      const bA = card(b)?.created_by || card(b)?.updated_by || "";
+      const aA = card(a)?.data?.assignee || card(a)?.created_by || card(a)?.updated_by || "";
+      const bA = card(b)?.data?.assignee || card(b)?.created_by || card(b)?.updated_by || "";
       if (!aA && !bA) return 0;
       if (!aA) return 1;
       if (!bA) return -1;
@@ -5328,22 +5328,76 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
       <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
         {date ? formatLocalTime(date, "date") : "-"}
       </div>
-      {/* 작성자 아이콘 (v1.10.14) — 마우스 올리면 이름 tooltip */}
-      {(() => {
-        const author = card.created_by || card.updated_by || null;
-        const authorProfile = author ? profileByName?.get?.(author) : null;
-        const icon = authorProfile?.icon || (author ? "👤" : "—");
-        const tooltip = author || "작성자 없음";
-        return (
+      {/* 담당자 — v1.10.191: 클릭 popover 로 변경 가능. data.assignee 우선, 없으면 created_by fallback. */}
+      <div
+        data-il-edit
+        onClick={(e) => openCell(e, "assignee")}
+        style={{ position: "relative", textAlign: "center", cursor: "pointer" }}
+        title="클릭해서 담당자 변경"
+      >
+        {(() => {
+          const assignee = data.assignee || card.created_by || card.updated_by || null;
+          const profile = assignee ? profileByName?.get?.(assignee) : null;
+          const icon = profile?.icon || (assignee ? "👤" : "—");
+          return (
+            <div style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 14,
+              background: "var(--bg-soft)", border: "1px solid var(--line)",
+              fontSize: 14, opacity: assignee ? 1 : 0.45,
+              transition: "background-color 120ms",
+            }}>{icon}</div>
+          );
+        })()}
+        {editing === "assignee" && (
           <div
-            title={tooltip}
+            data-il-edit
+            onClick={stopClick}
             style={{
-              fontSize: 18, textAlign: "center", cursor: "help",
-              opacity: author ? 1 : 0.35,
+              position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 50,
+              padding: 4, borderRadius: 8, width: 200, maxHeight: 320, overflowY: "auto",
+              background: "var(--bg-card)", border: "1px solid var(--line)",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
+              display: "flex", flexDirection: "column", gap: 2,
             }}
-          >{icon}</div>
-        );
-      })()}
+          >
+            {Array.from(profileByName?.values?.() || []).map((p) => {
+              const active = (data.assignee || "") === p.name;
+              return (
+                <button
+                  key={p.id || p.name}
+                  onClick={() => saveData({ assignee: p.name })}
+                  style={{
+                    padding: "6px 10px", borderRadius: 6, textAlign: "left",
+                    background: active ? "var(--bg-soft)" : "transparent",
+                    border: "none",
+                    color: "var(--fg)",
+                    fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer",
+                    fontFamily: "inherit",
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}
+                >
+                  <span style={{ fontSize: 14 }}>{p.icon || "👤"}</span>
+                  <span>{p.name}</span>
+                  {active && <span style={{ marginLeft: "auto", color: "var(--fg-muted)", fontSize: 10 }}>✓</span>}
+                </button>
+              );
+            })}
+            <div style={{ height: 1, background: "var(--line)", margin: "3px 2px" }} />
+            <button
+              onClick={() => saveData({ assignee: null })}
+              style={{
+                padding: "6px 10px", borderRadius: 6, textAlign: "left",
+                background: !data.assignee ? "var(--bg-soft)" : "transparent",
+                border: "none",
+                color: "var(--fg-muted)",
+                fontSize: 12, fontWeight: !data.assignee ? 700 : 500, cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >미지정{!data.assignee && " ✓"}</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -5412,7 +5466,7 @@ function CardListHeader({ tabId, sortBy, onSortChange, scale = 1 }) {
       <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
       <SortCell label="진행" ascKey="stage_asc" descKey="stage_desc" />
       <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
-      <SortCell label="작성자" ascKey="actor_asc" descKey="actor_desc" align="center" />
+      <SortCell label="담당자" ascKey="actor_asc" descKey="actor_desc" align="center" />
     </div>
   );
 }

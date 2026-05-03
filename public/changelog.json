@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.191",
+    "date": "2026-05-03",
+    "changes": [
+      "리스트뷰 작성자 → 담당자 변경. (1) 헤더 라벨 '작성자' → '담당자'. (2) CardListRow 우측 셀: 정적 아이콘 + tooltip → 클릭 popover. profileByName 의 모든 프로필을 옵션으로 표시 + '미지정'. 선택 시 patchCardMerged 로 data.assignee 저장. (3) 표시 우선순위: data.assignee > created_by > updated_by. (4) 작성자 정렬 (actor_asc/desc) 도 data.assignee 우선 fallback 으로 변경. (5) 셀 시각: 28×28 회색 ghost 원형 (--bg-soft + --line) + 프로필 아이콘 / 미지정 시 — 표시"
+    ]
+  },
+  {
     "version": "1.10.190",
     "date": "2026-05-03",
     "changes": [
