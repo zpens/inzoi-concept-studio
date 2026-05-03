@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.202",
+    "date": "2026-05-03",
+    "changes": [
+      "재질 (Material) 탭 step 3 — 상세 모달 + 시안 생성. (1) generateMaterialVariants 함수 — cards 의 generateCardVariants 패턴 차용. PATCH endpoint 가 /materials/:id 로 분리. seamless tileable PBR base color texture 자동 prefix 적용 + 변형 hint append. race-safe fresh fetch + thumbnail 자동 (없을 때만) 적용. (2) MATERIAL_VARIATION_HINTS 4종: color (색조) / grain (결) / wear (마모) / pattern (패턴). (3) MaterialDetailModal 컴포넌트 — 1100×92vh 단일 컬럼: 헤더 (제목 인라인 편집 + ✕) / 카테고리 칩 8개 / 설명 input / 프롬프트 textarea + 자동 prefix 미리보기 / 변형 칩 5개 / 갯수 1·2·4 / N개 생성 버튼 (액센트) / 시안 그리드. (4) MaterialDesignTile — 1:1 정사각, 호버 시 background-image repeat 50% 로 2×2 타일링 즉시 미리보기. ⭐ 대표 표시 + ☆ 대표 지정 / 🗑 삭제 액션 row. (5) detailMaterial state + 카드 클릭 시 모달 열림. 메타 변경 (title / category / description / prompt) 은 blur 시 즉시 PATCH 저장. step 4 (큐 / PBR 채널 분리 / 카탈로그 매칭) 가 다음"
+    ]
+  },
+  {
     "version": "1.10.201",
     "date": "2026-05-03",
     "changes": [

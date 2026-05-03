@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.201";
+const APP_VERSION = "1.10.202";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -689,6 +689,81 @@ function generateConceptSheetCanvas(canvas, images, metadata) {
 }
 
 // ─── Materials (재질) — v1.10.201 ───
+
+// 재질 시안 생성 — cards 의 generateCardVariants 패턴 차용 (Gemini Imagen 호출).
+// material 별도 테이블이라 PATCH endpoint 가 /api/projects/:slug/materials/:id.
+// 시안 prompt 에 seamless tileable prefix 자동 적용.
+const MATERIAL_PROMPT_PREFIX = "seamless tileable PBR base color texture, top-down orthographic flat view, even diffuse lighting, no shadows, square crop, no border, edges that tile perfectly side-to-side and top-to-bottom";
+const MATERIAL_VARIATION_HINTS = {
+  color:   "vary color tone and saturation while keeping the same material type",
+  grain:   "vary grain / fiber direction and density",
+  wear:    "vary wear, aging, and weathering level",
+  pattern: "vary pattern density and scale",
+};
+const MATERIAL_VARIATION_LABELS = {
+  color:   "🎨 색조",
+  grain:   "🪵 결",
+  wear:    "🕰 마모",
+  pattern: "📐 패턴",
+};
+
+async function generateMaterialVariants({ material, count, prompt, geminiApiKey, selectedModel, slug, actor, variation, onProgress }) {
+  const seeds = Array.from({ length: Math.max(1, Math.min(4, count)) }, () => generateSeed());
+  const refImages = [];
+  if (material.thumbnail_url) refImages.push(material.thumbnail_url);
+  const dataRefs = Array.isArray(material.data?.ref_images) ? material.data.ref_images : [];
+  for (const u of dataRefs) { if (u && !refImages.includes(u)) refImages.push(u); }
+  const variationHint = variation && MATERIAL_VARIATION_HINTS[variation] ? MATERIAL_VARIATION_HINTS[variation] : null;
+  const fullPrompt = `${MATERIAL_PROMPT_PREFIX}. ${prompt || ""}${variationHint ? `. Variation direction: ${variationHint}.` : ""}`.trim();
+  console.log("[generateMaterialVariants] full prompt:", fullPrompt.slice(0, 200) + "…");
+
+  const tasks = seeds.map((s) => async () => {
+    try {
+      const raw = await generateImageWithGemini(geminiApiKey, fullPrompt, selectedModel, refImages);
+      const uploaded = await uploadDataUrl(raw);
+      return {
+        seed: s, imageUrl: uploaded, createdAt: new Date().toISOString(),
+        prompt_used: prompt, full_prompt_used: fullPrompt,
+        variation_hint: variation || null, model: selectedModel,
+      };
+    } catch (err) {
+      return { seed: s, imageUrl: null, error: err.message, createdAt: new Date().toISOString() };
+    }
+  });
+  const results = await runWithConcurrencyLimit(tasks, 4, onProgress);
+  const valid = results.filter((r) => r && r.imageUrl);
+
+  // race-safe: 최신 material 재로드 후 designs 머지.
+  let baseData = material.data || {};
+  let baseThumb = material.thumbnail_url;
+  try {
+    const r = await fetch(`/api/projects/${slug}/materials/${material.id}`);
+    if (r.ok) {
+      const fresh = await r.json();
+      if (fresh && typeof fresh.data === "object") baseData = fresh.data;
+      if (fresh && fresh.thumbnail_url !== undefined) baseThumb = fresh.thumbnail_url;
+    }
+  } catch (e) { console.warn("[generateMaterialVariants] fresh fetch 실패:", e.message); }
+  const existing = Array.isArray(baseData.designs) ? baseData.designs : [];
+  const nextData = { ...baseData, prompt, designs: [...existing, ...valid] };
+  const patch = { data: nextData, actor };
+  // 첫 시안이면 thumbnail 자동 설정 (없을 때만).
+  if (!baseThumb && existing.length === 0 && valid[0]?.imageUrl) {
+    patch.thumbnail_url = valid[0].imageUrl;
+  }
+  await fetch(`/api/projects/${slug}/materials/${material.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return {
+    added: valid.length,
+    failed: results.length - valid.length,
+    firstImageUrl: valid[0]?.imageUrl || null,
+    updatedData: nextData,
+  };
+}
+
 // 재질 카드 카테고리. 시작 단계 — 추후 확장 가능.
 const MATERIAL_CATEGORIES = [
   { id: "wood",     label: "목재",   icon: "🪵" },
@@ -774,6 +849,394 @@ function MaterialCard({ material, onClick, scale = 1 }) {
             <span style={{ fontSize: 10, color: "var(--fg-muted)" }}>시안 {designs.length}</span>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// 재질 상세 모달 — v1.10.202.
+// 단일 컬럼 레이아웃: 메타 row → 프롬프트 → 변형 / 갯수 / 생성 → 시안 그리드.
+// cards 의 거대한 모달 대신 단순 구조로 시작 (추후 확장).
+function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selectedModel, onClose, onSaved, onOpenApiSettings }) {
+  const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState(null);
+  const [count, setCount] = React.useState(1);
+  const [variation, setVariation] = React.useState(() => {
+    try { return localStorage.getItem("material_variation_mode") || ""; } catch { return ""; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem("material_variation_mode", variation || ""); } catch {}
+  }, [variation]);
+
+  // 편집 가능 메타 + prompt.
+  const [title, setTitle] = React.useState(material.title || "");
+  const [category, setCategory] = React.useState(material.category || "wood");
+  const [description, setDescription] = React.useState(material.description || "");
+  const [prompt, setPrompt] = React.useState(material.data?.prompt || "");
+  React.useEffect(() => {
+    setTitle(material.title || "");
+    setCategory(material.category || "wood");
+    setDescription(material.description || "");
+    setPrompt(material.data?.prompt || "");
+  }, [material.id, material.updated_at]);
+
+  const designs = Array.isArray(material.data?.designs) ? material.data.designs : [];
+  const selectedIdx = material.data?.selected_design;
+
+  const saveMeta = async (fields) => {
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...fields, actor }),
+      });
+      if (r.ok) onSaved?.(await r.json());
+    } catch (e) { console.warn("재질 메타 저장 실패:", e.message); }
+  };
+  const saveData = async (dataPatch) => {
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: dataPatch, actor }),
+      });
+      if (r.ok) onSaved?.(await r.json());
+    } catch (e) { console.warn("재질 데이터 저장 실패:", e.message); }
+  };
+
+  const doGenerate = async () => {
+    if (!geminiApiKey) { onOpenApiSettings?.(); return; }
+    if (!prompt.trim()) { alert("재질 prompt 를 입력해 주세요. (예: 'natural oak wood with subtle grain')"); return; }
+    setBusy(true);
+    setProgress({ done: 0, total: count });
+    try {
+      const r = await generateMaterialVariants({
+        material, count, prompt: prompt.trim(),
+        geminiApiKey, selectedModel,
+        slug: projectSlug, actor, variation,
+        onProgress: (done, total) => setProgress({ done, total }),
+      });
+      // 최신 material 재로드.
+      const fresh = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`);
+      if (fresh.ok) onSaved?.(await fresh.json());
+      if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
+    } catch (e) { alert("시안 생성 실패: " + e.message); }
+    finally { setBusy(false); setProgress(null); }
+  };
+
+  const selectAsCover = async (designIdx) => {
+    const d = designs[designIdx];
+    if (!d?.imageUrl) return;
+    try {
+      const r = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: { selected_design: designIdx },
+          thumbnail_url: d.imageUrl,
+          actor,
+        }),
+      });
+      if (r.ok) onSaved?.(await r.json());
+    } catch (e) { alert("대표 지정 실패: " + e.message); }
+  };
+
+  const removeDesign = async (designIdx) => {
+    if (!confirm("이 시안을 삭제할까요?")) return;
+    const next = designs.filter((_, i) => i !== designIdx);
+    await saveData({ designs: next });
+  };
+
+  return (
+    <>
+      <div className="sidebar-overlay" onClick={onClose} style={{ zIndex: 210 }} />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+        width: 1100, maxWidth: "94vw", maxHeight: "92vh",
+        background: "var(--bg-card)", border: "1px solid var(--line)", borderRadius: 16,
+        boxShadow: "0 24px 64px rgba(0,0,0,0.18)",
+        zIndex: 220, display: "flex", flexDirection: "column", overflow: "hidden",
+        fontFamily: "inherit",
+      }}>
+        {/* 헤더 */}
+        <div style={{
+          padding: "14px 24px", borderBottom: "1px solid var(--line)",
+          display: "flex", alignItems: "center", gap: 14, flexShrink: 0,
+        }}>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => { if (title.trim() !== material.title) saveMeta({ title: title.trim() || material.title }); }}
+            placeholder="재질 이름"
+            style={{
+              flex: 1, fontSize: 18, fontWeight: 700, color: "var(--fg-strong)",
+              border: "none", outline: "none", background: "transparent",
+              fontFamily: "inherit", letterSpacing: "-0.01em",
+              padding: "4px 0",
+            }}
+          />
+          <button
+            onClick={onClose}
+            style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: "var(--bg-card)", border: "1px solid var(--line)",
+              color: "var(--fg-muted)", fontSize: 16, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "inherit",
+            }}
+          >✕</button>
+        </div>
+
+        {/* 본문 — 단일 컬럼 스크롤 */}
+        <div style={{ flex: 1, overflow: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* 메타 row */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+            {MATERIAL_CATEGORIES.map((cat) => {
+              const active = category === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => { setCategory(cat.id); saveMeta({ category: cat.id }); }}
+                  style={{
+                    height: 28, padding: "0 10px", borderRadius: 999,
+                    background: active ? "var(--fg-strong)" : "var(--chip-bg)",
+                    border: "1px solid " + (active ? "var(--fg-strong)" : "transparent"),
+                    color: active ? "#fff" : "var(--chip-fg)",
+                    fontSize: 12, fontWeight: 500, cursor: "pointer",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                  }}
+                >
+                  <span>{cat.icon}</span>
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={() => { if (description !== (material.description || "")) saveMeta({ description: description.trim() || null }); }}
+            placeholder="짧은 설명 (선택)"
+            style={{
+              width: "100%", height: 32, padding: "0 12px", borderRadius: 8,
+              border: "1px solid var(--line)", background: "var(--bg-card)",
+              color: "var(--fg)", fontSize: 13, outline: "none",
+              fontFamily: "inherit", boxSizing: "border-box",
+            }}
+          />
+
+          {/* 프롬프트 — system prefix 포함 미리보기 */}
+          <div style={{
+            padding: 14, borderRadius: 12,
+            background: "var(--bg-soft)", border: "1px solid var(--line)",
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 6 }}>프롬프트</div>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onBlur={() => { if (prompt !== (material.data?.prompt || "")) saveData({ prompt: prompt.trim() }); }}
+              rows={3}
+              placeholder="예: natural oak wood with warm brown tone, fine grain, subtle knots, matte finish"
+              style={{
+                width: "100%", padding: "8px 10px", borderRadius: 8,
+                border: "1px solid var(--line)", background: "var(--bg-card)",
+                color: "var(--fg)", fontSize: 13, outline: "none", lineHeight: 1.5,
+                fontFamily: "inherit", boxSizing: "border-box", resize: "vertical",
+              }}
+            />
+            <div style={{
+              marginTop: 6, padding: "6px 10px", borderRadius: 6,
+              background: "var(--bg-card)", border: "1px dashed var(--line)",
+              fontSize: 10, color: "var(--fg-muted)", lineHeight: 1.5,
+              fontFamily: "ui-monospace, monospace",
+            }}>
+              자동 prefix: <span style={{ color: "var(--accent-press)" }}>{MATERIAL_PROMPT_PREFIX}</span>{prompt ? `. ${prompt}` : ""}
+            </div>
+
+            {/* 변형 칩 + 갯수 + 생성 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+              <span style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, marginRight: 2 }}>변형:</span>
+              {[
+                { id: "",        label: "없음" },
+                { id: "color",   label: "🎨 색조" },
+                { id: "grain",   label: "🪵 결" },
+                { id: "wear",    label: "🕰 마모" },
+                { id: "pattern", label: "📐 패턴" },
+              ].map((v) => {
+                const active = variation === v.id;
+                return (
+                  <button
+                    key={v.id || "none"}
+                    onClick={() => setVariation(v.id)}
+                    title={v.id ? MATERIAL_VARIATION_HINTS[v.id] : "변형 없이 동일 prompt 로 생성"}
+                    style={{
+                      height: 24, padding: "0 10px", borderRadius: 999,
+                      background: active ? "var(--fg-strong)" : "var(--chip-bg)",
+                      border: "1px solid " + (active ? "var(--fg-strong)" : "transparent"),
+                      color: active ? "#fff" : "var(--chip-fg)",
+                      fontSize: 11, fontWeight: 500, cursor: "pointer",
+                      fontFamily: "inherit", boxSizing: "border-box",
+                      display: "inline-flex", alignItems: "center",
+                    }}
+                  >{v.label}</button>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+              {[1, 2, 4].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setCount(n)}
+                  style={{
+                    height: 28, padding: "0 12px", borderRadius: 6,
+                    background: count === n ? "var(--fg-strong)" : "var(--bg-card)",
+                    border: "1px solid " + (count === n ? "var(--fg-strong)" : "var(--line)"),
+                    color: count === n ? "#fff" : "var(--fg-muted)",
+                    fontSize: 12, fontWeight: 500, cursor: "pointer",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                    minWidth: 32,
+                  }}
+                >{n}</button>
+              ))}
+              <button
+                onClick={doGenerate}
+                disabled={busy}
+                style={{
+                  marginLeft: "auto",
+                  height: 32, padding: "0 14px", borderRadius: 8,
+                  background: busy ? "var(--bg-muted)" : "var(--accent)",
+                  border: "1px solid " + (busy ? "var(--line)" : "transparent"),
+                  color: busy ? "var(--fg-muted)" : "#fff",
+                  fontSize: 13, fontWeight: 500, cursor: busy ? "wait" : "pointer",
+                  fontFamily: "inherit", boxSizing: "border-box",
+                  display: "inline-flex", alignItems: "center",
+                }}
+              >
+                {busy ? `생성 중… (${progress?.done || 0}/${progress?.total || count})` : `${count}개 생성`}
+              </button>
+            </div>
+          </div>
+
+          {/* 시안 그리드 */}
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)", marginBottom: 8 }}>
+              시안 ({designs.length}개)
+            </div>
+            {designs.length === 0 ? (
+              <div style={{
+                padding: 40, textAlign: "center",
+                background: "var(--bg-soft)", border: "1px dashed var(--line)", borderRadius: 8,
+                fontSize: 12, color: "var(--fg-muted)",
+              }}>
+                아직 시안이 없습니다. 프롬프트를 입력하고 위 「N개 생성」을 누르세요.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+                {designs.map((d, i) => (
+                  <MaterialDesignTile
+                    key={i}
+                    design={d}
+                    isCover={selectedIdx === i}
+                    onSetCover={() => selectAsCover(i)}
+                    onRemove={() => removeDesign(i)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// 재질 시안 타일 — 호버 시 2×2 타일링 미리보기, 액션 row.
+function MaterialDesignTile({ design, isCover, onSetCover, onRemove }) {
+  const [hover, setHover] = React.useState(false);
+  if (!design?.imageUrl) {
+    return (
+      <div style={{
+        aspectRatio: "1/1", borderRadius: 8,
+        border: "1px solid var(--line)", background: "var(--bg-soft)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "var(--danger)", fontSize: 11,
+      }}>실패</div>
+    );
+  }
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        borderRadius: 8, overflow: "hidden",
+        border: isCover ? "2px solid var(--accent)" : "1px solid var(--line)",
+        background: "var(--bg-card)",
+      }}
+    >
+      <div style={{
+        position: "relative",
+        aspectRatio: "1/1",
+        backgroundImage: `url(${design.imageUrl})`,
+        backgroundSize: hover ? "50% 50%" : "100% 100%",
+        backgroundRepeat: "repeat",
+        transition: "background-size 200ms",
+      }}>
+        {hover && (
+          <div style={{
+            position: "absolute", bottom: 6, right: 6,
+            padding: "2px 8px", borderRadius: 999,
+            background: "rgba(0,0,0,0.7)", color: "#fff",
+            fontSize: 10, fontWeight: 600, pointerEvents: "none",
+          }}>2×2 타일링</div>
+        )}
+        {isCover && (
+          <div style={{
+            position: "absolute", top: 6, left: 6,
+            padding: "2px 8px", borderRadius: 4,
+            background: "var(--accent)", color: "#fff",
+            fontSize: 10, fontWeight: 700,
+          }}>⭐ 대표</div>
+        )}
+      </div>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 4,
+        padding: "5px 6px",
+        borderTop: "1px solid var(--line)",
+      }}>
+        {!isCover && (
+          <button
+            onClick={onSetCover}
+            title="이 시안을 대표로 지정"
+            style={{
+              width: 22, height: 22, borderRadius: 4,
+              background: "transparent", border: "1px solid var(--line)",
+              color: "var(--fg-muted)", fontSize: 12, cursor: "pointer",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "inherit", lineHeight: 1, padding: 0,
+            }}
+          >☆</button>
+        )}
+        {design.variation_hint && MATERIAL_VARIATION_LABELS[design.variation_hint] && (
+          <span style={{
+            fontSize: 10, color: "var(--fg-muted)", marginLeft: 4,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>{MATERIAL_VARIATION_LABELS[design.variation_hint]}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={onRemove}
+          title="시안 삭제"
+          style={{
+            width: 22, height: 22, borderRadius: 4,
+            background: "transparent", border: "1px solid var(--line)",
+            color: "var(--fg-muted)", fontSize: 11, cursor: "pointer",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "inherit", lineHeight: 1, padding: 0,
+          }}
+        >🗑</button>
       </div>
     </div>
   );
@@ -11227,6 +11690,7 @@ export default function InZOIConceptTool() {
   const materialsCount = materials.length;
   const [materialAddOpen, setMaterialAddOpen] = useState(false); // + 새 재질 모달
   const [matDraft, setMatDraft] = useState({ title: "", category: "wood", description: "" });
+  const [detailMaterial, setDetailMaterial] = useState(null); // 재질 상세 모달
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
   const [previewImage, setPreviewImage] = useState(null); // 이미지 원본 해상도 뷰어
   const [catalogItemId, setCatalogItemId] = useState(null); // inzoiObjectList 카탈로그 상세 iframe
@@ -14347,7 +14811,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   key={m.id}
                   material={m}
                   scale={cardScale}
-                  onClick={() => alert("재질 상세 모달은 step 3 에서 추가됩니다 (v1.10.202).")}
+                  onClick={() => setDetailMaterial(m)}
                 />
               ))}
             </div>
@@ -14481,6 +14945,23 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             </div>
           </div>
         </>
+      )}
+
+      {/* 재질 상세 모달 — v1.10.202 */}
+      {detailMaterial && (
+        <MaterialDetailModal
+          material={detailMaterial}
+          projectSlug={projectSlug}
+          actor={actorName}
+          geminiApiKey={geminiApiKey}
+          selectedModel={selectedModel}
+          onOpenApiSettings={() => setShowApiSettings(true)}
+          onClose={() => setDetailMaterial(null)}
+          onSaved={(updated) => {
+            setDetailMaterial(updated);
+            setMaterials((prev) => prev.map((x) => x.id === updated.id ? updated : x));
+          }}
+        />
       )}
 
       {/* 새 아이디어 추가 모달 — 위시리스트 탭에서 헤더 버튼으로 오픈 */}
