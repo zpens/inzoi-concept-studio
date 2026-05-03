@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.191";
+const APP_VERSION = "1.10.192";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4269,7 +4269,7 @@ function PriorityField({ card, projectSlug, actor, disabled, onSaved, compact = 
           fontWeight: 600, color: "var(--fg-muted)",
           minWidth: compact ? "auto" : 130,
         }}>
-          {compact ? "" : "우선순위"}
+          우선순위
         </span>
         <div style={{ display: "flex", gap: compact ? 3 : 6, flexWrap: "wrap" }}>
           {PRIORITY_OPTIONS.map((p) => {
@@ -4352,7 +4352,7 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
           minWidth: compact ? "auto" : 130,
           whiteSpace: "nowrap",
         }}>
-          {compact ? "" : "업데이트 일정"}
+          {compact ? "업데이트" : "업데이트 일정"}
         </span>
         <button
           onClick={() => !disabled && setOpen((v) => !v)}

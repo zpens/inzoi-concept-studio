@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.192",
+    "date": "2026-05-03",
+    "changes": [
+      "상세페이지 좌측 상단 메타 chip 영역의 라벨 복원. (1) PriorityField compact 모드: 빈 문자열 → '우선순위' 라벨 항상 노출. (2) TargetUpdateField compact 모드: 빈 문자열 → '업데이트' (compact 폭에 맞춘 짧은 라벨). 비-compact 모드는 '업데이트 일정' 그대로"
+    ]
+  },
+  {
     "version": "1.10.191",
     "date": "2026-05-03",
     "changes": [
