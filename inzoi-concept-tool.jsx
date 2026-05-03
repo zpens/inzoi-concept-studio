@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.192";
+const APP_VERSION = "1.10.193";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -3114,15 +3114,17 @@ function AssetNameSuggester({ card, projectSlug, actor, disabled, geminiApiKey, 
               disabled={loading || (!stageImage && stage !== "ref")}
               title="Gemini 가 단계별 이미지를 분석해 한글명+영문명+짧은 설명 5개 추천"
               style={{
-                height: 26, padding: "0 10px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-                background: "var(--bg-card)",
-                border: "1px solid var(--line)",
-                color: loading ? "var(--fg-muted)" : "var(--fg)",
+                height: 28, padding: "0 12px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                background: loading ? "var(--bg-muted)" : "var(--accent)",
+                border: "1px solid " + (loading ? "var(--line)" : "transparent"),
+                color: loading ? "var(--fg-muted)" : "#fff",
                 cursor: loading ? "wait" : "pointer",
                 fontFamily: "inherit", boxSizing: "border-box",
                 display: "inline-flex", alignItems: "center", gap: 4,
-                transition: "background-color 120ms, color 120ms",
+                transition: "background-color 120ms",
               }}
+              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "var(--accent-press)"; }}
+              onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = "var(--accent)"; }}
             >
               {loading ? "추천 중…" : (stageSugg ? "다시 추천" : "추천 받기")}
             </button>
@@ -3402,15 +3404,17 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
                 : "대표 이미지 기준으로 카테고리·스타일·크기·프롬프트 자동 분류 (Gemini Vision). 기존 값은 덮어씀"}
               style={{
                 marginLeft: "auto",
-                height: 26, padding: "0 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
-                background: "var(--bg-card)",
-                border: "1px solid var(--line)",
-                color: suggesting ? "var(--fg-muted)" : "var(--fg)",
+                height: 28, padding: "0 12px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                background: (suggesting || noImage) ? "var(--bg-muted)" : "var(--accent)",
+                border: "1px solid " + ((suggesting || noImage) ? "var(--line)" : "transparent"),
+                color: (suggesting || noImage) ? "var(--fg-muted)" : "#fff",
                 cursor: (suggesting || noImage) ? "not-allowed" : "pointer",
                 fontFamily: "inherit", boxSizing: "border-box",
                 display: "inline-flex", alignItems: "center", gap: 4,
-                transition: "background-color 120ms, color 120ms",
+                transition: "background-color 120ms",
               }}
+              onMouseEnter={(e) => { if (!suggesting && !noImage) e.currentTarget.style.background = "var(--accent-press)"; }}
+              onMouseLeave={(e) => { if (!suggesting && !noImage) e.currentTarget.style.background = "var(--accent)"; }}
             >{suggesting ? "분석 중…" : "자동 분류"}</button>
           );
         })()}
@@ -3840,7 +3844,7 @@ function SheetPanel({
             </div>
           )}
           <div style={{ flex: 1 }} />
-          {/* v1.10.129 — 3D 모델러 발주 사양서 페이지. v1.10.171 KRAFTON ghost. */}
+          {/* v1.10.129 — 3D 모델러 발주 사양서 페이지. v1.10.193 — 액센트 톤 통일. */}
           <a
             href={`/p/${projectSlug}/cards/${encodeURIComponent(card.id)}/spec`}
             target="_blank"
@@ -3848,13 +3852,15 @@ function SheetPanel({
             title="외주 모델러 발주용 사양서 (새 탭)"
             style={{
               height: 28, padding: "0 12px", borderRadius: 8,
-              background: "var(--bg-card)", border: "1px solid var(--line)",
-              color: "var(--fg-muted)", fontSize: 11, fontWeight: 600,
+              background: "var(--accent)", border: "1px solid transparent",
+              color: "#fff", fontSize: 11, fontWeight: 600,
               textDecoration: "none", whiteSpace: "nowrap",
               fontFamily: "inherit", boxSizing: "border-box",
               display: "inline-flex", alignItems: "center", gap: 4,
-              transition: "background-color 120ms, color 120ms",
+              transition: "background-color 120ms",
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-press)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
           >3D 사양서</a>
           <button
             onClick={makeSheet}
@@ -14790,12 +14796,14 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   }}
                   style={{
                     height: 32, padding: "0 12px", borderRadius: 8,
-                    background: "var(--danger-soft)", border: "1px solid var(--danger-soft)",
-                    color: "var(--danger)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                    background: "var(--accent)", border: "1px solid transparent",
+                    color: "#fff", fontSize: 12, fontWeight: 500, cursor: "pointer",
                     fontFamily: "inherit", boxSizing: "border-box",
                     display: "inline-flex", alignItems: "center", gap: 4,
                     transition: "background-color 120ms",
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-press)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
                   title="영구 삭제 (복구 불가)"
                 >🗑️ 삭제</button>
 

@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.193",
+    "date": "2026-05-03",
+    "changes": [
+      "상세페이지 주요 액션 버튼 KRAFTON 액센트 톤 통일. (1) 추천 받기 / 다시 추천: ghost → var(--accent) + 흰 글씨 + accent-press hover. (2) 자동 분류: ghost → var(--accent). (3) 헤더 우측 🗑️ 삭제 버튼: var(--danger-soft) → var(--accent) (1개 생성 / 시트 생성 / 새 시안 과 동일 톤). (4) 3D 사양서: ghost → var(--accent). 시트 생성 / N개 생성은 기존 액센트 그대로. 모든 primary CTA 가 동일한 KRAFTON Warm Red #F9423A 톤으로 통일. h28 / radius 8 / 600 표준 사이즈. hover 시 --accent-press 부드러운 전환"
+    ]
+  },
+  {
     "version": "1.10.192",
     "date": "2026-05-03",
     "changes": [
