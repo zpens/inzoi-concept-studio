@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.195";
+const APP_VERSION = "1.10.196";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -5336,11 +5336,15 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
         {date ? formatLocalTime(date, "date") : "-"}
       </div>
       {/* 담당자 — v1.10.191: 클릭 popover 로 변경 가능. data.assignee 우선, 없으면 created_by fallback.
-          v1.10.194 — 아이콘 + 이름 같이 표시 (좁은 cell 에서는 ellipsis). */}
+          v1.10.194 — 아이콘 + 이름 같이 표시.
+          v1.10.196 — 셀 안에서 우측 정렬 (담당자가 row 우측 끝에 더 붙도록). */}
       <div
         data-il-edit
         onClick={(e) => openCell(e, "assignee")}
-        style={{ position: "relative", cursor: "pointer", minWidth: 0 }}
+        style={{
+          position: "relative", cursor: "pointer", minWidth: 0,
+          display: "flex", justifyContent: "flex-end", alignItems: "center",
+        }}
         title="클릭해서 담당자 변경"
       >
         {(() => {
@@ -5485,7 +5489,7 @@ function CardListHeader({ tabId, sortBy, onSortChange, scale = 1 }) {
       <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
       <SortCell label="진행" ascKey="stage_asc" descKey="stage_desc" />
       <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
-      <SortCell label="담당자" ascKey="actor_asc" descKey="actor_desc" />
+      <SortCell label="담당자" ascKey="actor_asc" descKey="actor_desc" align="right" />
     </div>
   );
 }

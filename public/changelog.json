@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.196",
+    "date": "2026-05-03",
+    "changes": [
+      "리스트뷰 담당자 셀 우측 정렬 — 셀 width 110px 안에서 내용 (아이콘 + 이름) 이 우측 끝에 밀착되도록 display flex + justifyContent flex-end. 헤더 SortCell align 'right' 로 라벨도 우측 정렬. 이름이 짧을 때 우측 끝까지 자연스럽게 붙음"
+    ]
+  },
+  {
     "version": "1.10.195",
     "date": "2026-05-03",
     "changes": [
