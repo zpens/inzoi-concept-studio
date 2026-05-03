@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.196";
+const APP_VERSION = "1.10.197";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4457,6 +4457,109 @@ function TargetUpdateField({ card, projectSlug, actor, disabled, availableUpdate
               >미지정</button>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 담당자 필드 — 상세페이지 좌측 상단 메타 row 용 (v1.10.197).
+// PriorityField/TargetUpdateField 와 동일한 외곽 박스 패턴 + 클릭 popover.
+// data.assignee 우선, 없으면 created_by fallback. profileByName Map 으로 옵션 목록.
+function AssigneeField({ card, projectSlug, actor, disabled, profileByName, compact = false, onSaved }) {
+  const [open, setOpen] = React.useState(false);
+  const wrapRef = React.useRef(null);
+  const current = card.data?.assignee || card.created_by || null;
+  const profile = current ? profileByName?.get?.(current) : null;
+  const icon = profile?.icon || (current ? "👤" : "—");
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (!wrapRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const save = async (next) => {
+    try {
+      const updated = await patchCardMerged(projectSlug, card.id, { assignee: next || null }, actor);
+      onSaved?.(updated);
+      setOpen(false);
+    } catch (e) { alert("담당자 저장 실패: " + e.message); }
+  };
+
+  return (
+    <div ref={wrapRef} style={{
+      marginBottom: compact ? 0 : 14,
+      padding: compact ? "6px 10px" : "10px 14px",
+      borderRadius: 10,
+      background: "var(--bg-soft)", border: "1px solid var(--line)",
+      position: "relative",
+      flex: compact ? "1 1 auto" : undefined,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: compact ? 6 : 8 }}>
+        <span style={{
+          fontSize: compact ? 11 : 13,
+          fontWeight: 600, color: "var(--fg-muted)",
+          minWidth: compact ? "auto" : 130,
+          whiteSpace: "nowrap",
+        }}>담당자</span>
+        <button
+          onClick={() => !disabled && setOpen((v) => !v)}
+          disabled={disabled}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            height: compact ? 22 : 26, padding: "0 8px", borderRadius: 6,
+            background: "var(--bg-card)", border: "1px solid var(--line)",
+            color: current ? "var(--fg)" : "var(--fg-muted)",
+            fontSize: compact ? 11 : 12, fontWeight: 500, cursor: disabled ? "default" : "pointer",
+            fontFamily: "inherit", boxSizing: "border-box",
+            transition: "background-color 120ms",
+          }}
+        >
+          <span style={{ fontSize: 12, lineHeight: 1 }}>{icon}</span>
+          <span>{current || "미지정"}</span>
+        </button>
+      </div>
+      {open && !disabled && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
+          padding: 4, borderRadius: 8, width: 220, maxHeight: 320, overflowY: "auto",
+          background: "var(--bg-card)", border: "1px solid var(--line)",
+          boxShadow: "0 6px 20px rgba(0,0,0,0.12)",
+          display: "flex", flexDirection: "column", gap: 2,
+        }}>
+          {Array.from(profileByName?.values?.() || []).map((p) => {
+            const active = current === p.name;
+            return (
+              <button
+                key={p.id || p.name}
+                onClick={() => save(p.name)}
+                style={{
+                  padding: "6px 10px", borderRadius: 6, textAlign: "left",
+                  background: active ? "var(--bg-soft)" : "transparent",
+                  border: "none", color: "var(--fg)",
+                  fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer",
+                  fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6,
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{p.icon || "👤"}</span>
+                <span>{p.name}</span>
+                {active && <span style={{ marginLeft: "auto", color: "var(--fg-muted)", fontSize: 10 }}>✓</span>}
+              </button>
+            );
+          })}
+          <div style={{ height: 1, background: "var(--line)", margin: "3px 2px" }} />
+          <button
+            onClick={() => save(null)}
+            style={{
+              padding: "6px 10px", borderRadius: 6, textAlign: "left",
+              background: !current ? "var(--bg-soft)" : "transparent",
+              border: "none", color: "var(--fg-muted)",
+              fontSize: 12, fontWeight: !current ? 700 : 500, cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >미지정{!current && " ✓"}</button>
         </div>
       )}
     </div>
@@ -14895,7 +14998,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 0 }}>
                 {/* 왼쪽: 메타 chip · 이름 · 대표이미지 · 어셋정보 (v1.10.132 정리) */}
                 <div style={{ padding: 24, borderRight: "1px solid var(--line)" }}>
-                  {/* 1) 메타 chip 한 줄 — 일정 + 우선순위 (v1.10.132) */}
+                  {/* 1) 메타 chip 한 줄 — 일정 + 우선순위 + 담당자 (v1.10.197 추가) */}
                   <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
                     <TargetUpdateField
                       card={card}
@@ -14914,6 +15017,18 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                       projectSlug={projectSlug}
                       actor={actorName}
                       disabled={confirmed}
+                      compact
+                      onSaved={(d) => {
+                        setDetailCard(d);
+                        setCards((prev) => prev.map((c) => c.id === d.id ? d : c));
+                      }}
+                    />
+                    <AssigneeField
+                      card={card}
+                      projectSlug={projectSlug}
+                      actor={actorName}
+                      disabled={confirmed}
+                      profileByName={profileByName}
                       compact
                       onSaved={(d) => {
                         setDetailCard(d);

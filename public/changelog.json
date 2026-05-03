@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.197",
+    "date": "2026-05-03",
+    "changes": [
+      "상세페이지 좌측 상단 메타 chip row 에 담당자 추가. 새 AssigneeField 컴포넌트 — PriorityField/TargetUpdateField 와 동일한 외곽 박스 패턴 (var(--bg-soft) + var(--line)) + 라벨 '담당자' + 클릭 popover (profileByName 의 모든 프로필 + 미지정). 카드 상세 좌측 상단에 업데이트 / 우선순위 / 담당자 3 박스가 한 줄 (display flex / flexWrap wrap / gap 6) 로 정렬됨. data.assignee 우선, 없으면 created_by fallback. 변경 시 patchCardMerged 로 즉시 저장 + onSaved 로 detailCard / cards 동기화"
+    ]
+  },
+  {
     "version": "1.10.196",
     "date": "2026-05-03",
     "changes": [
