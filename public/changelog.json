@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.204",
+    "date": "2026-05-03",
+    "changes": [
+      "재질 (Material) 탭 step 5 — PBR 채널 수동 업로드 슬롯. (1) 시안 그리드 라벨 'BC · 시안 (N개)' 으로 명확화 (Base Color, AI 자동). (2) 시안 그리드 아래 'PBR 채널' 섹션 신설 — 4 슬롯 grid: NM (Normal) / OMR (Occlusion·Metallic·Roughness) / Height / EM (Emissive). 각 슬롯은 PBRChannelSlot 컴포넌트 — 비어있으면 + 업로드 버튼, 채워지면 썸네일 + ✕ 삭제. data.pbr_channels[key] 에 URL 저장. (3) Substance Designer / Photoshop 등 외부 도구로 만든 채널을 즉시 첨부 가능. AI 가 자동 생성하기 어려운 NM/OMR 등은 외부 워크플로우 결과를 카드에 묶어 보관. (4) 카탈로그 시각 유사 매칭 (옵션 C 보류) — 머티리얼 카탈로그 인덱스 부재로 우선순위 낮음, 추후 결정"
+    ]
+  },
+  {
     "version": "1.10.203",
     "date": "2026-05-03",
     "changes": [

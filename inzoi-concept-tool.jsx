@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.203";
+const APP_VERSION = "1.10.204";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -1217,10 +1217,10 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
             )}
           </div>
 
-          {/* 시안 그리드 */}
+          {/* 시안 그리드 — BC (Base Color) */}
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)", marginBottom: 8 }}>
-              시안 ({designs.length}개)
+              BC · 시안 ({designs.length}개) <span style={{ fontSize: 11, fontWeight: 500, color: "var(--fg-muted)" }}>— Base Color, AI 자동 생성</span>
             </div>
             {designs.length === 0 ? (
               <div style={{
@@ -1244,9 +1244,100 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
               </div>
             )}
           </div>
+
+          {/* v1.10.204 — PBR 채널 수동 업로드 슬롯 (NM / OMR / Height / Emissive). */}
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)", marginBottom: 8 }}>
+              PBR 채널 <span style={{ fontSize: 11, fontWeight: 500, color: "var(--fg-muted)" }}>— Substance Designer / Photoshop 등 외부 도구로 만든 채널 업로드</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              {[
+                { key: "normal",   label: "NM (Normal)",       hint: "법선맵, BC 기준 추출" },
+                { key: "omr",      label: "OMR",                hint: "Occlusion·Metallic·Roughness 합본" },
+                { key: "height",   label: "Height",             hint: "디스플레이스먼트" },
+                { key: "emissive", label: "EM (Emissive)",      hint: "발광" },
+              ].map((ch) => (
+                <PBRChannelSlot
+                  key={ch.key}
+                  channel={ch}
+                  url={material.data?.pbr_channels?.[ch.key] || null}
+                  onUpload={async (file) => {
+                    const reader = new FileReader();
+                    reader.onload = async (ev) => {
+                      try {
+                        const url = await uploadDataUrl(ev.target.result);
+                        const cur = material.data?.pbr_channels || {};
+                        await saveData({ pbr_channels: { ...cur, [ch.key]: url } });
+                      } catch (err) { alert("업로드 실패: " + err.message); }
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  onRemove={async () => {
+                    const cur = material.data?.pbr_channels || {};
+                    const next = { ...cur };
+                    delete next[ch.key];
+                    await saveData({ pbr_channels: next });
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </>
+  );
+}
+
+// PBR 채널 단일 슬롯 — 비어있으면 + 업로드, 채워지면 썸네일 + ✕ 삭제.
+function PBRChannelSlot({ channel, url, onUpload, onRemove }) {
+  const fileRef = React.useRef(null);
+  return (
+    <div style={{
+      borderRadius: 8, overflow: "hidden",
+      border: "1px solid var(--line)", background: "var(--bg-card)",
+    }}>
+      <div style={{ position: "relative", aspectRatio: "1/1", background: "var(--bg-soft)" }}>
+        {url ? (
+          <>
+            <img src={url} alt={channel.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <button
+              onClick={onRemove}
+              title="채널 삭제"
+              style={{
+                position: "absolute", top: 4, right: 4,
+                width: 20, height: 20, borderRadius: 4,
+                background: "var(--danger)", border: "none", color: "#fff",
+                fontSize: 11, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "inherit", padding: 0, lineHeight: 1,
+              }}
+            >✕</button>
+          </>
+        ) : (
+          <button
+            onClick={() => fileRef.current?.click()}
+            style={{
+              position: "absolute", inset: 0,
+              background: "transparent", border: "none",
+              color: "var(--fg-muted)", fontSize: 11, cursor: "pointer",
+              fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >+ 업로드</button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = ""; }}
+          style={{ display: "none" }}
+        />
+      </div>
+      <div style={{ padding: "5px 8px", borderTop: "1px solid var(--line)" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--fg-strong)", lineHeight: 1.2 }}>{channel.label}</div>
+        <div style={{ fontSize: 10, color: "var(--fg-muted)", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{channel.hint}</div>
+      </div>
+    </div>
   );
 }
 
