@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.188";
+const APP_VERSION = "1.10.189";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -3383,8 +3383,8 @@ function AssetInfoEditor({ card, projectSlug, actor, onRefresh, disabled, onOpen
       background: "rgba(7,110,232,0.03)", border: "1px solid rgba(7,110,232,0.15)",
     }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)" }}>
-          📝 어셋 정보
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--fg-strong)" }}>
+          어셋 정보
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
           {saving ? "저장 중…" : "자동 저장"}
@@ -5461,12 +5461,12 @@ function SortSelect({ value, onChange }) {
       onFocus={(e) => { e.currentTarget.style.borderColor = "var(--fg-strong)"; }}
       onBlur={(e) => { e.currentTarget.style.borderColor = "var(--line)"; }}
     >
-      <option value="date_desc">📅 최신순</option>
-      <option value="date_asc">📅 오래된순</option>
-      <option value="title_asc">🔤 이름 A→Z</option>
-      <option value="title_desc">🔤 이름 Z→A</option>
-      <option value="stage_asc">🎯 진행 단계 (시안→시트)</option>
-      <option value="stage_desc">🎯 진행 단계 (시트→시안)</option>
+      <option value="date_desc">최신순</option>
+      <option value="date_asc">오래된순</option>
+      <option value="title_asc">이름 A→Z</option>
+      <option value="title_desc">이름 Z→A</option>
+      <option value="stage_asc">진행 단계 (시안→시트)</option>
+      <option value="stage_desc">진행 단계 (시트→시안)</option>
     </select>
   );
 }
@@ -9580,7 +9580,7 @@ function DesignsPanel({
               onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-press)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
             >
-              {`🎨 ${count}개 생성${variation ? ` (${VARIATION_LABELS[variation].replace(/^.\s*/, "")})` : ""}${queueLen > 0 ? ` · 대기 ${queueLen}` : ""}`}
+              {`${count}개 생성${variation ? ` (${VARIATION_LABELS[variation].replace(/^.\s*/, "")})` : ""}${queueLen > 0 ? ` · 대기 ${queueLen}` : ""}`}
             </button>
           </div>
           {/* v1.10.150 — 진행 표시 별도 줄. busy 중에 현재 작업 progress + 큐 잔량 노출. */}
@@ -14633,7 +14633,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                 >
                   {lists.map((l) => (
                     <option key={l.id} value={l.status_key}>
-                      {l.icon} {l.name}
+                      {l.name}
                     </option>
                   ))}
                 </select>
