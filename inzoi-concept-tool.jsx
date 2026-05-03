@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.205";
+const APP_VERSION = "1.10.206";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -695,16 +695,25 @@ function generateConceptSheetCanvas(canvas, images, metadata) {
 // 시안 prompt 에 seamless tileable prefix 자동 적용.
 const MATERIAL_PROMPT_PREFIX = "seamless tileable PBR base color texture, top-down orthographic flat view, even diffuse lighting, no shadows, square crop, no border, edges that tile perfectly side-to-side and top-to-bottom";
 const MATERIAL_VARIATION_HINTS = {
-  color:   "vary color tone and saturation while keeping the same material type",
-  grain:   "vary grain / fiber direction and density",
-  wear:    "vary wear, aging, and weathering level",
-  pattern: "vary pattern density and scale",
+  color:    "vary color tone and saturation while keeping the same material type",
+  grain:    "vary grain / fiber direction and density",
+  wear:     "vary wear, aging, and weathering level",
+  pattern:  "vary pattern density and scale",
+  // v1.10.206 — 타일 크기 (패턴 스케일) 조정. AI 가 같은 재질의 패턴 빈도/크기를 배율에 맞춰 재생성.
+  tile_05x: "halve the tile pattern density — finer texel features, twice as many repeats per square",
+  tile_08x: "slightly smaller pattern scale (~80%) — denser repeats, more compact features",
+  tile_15x: "larger pattern scale (~150%) — fewer repeats per square, more pronounced features",
+  tile_2x:  "double the pattern scale — much larger features, half the repeats per square",
 };
 const MATERIAL_VARIATION_LABELS = {
-  color:   "🎨 색조",
-  grain:   "🪵 결",
-  wear:    "🕰 마모",
-  pattern: "📐 패턴",
+  color:    "🎨 색조",
+  grain:    "🪵 결",
+  wear:     "🕰 마모",
+  pattern:  "📐 패턴",
+  tile_05x: "🔍 0.5×",
+  tile_08x: "🔍 0.8×",
+  tile_15x: "🔎 1.5×",
+  tile_2x:  "🔎 2×",
 };
 
 async function generateMaterialVariants({ material, count, prompt, geminiApiKey, selectedModel, slug, actor, variation, onProgress }) {
@@ -1167,11 +1176,15 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
               <span style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, marginRight: 2 }}>변형:</span>
               {[
-                { id: "",        label: "없음" },
-                { id: "color",   label: "🎨 색조" },
-                { id: "grain",   label: "🪵 결" },
-                { id: "wear",    label: "🕰 마모" },
-                { id: "pattern", label: "📐 패턴" },
+                { id: "",         label: "없음" },
+                { id: "color",    label: "🎨 색조" },
+                { id: "grain",    label: "🪵 결" },
+                { id: "wear",     label: "🕰 마모" },
+                { id: "pattern",  label: "📐 패턴" },
+                { id: "tile_05x", label: "🔍 0.5×" },
+                { id: "tile_08x", label: "🔍 0.8×" },
+                { id: "tile_15x", label: "🔎 1.5×" },
+                { id: "tile_2x",  label: "🔎 2×" },
               ].map((v) => {
                 const active = variation === v.id;
                 return (
