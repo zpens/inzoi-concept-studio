@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.204";
+const APP_VERSION = "1.10.205";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -971,6 +971,24 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
     await saveData({ ref_images: next });
   };
 
+  // v1.10.205 — 모달 열려있는 동안 Ctrl+V 로 클립보드 이미지를 참조에 붙여넣기.
+  // input/textarea 안에서 paste 시에도 이미지가 있으면 우선 처리 (텍스트 붙여넣기와 자연스럽게 분리).
+  React.useEffect(() => {
+    const onPaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) { addRefFile(f); e.preventDefault(); return; }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [material.id, refImages.length]);
+
   const selectAsCover = async (designIdx) => {
     const d = designs[designIdx];
     if (!d?.imageUrl) return;
@@ -1078,7 +1096,7 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
           {/* v1.10.203 — 참조 이미지 슬롯 */}
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 6 }}>
-              참조 이미지 ({refImages.length}) <span style={{ fontWeight: 500 }}>— 시안 생성에 multimodal 로 전달</span>
+              참조 이미지 ({refImages.length}) <span style={{ fontWeight: 500 }}>— 시안 생성 multimodal · Ctrl+V 로 붙여넣기</span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {refImages.map((url, i) => (

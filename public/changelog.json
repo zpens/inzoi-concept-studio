@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.205",
+    "date": "2026-05-03",
+    "changes": [
+      "재질 모달 참조 이미지 Ctrl+V 붙여넣기 지원. MaterialDetailModal 이 열린 동안 window 의 paste 이벤트 청취 → 클립보드 이미지가 있으면 addRefFile 로 자동 업로드 + data.ref_images append. 라벨 안내 'Ctrl+V 로 붙여넣기' 추가. material.id / refImages.length 변경 시 리스너 재등록"
+    ]
+  },
+  {
     "version": "1.10.204",
     "date": "2026-05-03",
     "changes": [
