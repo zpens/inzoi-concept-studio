@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.201",
+    "date": "2026-05-03",
+    "changes": [
+      "재질 (Material) 탭 step 2 — 카드 그리드 + 새 재질 모달. (1) MATERIAL_CATEGORIES 상수 (8개): 목재 / 금속 / 석재 / 직물 / 플라스틱 / 유리 / 콘크리트 / 기타 + 이모지 아이콘. (2) MaterialCard 컴포넌트: 1:1 정사각, 썸네일 + 제목 + 카테고리 chip + 시안 N. 호버 시 background-image repeat 50%/50% 로 2×2 타일링 미리보기 즉시 표시 (Gemini 호출 0). (3) MaterialsTab 본문: placeholder → 실제 카드 그리드 (auto-fill minmax 220×scale). 우측 컨트롤: CardScaleSelect + + 새 재질 버튼 (KRAFTON 액센트). 카드 클릭은 임시 alert (step 3 상세 모달 안내). (4) 새 재질 모달: 480 폭 / 재질 이름 / 카테고리 칩 8개 / 설명 textarea / 추가·취소 버튼. POST /api/projects/:slug/materials → setMaterials prepend. step 3 (상세 모달 + 시안 생성) 가 다음"
+    ]
+  },
+  {
     "version": "1.10.200",
     "date": "2026-05-03",
     "changes": [

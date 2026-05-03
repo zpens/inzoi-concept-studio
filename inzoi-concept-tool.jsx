@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.200";
+const APP_VERSION = "1.10.201";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -686,6 +686,97 @@ function generateConceptSheetCanvas(canvas, images, metadata) {
   ctx.font = "14px 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif";
   ctx.fillText("inZOI 에셋 컨셉 도구에서 생성 — Powered by Gemini", 60, H - 18);
   ctx.fillText(`© ${new Date().getFullYear()} KRAFTON inZOI`, W - 300, H - 18);
+}
+
+// ─── Materials (재질) — v1.10.201 ───
+// 재질 카드 카테고리. 시작 단계 — 추후 확장 가능.
+const MATERIAL_CATEGORIES = [
+  { id: "wood",     label: "목재",   icon: "🪵" },
+  { id: "metal",    label: "금속",   icon: "🔩" },
+  { id: "stone",    label: "석재",   icon: "🪨" },
+  { id: "fabric",   label: "직물",   icon: "🧵" },
+  { id: "plastic",  label: "플라스틱", icon: "🧴" },
+  { id: "glass",    label: "유리",   icon: "🔍" },
+  { id: "concrete", label: "콘크리트", icon: "🧱" },
+  { id: "other",    label: "기타",   icon: "✨" },
+];
+
+// 머티리얼 카드 — 1:1 정사각형, 호버 시 2×2 타일링 미리보기.
+function MaterialCard({ material, onClick, scale = 1 }) {
+  const [hover, setHover] = React.useState(false);
+  const data = material.data || {};
+  const designs = Array.isArray(data.designs) ? data.designs.filter((d) => d?.imageUrl) : [];
+  const selected = (data.selected_design != null) ? designs[data.selected_design] : null;
+  const thumb = material.thumbnail_url || selected?.imageUrl || designs[0]?.imageUrl || null;
+  const cat = MATERIAL_CATEGORIES.find((c) => c.id === material.category);
+  const size = Math.round(220 * scale);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        borderRadius: 12, overflow: "hidden",
+        border: "1px solid var(--line)",
+        background: "var(--bg-card)",
+        cursor: "pointer",
+        transition: "border-color 120ms, transform 120ms",
+        position: "relative",
+      }}
+    >
+      <div style={{
+        width: "100%", aspectRatio: "1/1",
+        background: thumb && hover
+          ? `url(${thumb})`
+          : thumb ? "var(--bg-soft)" : "var(--bg-muted)",
+        backgroundRepeat: "repeat",
+        backgroundSize: hover ? "50% 50%" : "100% 100%",
+        position: "relative",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "background-size 200ms",
+      }}>
+        {thumb && !hover && (
+          <img
+            src={thumb}
+            alt=""
+            style={{
+              width: "100%", height: "100%", objectFit: "cover", display: "block",
+            }}
+          />
+        )}
+        {!thumb && (
+          <span style={{ fontSize: Math.round(48 * scale), opacity: 0.5 }}>{cat?.icon || "✨"}</span>
+        )}
+        {hover && thumb && (
+          <div style={{
+            position: "absolute", bottom: 6, right: 6,
+            padding: "2px 8px", borderRadius: 999,
+            background: "rgba(0,0,0,0.7)", color: "#fff",
+            fontSize: 10, fontWeight: 600, pointerEvents: "none",
+          }}>2×2 타일링 미리보기</div>
+        )}
+      </div>
+      <div style={{ padding: `${Math.round(10 * scale)}px ${Math.round(12 * scale)}px` }}>
+        <div style={{
+          fontSize: Math.round(13 * Math.sqrt(scale)), fontWeight: 700, color: "var(--fg-strong)",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          marginBottom: 4,
+        }}>{material.title || "(이름 없음)"}</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+          {cat ? (
+            <span style={{
+              fontSize: 10, padding: "2px 8px", borderRadius: 999,
+              background: "var(--chip-bg)", color: "var(--chip-fg)", fontWeight: 600,
+              display: "inline-flex", alignItems: "center", gap: 3,
+            }}>{cat.label}</span>
+          ) : <span style={{ fontSize: 10, color: "var(--fg-faint)" }}>—</span>}
+          {designs.length > 0 && (
+            <span style={{ fontSize: 10, color: "var(--fg-muted)" }}>시안 {designs.length}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Components ───
@@ -11134,6 +11225,8 @@ export default function InZOIConceptTool() {
   // v1.10.200 — 머티리얼 (재질) 카드. 어셋 cards 와 평행 테이블.
   const [materials, setMaterials] = useState([]);
   const materialsCount = materials.length;
+  const [materialAddOpen, setMaterialAddOpen] = useState(false); // + 새 재질 모달
+  const [matDraft, setMatDraft] = useState({ title: "", category: "wood", description: "" });
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
   const [previewImage, setPreviewImage] = useState(null); // 이미지 원본 해상도 뷰어
   const [catalogItemId, setCatalogItemId] = useState(null); // inzoiObjectList 카탈로그 상세 iframe
@@ -14202,7 +14295,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
         </main>
       )}
 
-      {/* v1.10.200 — 재질 (테스트용) 탭. 카드뷰 placeholder. step 2 에서 실제 그리드 추가. */}
+      {/* v1.10.201 — 재질 (테스트용) 탭. 카드뷰 그리드 + 새 재질 모달. step 3 에서 상세 모달 추가 예정. */}
       {activeTab === "material" && (
         <main style={{ padding: "20px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
           <div style={{
@@ -14216,19 +14309,178 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   {materialsCount > 0 ? `${materialsCount}개` : "타일링 가능 텍스쳐를 위한 재질 카드"}
                 </span>
               </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <CardScaleSelect value={cardScale} onChange={setCardScale} />
+                <button
+                  onClick={() => { setMatDraft({ title: "", category: "wood", description: "" }); setMaterialAddOpen(true); }}
+                  className="btn-primary"
+                  style={{
+                    height: 32, padding: "0 14px", borderRadius: 8, border: "none",
+                    color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    fontFamily: "inherit", boxSizing: "border-box",
+                  }}
+                >＋ 새 재질</button>
+              </div>
             </div>
           </div>
-          <div style={{
-            padding: "60px 20px", textAlign: "center",
-            color: "var(--fg-muted)", fontSize: 14,
-            border: "1px dashed var(--line)", borderRadius: 12,
-            background: "var(--bg-soft)",
-            marginTop: 12,
-          }}>
-            재질 탭 (개발 중) — step 1: 백엔드 + 헤더 칩 완료.<br/>
-            step 2 (카드 그리드) / step 3 (상세 모달) / step 4 (타일링 미리보기) 가 이어서 추가됩니다.
-          </div>
+          {materials.length === 0 ? (
+            <div style={{
+              padding: "60px 20px", textAlign: "center",
+              color: "var(--fg-muted)", fontSize: 14,
+              border: "1px dashed var(--line)", borderRadius: 12,
+              background: "var(--bg-soft)",
+              marginTop: 12,
+            }}>
+              아직 재질이 없습니다. 「＋ 새 재질」 로 첫 카드를 추가하세요.<br/>
+              <span style={{ fontSize: 12, color: "var(--fg-faint)" }}>참조 이미지를 넣고 시안을 돌리면 타일링 가능 텍스쳐가 생성됩니다.</span>
+            </div>
+          ) : (
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(220 * cardScale)}px, 1fr))`,
+              gap: 12,
+              marginTop: 12,
+            }}>
+              {materials.map((m) => (
+                <MaterialCard
+                  key={m.id}
+                  material={m}
+                  scale={cardScale}
+                  onClick={() => alert("재질 상세 모달은 step 3 에서 추가됩니다 (v1.10.202).")}
+                />
+              ))}
+            </div>
+          )}
         </main>
+      )}
+
+      {/* + 새 재질 모달 — v1.10.201 */}
+      {materialAddOpen && (
+        <>
+          <div className="sidebar-overlay" onClick={() => setMaterialAddOpen(false)} style={{ zIndex: 210 }} />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            width: 480, maxWidth: "92vw",
+            background: "var(--bg-card)", border: "1px solid var(--line)", borderRadius: 16,
+            boxShadow: "0 24px 64px rgba(0,0,0,0.18)",
+            zIndex: 220, padding: 24,
+            fontFamily: "inherit",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--fg-strong)", margin: 0, letterSpacing: "-0.01em" }}>새 재질 추가</h2>
+              <button
+                onClick={() => setMaterialAddOpen(false)}
+                style={{
+                  width: 28, height: 28, borderRadius: 6,
+                  background: "var(--bg-card)", border: "1px solid var(--line)",
+                  color: "var(--fg-muted)", fontSize: 14, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "inherit",
+                }}
+              >✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", display: "block", marginBottom: 4 }}>재질 이름</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={matDraft.title}
+                  onChange={(e) => setMatDraft((d) => ({ ...d, title: e.target.value }))}
+                  placeholder="예: 빈티지 오크 우드 / 브러시드 알루미늄"
+                  style={{
+                    width: "100%", height: 36, padding: "0 12px", borderRadius: 8,
+                    border: "1px solid var(--line)", background: "var(--bg-card)",
+                    color: "var(--fg)", fontSize: 13, outline: "none",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", display: "block", marginBottom: 4 }}>카테고리</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {MATERIAL_CATEGORIES.map((cat) => {
+                    const active = matDraft.category === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => setMatDraft((d) => ({ ...d, category: cat.id }))}
+                        style={{
+                          height: 28, padding: "0 10px", borderRadius: 999,
+                          background: active ? "var(--fg-strong)" : "var(--chip-bg)",
+                          border: "1px solid " + (active ? "var(--fg-strong)" : "transparent"),
+                          color: active ? "#fff" : "var(--chip-fg)",
+                          fontSize: 12, fontWeight: 500, cursor: "pointer",
+                          fontFamily: "inherit", boxSizing: "border-box",
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                        }}
+                      >
+                        <span>{cat.icon}</span>
+                        <span>{cat.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", display: "block", marginBottom: 4 }}>설명 (선택)</label>
+                <textarea
+                  value={matDraft.description}
+                  onChange={(e) => setMatDraft((d) => ({ ...d, description: e.target.value }))}
+                  rows={2}
+                  placeholder="재질의 용도·특징 메모"
+                  style={{
+                    width: "100%", padding: "8px 12px", borderRadius: 8,
+                    border: "1px solid var(--line)", background: "var(--bg-card)",
+                    color: "var(--fg)", fontSize: 13, outline: "none",
+                    fontFamily: "inherit", boxSizing: "border-box", resize: "vertical",
+                  }}
+                />
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+              <button
+                onClick={() => setMaterialAddOpen(false)}
+                style={{
+                  height: 32, padding: "0 14px", borderRadius: 8,
+                  background: "var(--bg-card)", border: "1px solid var(--line)",
+                  color: "var(--fg-muted)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  fontFamily: "inherit", boxSizing: "border-box",
+                }}
+              >취소</button>
+              <button
+                onClick={async () => {
+                  const title = matDraft.title.trim();
+                  if (!title) { alert("재질 이름을 입력해주세요."); return; }
+                  if (!projectSlug) { alert("프로젝트 로딩 대기 중. 잠시 후 다시 시도."); return; }
+                  try {
+                    const r = await fetch(`/api/projects/${projectSlug}/materials`, {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({
+                        title,
+                        category: matDraft.category,
+                        description: matDraft.description.trim() || null,
+                        actor: actorName || null,
+                      }),
+                    });
+                    if (!r.ok) throw new Error(`POST ${r.status}`);
+                    const created = await r.json();
+                    setMaterials((prev) => [created, ...prev]);
+                    setMaterialAddOpen(false);
+                  } catch (e) { alert("재질 추가 실패: " + e.message); }
+                }}
+                className="btn-primary"
+                style={{
+                  height: 32, padding: "0 14px", borderRadius: 8, border: "none",
+                  color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  fontFamily: "inherit", boxSizing: "border-box",
+                }}
+              >추가</button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* 새 아이디어 추가 모달 — 위시리스트 탭에서 헤더 버튼으로 오픈 */}
