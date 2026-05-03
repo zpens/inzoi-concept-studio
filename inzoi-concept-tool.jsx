@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.208";
+const APP_VERSION = "1.10.209";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -11941,7 +11941,7 @@ export default function InZOIConceptTool() {
   const [materials, setMaterials] = useState([]);
   const materialsCount = materials.length;
   const [materialAddOpen, setMaterialAddOpen] = useState(false); // + 새 재질 모달
-  const [matDraft, setMatDraft] = useState({ title: "", category: "wood", description: "" });
+  const [matDraft, setMatDraft] = useState({ title: "", category: "wood", description: "", thumb: null });
   const [detailMaterial, setDetailMaterial] = useState(null); // 재질 상세 모달
   const [generatingMaterials, setGeneratingMaterials] = useState({}); // 재질 시안 작업 큐 (cards 와 동일 패턴)
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
@@ -12943,6 +12943,29 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
     link.href = conceptSheet;
     link.click();
   };
+
+  // v1.10.209 — 새 재질 모달 열려있는 동안 Ctrl+V 로 클립보드 이미지를 썸네일에 붙여넣기.
+  useEffect(() => {
+    if (!materialAddOpen) return;
+    const onPaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) {
+            const reader = new FileReader();
+            reader.onload = (ev) => setMatDraft((d) => ({ ...d, thumb: ev.target.result }));
+            reader.readAsDataURL(f);
+            e.preventDefault();
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [materialAddOpen]);
 
   // ─── Render ───
   return (
@@ -15029,7 +15052,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <CardScaleSelect value={cardScale} onChange={setCardScale} />
                 <button
-                  onClick={() => { setMatDraft({ title: "", category: "wood", description: "" }); setMaterialAddOpen(true); }}
+                  onClick={() => { setMatDraft({ title: "", category: "wood", description: "", thumb: null }); setMaterialAddOpen(true); }}
                   className="btn-primary"
                   style={{
                     height: 32, padding: "0 14px", borderRadius: 8, border: "none",
@@ -15155,6 +15178,39 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   }}
                 />
               </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span>참조 썸네일 (선택)</span>
+                  <span style={{ fontSize: 10, fontWeight: 400, color: "var(--fg-muted)" }}>— Ctrl+V 로 붙여넣기</span>
+                </label>
+                {matDraft.thumb ? (
+                  <div style={{
+                    position: "relative", width: 96, height: 96, borderRadius: 8,
+                    border: "1px solid var(--line)", overflow: "hidden", background: "var(--bg-soft)",
+                  }}>
+                    <img src={matDraft.thumb} alt="썸네일" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <button
+                      onClick={() => setMatDraft((d) => ({ ...d, thumb: null }))}
+                      title="썸네일 제거"
+                      style={{
+                        position: "absolute", top: 4, right: 4,
+                        width: 22, height: 22, borderRadius: 6, border: "none",
+                        background: "rgba(0,0,0,0.55)", color: "#fff",
+                        fontSize: 12, cursor: "pointer", display: "flex",
+                        alignItems: "center", justifyContent: "center",
+                        fontFamily: "inherit",
+                      }}
+                    >✕</button>
+                  </div>
+                ) : (
+                  <div style={{
+                    width: 96, height: 96, borderRadius: 8,
+                    border: "1px dashed var(--line)", background: "var(--bg-soft)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "var(--fg-muted)", fontSize: 11, fontFamily: "inherit",
+                  }}>이미지 없음</div>
+                )}
+              </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
               <button
@@ -15172,6 +15228,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   if (!title) { alert("재질 이름을 입력해주세요."); return; }
                   if (!projectSlug) { alert("프로젝트 로딩 대기 중. 잠시 후 다시 시도."); return; }
                   try {
+                    let thumbUrl = null;
+                    if (matDraft.thumb) {
+                      thumbUrl = await uploadDataUrl(matDraft.thumb);
+                    }
                     const r = await fetch(`/api/projects/${projectSlug}/materials`, {
                       method: "POST",
                       headers: { "content-type": "application/json" },
@@ -15179,6 +15239,7 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                         title,
                         category: matDraft.category,
                         description: matDraft.description.trim() || null,
+                        thumbnail_url: thumbUrl,
                         actor: actorName || null,
                       }),
                     });

@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.209",
+    "date": "2026-05-03",
+    "changes": [
+      "+ 새 재질 모달 — Ctrl+V 로 클립보드 이미지를 참조 썸네일로 붙여넣기. (1) matDraft 에 thumb 필드 추가 (dataUrl). (2) materialAddOpen 인 동안만 window paste 리스너 작동 — image/* 클립보드 항목 발견 시 FileReader 로 dataUrl 변환 후 미리보기. (3) 모달 안에 96×96 썸네일 미리보기 + ✕ 제거 버튼 + '이미지 없음' 빈 상태. 라벨에 'Ctrl+V 로 붙여넣기' 안내. (4) 추가 시 uploadDataUrl 로 서버 업로드 후 thumbnail_url 로 POST. 재질 첫 등록 단계에서 곧바로 시각 단서를 남길 수 있어, 이름만으로는 구분 어려운 재질 (예: '오크 우드' 다양한 종류) 의 구분이 쉬워짐"
+    ]
+  },
+  {
     "version": "1.10.208",
     "date": "2026-05-01",
     "changes": [
