@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.198",
+    "date": "2026-05-03",
+    "changes": [
+      "(1) UpdateChipBar 의 marginBottom 16 → 10 — H2 row 의 marginBottom 10 과 동일하게 정렬해 sticky 영역 안 위·아래 간격이 균일. (2) 헤더 우측 그룹 KRAFTON 가이드 적용. API 설정 버튼: 그린 success-soft / 빨강 accent-soft 채움 → ghost (--bg-card + --line + --fg). key 상태는 좌측 작은 ● 점만 색깔로 (success / accent). hover 시 부드러운 회색 전환. (3) ProfilePicker: 파랑 rgba 또는 빨강 rgba 채움 + radius 999 pill → ghost (--bg-card + --line, h32, radius 8). 액센트 강조 제거. 이제 헤더 우측 (아카이브 / API 설정 / 프로필) 모두 동일한 ghost 톤"
+    ]
+  },
+  {
     "version": "1.10.197",
     "date": "2026-05-03",
     "changes": [

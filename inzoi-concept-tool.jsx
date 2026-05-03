@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.197";
+const APP_VERSION = "1.10.198";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4939,7 +4939,7 @@ function UpdateChipBar({ chips, selected, onChange, totalCount, onRename, curren
     }
   };
   return (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
       <button onClick={() => onChange([])} style={allStyle}>전체 · {totalCount}</button>
       {chips.map((c) => {
         const faded = c.value === "__unspecified";
@@ -10435,16 +10435,19 @@ function ProfilePicker({ profiles, current, onChange, onCreate, onEdit }) {
         onClick={() => setOpen((v) => !v)}
         title={current ? `현재 프로필: ${current.name}` : "프로필 선택 (댓글/편집 작성자 구분)"}
         style={{
-          display: "flex", alignItems: "center", gap: 6,
-          padding: "6px 10px 6px 8px", borderRadius: 999,
-          background: current ? "rgba(7,110,232,0.08)" : "rgba(239,68,68,0.08)",
-          border: `1px solid ${current ? "rgba(7,110,232,0.25)" : "rgba(239,68,68,0.3)"}`,
-          color: current ? "var(--primary)" : "#dc2626",
-          fontSize: 13, fontWeight: 700, cursor: "pointer",
-          lineHeight: 1,
+          display: "inline-flex", alignItems: "center", gap: 6,
+          height: 32, padding: "0 10px 0 8px", borderRadius: 8,
+          background: "var(--bg-card)",
+          border: "1px solid var(--line)",
+          color: current ? "var(--fg)" : "var(--fg-muted)",
+          fontSize: 12, fontWeight: 500, cursor: "pointer",
+          lineHeight: 1, fontFamily: "inherit", boxSizing: "border-box",
+          transition: "background-color 120ms",
         }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-muted)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-card)"; }}
       >
-        <span style={{ fontSize: 16 }}>{current?.icon || "👤"}</span>
+        <span style={{ fontSize: 14 }}>{current?.icon || "👤"}</span>
         <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {current?.name || "프로필 선택"}
         </span>
@@ -12420,17 +12423,19 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             onClick={() => setShowApiSettings(true)}
             style={{
               height: 32, padding: "0 12px", borderRadius: 8,
-              background: geminiApiKey ? "var(--success-soft)" : "var(--accent-soft)",
-              border: "1px solid " + (geminiApiKey ? "var(--success-soft)" : "var(--accent-soft)"),
-              color: geminiApiKey ? "var(--success)" : "var(--accent-press)",
+              background: "var(--bg-card)",
+              border: "1px solid var(--line)",
+              color: geminiApiKey ? "var(--fg)" : "var(--accent-press)",
               fontSize: 12, fontWeight: 500, cursor: "pointer",
               display: "inline-flex", alignItems: "center", gap: 6,
               fontFamily: "inherit", boxSizing: "border-box",
               transition: "background-color 120ms",
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-muted)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-card)"; }}
             title={geminiApiKey ? "API 키 설정됨" : "API 키 미설정 — 클릭하여 입력"}
           >
-            <span style={{ fontSize: 12 }}>{geminiApiKey ? "🔑" : "⚠️"}</span>
+            <span style={{ fontSize: 12, color: geminiApiKey ? "var(--success)" : "var(--accent)" }}>●</span>
             API 설정
           </button>
           <ProfilePicker
