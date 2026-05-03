@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.194",
+    "date": "2026-05-03",
+    "changes": [
+      "리스트뷰 담당자 셀 이름 표시 + 그리드 폭 재배분. (1) getListGrid 마지막 컬럼 32 → 110px (담당자 이름 표시 공간), 생성일 92 → 78px (담당자에 32px 양보). (2) 담당자 셀: 24×24 아이콘 + 6px gap + 이름 텍스트 (12px / 500). 미지정은 fg-muted '미지정' 텍스트. nowrap + ellipsis. (3) 헤더 SortCell 'align=center' → 좌측 정렬 (이름 시작 위치와 일치). 클릭 popover 로 변경 기능 그대로"
+    ]
+  },
+  {
     "version": "1.10.193",
     "date": "2026-05-03",
     "changes": [

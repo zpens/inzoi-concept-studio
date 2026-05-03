@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.193";
+const APP_VERSION = "1.10.194";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -4911,9 +4911,10 @@ function ViewModeToggle({ value, onChange }) {
 //   크기(W×D×H cm): 130→115, 상태(시안 N): 95→70, 진행(🗳️ 투표 및 선정): 110→130,
 //   날짜(YYYY-MM-DD): 100→92.
 const getListGrid = (scale = 1) => {
-  // v1.10.76 — 스타일 70→85 (스칸디나비안 등 6자 라벨 ellipsis 완화), 진행 92→78 (라벨 4자 + emoji 라 충분).
+  // v1.10.76 — 스타일 70→85, 진행 92→78.
+  // v1.10.194 — 담당자 이름 표시: 32 → 110, 생성일 92 → 78.
   const thumb = Math.round(90 * scale);
-  return `${thumb}px 1fr 56px 120px 140px 85px 115px 70px 78px 92px 32px`;
+  return `${thumb}px 1fr 56px 120px 140px 85px 115px 70px 78px 78px 110px`;
 };
 const LIST_GRID = getListGrid(1); // 기본
 
@@ -5334,11 +5335,12 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
       <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right" }}>
         {date ? formatLocalTime(date, "date") : "-"}
       </div>
-      {/* 담당자 — v1.10.191: 클릭 popover 로 변경 가능. data.assignee 우선, 없으면 created_by fallback. */}
+      {/* 담당자 — v1.10.191: 클릭 popover 로 변경 가능. data.assignee 우선, 없으면 created_by fallback.
+          v1.10.194 — 아이콘 + 이름 같이 표시 (좁은 cell 에서는 ellipsis). */}
       <div
         data-il-edit
         onClick={(e) => openCell(e, "assignee")}
-        style={{ position: "relative", textAlign: "center", cursor: "pointer" }}
+        style={{ position: "relative", cursor: "pointer", minWidth: 0 }}
         title="클릭해서 담당자 변경"
       >
         {(() => {
@@ -5347,12 +5349,23 @@ function CardListRow({ card, tabId, onClick, profileByName, projectSlug, actor, 
           const icon = profile?.icon || (assignee ? "👤" : "—");
           return (
             <div style={{
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-              width: 28, height: 28, borderRadius: 14,
-              background: "var(--bg-soft)", border: "1px solid var(--line)",
-              fontSize: 14, opacity: assignee ? 1 : 0.45,
-              transition: "background-color 120ms",
-            }}>{icon}</div>
+              display: "inline-flex", alignItems: "center", gap: 6,
+              maxWidth: "100%",
+              opacity: assignee ? 1 : 0.55,
+            }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 24, height: 24, borderRadius: 12,
+                background: "var(--bg-soft)", border: "1px solid var(--line)",
+                fontSize: 13, flexShrink: 0,
+              }}>{icon}</span>
+              <span style={{
+                fontSize: 12, color: assignee ? "var(--fg)" : "var(--fg-muted)",
+                fontWeight: assignee ? 500 : 400,
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                minWidth: 0,
+              }}>{assignee || "미지정"}</span>
+            </div>
           );
         })()}
         {editing === "assignee" && (
@@ -5472,7 +5485,7 @@ function CardListHeader({ tabId, sortBy, onSortChange, scale = 1 }) {
       <SortCell label={tabId === "completed" ? "결과" : "상태"} ascKey="status_asc" descKey="status_desc" />
       <SortCell label="진행" ascKey="stage_asc" descKey="stage_desc" />
       <SortCell label={tabId === "completed" ? "완료일" : "생성일"} ascKey={dateAsc} descKey={dateDesc} align="right" />
-      <SortCell label="담당자" ascKey="actor_asc" descKey="actor_desc" align="center" />
+      <SortCell label="담당자" ascKey="actor_asc" descKey="actor_desc" />
     </div>
   );
 }
