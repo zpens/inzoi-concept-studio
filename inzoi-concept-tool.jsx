@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.194";
+const APP_VERSION = "1.10.195";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -10065,6 +10065,8 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
         {/* v1.10.179 — 좌상단 stage 배지 / 우상단 '시안 N' 배지 삭제 (사용자 요청). */}
       </div>
       <div style={{ padding: `${Math.round(10 * scale)}px ${Math.round(14 * scale)}px` }}>
+        {/* v1.10.195 — scale 별 정보 차등:
+            0.5: 제목만 / 1: 제목+상태 / 2: 제목+내용+상태 */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
           <span style={{
             fontSize: Math.round(14 * Math.sqrt(scale)), fontWeight: 800, color: "var(--text-main)",
@@ -10073,7 +10075,7 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
             {card.title}
           </span>
         </div>
-        {(card.description || styleInfo) && (
+        {scale >= 2 && (card.description || styleInfo) && (
           <div style={{
             fontSize: Math.round(11 * Math.sqrt(scale)), color: "var(--text-muted)", lineHeight: 1.4,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
@@ -10081,25 +10083,29 @@ function CardHubCard({ card, tabId, onClick, scale = 1 }) {
             {styleInfo ? `${styleInfo.label} · ` : ""}{card.description || ""}
           </div>
         )}
-        {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
-          <div style={{ marginTop: 4, fontSize: Math.round(10 * Math.sqrt(scale)), color: "#22c55e", fontWeight: 600 }}>
-            ✓ 시트
-          </div>
-        )}
-        {tabId === "completed" && card.confirmed_at && (
-          <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
-            완료 {formatLocalTime(card.confirmed_at, "date")}
-          </div>
-        )}
-        {tabId === "wishlist" && (
-          <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
-            {card.created_at ? formatLocalTime(card.created_at, "date") : "-"}
-          </div>
-        )}
-        {tabId === "vote" && (
-          <div style={{ marginTop: 4, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
-            시안 {designs.length}개 · 투표자 {(data.voters || []).length}명
-          </div>
+        {scale >= 1 && (
+          <>
+            {(tabId === "sheet" || tabId === "completed") && data.concept_sheet_url && (
+              <div style={{ marginTop: 4, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--success)", fontWeight: 600 }}>
+                ✓ 시트
+              </div>
+            )}
+            {tabId === "completed" && card.confirmed_at && (
+              <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
+                완료 {formatLocalTime(card.confirmed_at, "date")}
+              </div>
+            )}
+            {tabId === "wishlist" && (
+              <div style={{ marginTop: 2, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
+                {card.created_at ? formatLocalTime(card.created_at, "date") : "-"}
+              </div>
+            )}
+            {tabId === "vote" && (
+              <div style={{ marginTop: 4, fontSize: Math.round(10 * Math.sqrt(scale)), color: "var(--text-muted)" }}>
+                시안 {designs.length}개 · 투표자 {(data.voters || []).length}명
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
