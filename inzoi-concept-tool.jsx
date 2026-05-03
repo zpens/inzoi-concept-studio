@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.202";
+const APP_VERSION = "1.10.203";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -868,6 +868,11 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
     try { localStorage.setItem("material_variation_mode", variation || ""); } catch {}
   }, [variation]);
 
+  // v1.10.203 — 시안 생성 큐 (cards DesignsPanel 패턴 차용).
+  const queueRef = React.useRef([]);
+  const workingRef = React.useRef(false);
+  const [queueLen, setQueueLen] = React.useState(0);
+
   // 편집 가능 메타 + prompt.
   const [title, setTitle] = React.useState(material.title || "");
   const [category, setCategory] = React.useState(material.category || "wood");
@@ -882,6 +887,8 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
 
   const designs = Array.isArray(material.data?.designs) ? material.data.designs : [];
   const selectedIdx = material.data?.selected_design;
+  const refImages = Array.isArray(material.data?.ref_images) ? material.data.ref_images : [];
+  const fileRef = React.useRef(null);
 
   const saveMeta = async (fields) => {
     try {
@@ -904,24 +911,64 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
     } catch (e) { console.warn("재질 데이터 저장 실패:", e.message); }
   };
 
-  const doGenerate = async () => {
+  // v1.10.203 — 큐 패턴: 클릭 시 enqueue, worker 가 순차 실행.
+  const doGenerate = () => {
     if (!geminiApiKey) { onOpenApiSettings?.(); return; }
     if (!prompt.trim()) { alert("재질 prompt 를 입력해 주세요. (예: 'natural oak wood with subtle grain')"); return; }
+    queueRef.current.push({ count, variation, prompt: prompt.trim() });
+    setQueueLen(queueRef.current.length);
+    processQueue();
+  };
+  const processQueue = async () => {
+    if (workingRef.current) return;
+    if (queueRef.current.length === 0) return;
+    workingRef.current = true;
     setBusy(true);
-    setProgress({ done: 0, total: count });
-    try {
-      const r = await generateMaterialVariants({
-        material, count, prompt: prompt.trim(),
-        geminiApiKey, selectedModel,
-        slug: projectSlug, actor, variation,
-        onProgress: (done, total) => setProgress({ done, total }),
-      });
-      // 최신 material 재로드.
-      const fresh = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`);
-      if (fresh.ok) onSaved?.(await fresh.json());
-      if (r.added === 0) alert(`생성 실패 (시도 ${count}개, 실패 ${r.failed}개)`);
-    } catch (e) { alert("시안 생성 실패: " + e.message); }
-    finally { setBusy(false); setProgress(null); }
+    while (queueRef.current.length > 0) {
+      const job = queueRef.current.shift();
+      setQueueLen(queueRef.current.length);
+      setProgress({ done: 0, total: job.count });
+      try {
+        // 매 작업 시작 시 fresh fetch 로 stale 방지.
+        let fresh = material;
+        try {
+          const r = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`);
+          if (r.ok) fresh = await r.json();
+        } catch { /* fallback */ }
+        const r = await generateMaterialVariants({
+          material: fresh, count: job.count, prompt: job.prompt,
+          geminiApiKey, selectedModel,
+          slug: projectSlug, actor, variation: job.variation,
+          onProgress: (done, total) => setProgress({ done, total }),
+        });
+        const refresh = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`);
+        if (refresh.ok) onSaved?.(await refresh.json());
+        if (r.added === 0) console.warn(`재질 시안 생성 실패 (시도 ${job.count}개)`);
+      } catch (e) {
+        console.warn("[재질 시안 큐] 작업 실패:", e);
+      }
+    }
+    workingRef.current = false;
+    setBusy(false);
+    setProgress(null);
+  };
+
+  // v1.10.203 — 참조 이미지 추가/삭제 (cards PromptRefEditor 패턴 차용).
+  const addRefFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const url = await uploadDataUrl(ev.target.result);
+        const next = [...refImages, url];
+        await saveData({ ref_images: next });
+      } catch (err) { alert("참조 이미지 추가 실패: " + err.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+  const removeRefImage = async (idx) => {
+    const next = refImages.filter((_, i) => i !== idx);
+    await saveData({ ref_images: next });
   };
 
   const selectAsCover = async (designIdx) => {
@@ -1028,6 +1075,48 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
             }}
           />
 
+          {/* v1.10.203 — 참조 이미지 슬롯 */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 6 }}>
+              참조 이미지 ({refImages.length}) <span style={{ fontWeight: 500 }}>— 시안 생성에 multimodal 로 전달</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {refImages.map((url, i) => (
+                <div key={i} style={{ position: "relative", width: 96, height: 96, borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)" }}>
+                  <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  <button
+                    onClick={() => removeRefImage(i)}
+                    title="참조 삭제"
+                    style={{
+                      position: "absolute", top: 4, right: 4,
+                      width: 20, height: 20, borderRadius: 4,
+                      background: "var(--danger)", border: "none", color: "#fff",
+                      fontSize: 11, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontFamily: "inherit", padding: 0, lineHeight: 1,
+                    }}
+                  >✕</button>
+                </div>
+              ))}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => { addRefFile(e.target.files?.[0]); e.target.value = ""; }}
+                style={{ display: "none" }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                style={{
+                  width: 96, height: 96, borderRadius: 8,
+                  background: "var(--bg-card)", border: "1px dashed var(--line)",
+                  color: "var(--fg-muted)", fontSize: 11, cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >+ 추가</button>
+            </div>
+          </div>
+
           {/* 프롬프트 — system prefix 포함 미리보기 */}
           <div style={{
             padding: 14, borderRadius: 12,
@@ -1103,21 +1192,29 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
               ))}
               <button
                 onClick={doGenerate}
-                disabled={busy}
                 style={{
                   marginLeft: "auto",
                   height: 32, padding: "0 14px", borderRadius: 8,
-                  background: busy ? "var(--bg-muted)" : "var(--accent)",
-                  border: "1px solid " + (busy ? "var(--line)" : "transparent"),
-                  color: busy ? "var(--fg-muted)" : "#fff",
-                  fontSize: 13, fontWeight: 500, cursor: busy ? "wait" : "pointer",
+                  background: "var(--accent)",
+                  border: "1px solid transparent",
+                  color: "#fff",
+                  fontSize: 13, fontWeight: 500, cursor: "pointer",
                   fontFamily: "inherit", boxSizing: "border-box",
                   display: "inline-flex", alignItems: "center",
+                  transition: "background-color 120ms",
                 }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-press)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
               >
-                {busy ? `생성 중… (${progress?.done || 0}/${progress?.total || count})` : `${count}개 생성`}
+                {`${count}개 생성${queueLen > 0 ? ` · 대기 ${queueLen}` : ""}`}
               </button>
             </div>
+            {busy && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--fg-muted)", fontWeight: 500 }}>
+                🎨 생성 중… ({progress?.done || 0}/{progress?.total || 0})
+                {queueLen > 0 ? ` · 대기열 ${queueLen}건` : ""}
+              </div>
+            )}
           </div>
 
           {/* 시안 그리드 */}

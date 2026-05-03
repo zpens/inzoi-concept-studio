@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.203",
+    "date": "2026-05-03",
+    "changes": [
+      "재질 (Material) 탭 step 4 — 시안 큐 + 참조 이미지 슬롯. (1) MaterialDetailModal 에 큐 패턴 도입 (cards DesignsPanel 차용): queueRef + workingRef + queueLen + processQueue. 생성 버튼 항상 활성, 누를 때마다 {count, variation, prompt} 스냅샷이 큐에 push 되어 단일 worker 가 순차 처리. 매 작업 시작 시 fresh fetch. 라벨에 '대기 N' 표시 + 진행 표시 줄에 '대기열 N건'. (2) 참조 이미지 슬롯 — 96×96 카드 + + 추가 점선 박스. 파일 선택 → uploadDataUrl → data.ref_images 에 append. 우상단 ✕ 삭제. generateMaterialVariants 가 thumbnail_url + data.ref_images 를 모두 multimodal 참조로 활용. step 5 (PBR 다중 채널 BC/NM/OMR / 카탈로그 시각 유사) 는 별도 — Normal map 자동 생성 한계 + 머티리얼 카탈로그 인덱스 부재로 결정 대기"
+    ]
+  },
+  {
     "version": "1.10.202",
     "date": "2026-05-03",
     "changes": [
