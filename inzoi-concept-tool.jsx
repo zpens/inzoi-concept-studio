@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.207";
+const APP_VERSION = "1.10.208";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -866,7 +866,7 @@ function MaterialCard({ material, onClick, scale = 1 }) {
 // 재질 상세 모달 — v1.10.202.
 // 단일 컬럼 레이아웃: 메타 row → 프롬프트 → 변형 / 갯수 / 생성 → 시안 그리드.
 // cards 의 거대한 모달 대신 단순 구조로 시작 (추후 확장).
-function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selectedModel, onClose, onSaved, onOpenApiSettings }) {
+function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selectedModel, onClose, onSaved, onOpenApiSettings, onGenerateProgress, onGenerateEnd }) {
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(null);
   const [count, setCount] = React.useState(1);
@@ -946,17 +946,24 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
           const r = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`);
           if (r.ok) fresh = await r.json();
         } catch { /* fallback */ }
+        // v1.10.208 — 작업 큐 (우하단 토스트) 에도 재질 시안 진행 등록.
+        onGenerateProgress?.(fresh, 0, job.count);
         const r = await generateMaterialVariants({
           material: fresh, count: job.count, prompt: job.prompt,
           geminiApiKey, selectedModel,
           slug: projectSlug, actor, variation: job.variation,
-          onProgress: (done, total) => setProgress({ done, total }),
+          onProgress: (done, total) => {
+            setProgress({ done, total });
+            onGenerateProgress?.(fresh, done, total);
+          },
         });
         const refresh = await fetch(`/api/projects/${projectSlug}/materials/${material.id}`);
         if (refresh.ok) onSaved?.(await refresh.json());
+        onGenerateEnd?.(fresh);
         if (r.added === 0) console.warn(`재질 시안 생성 실패 (시도 ${job.count}개)`);
       } catch (e) {
         console.warn("[재질 시안 큐] 작업 실패:", e);
+        onGenerateEnd?.(material);
       }
     }
     workingRef.current = false;
@@ -11936,6 +11943,7 @@ export default function InZOIConceptTool() {
   const [materialAddOpen, setMaterialAddOpen] = useState(false); // + 새 재질 모달
   const [matDraft, setMatDraft] = useState({ title: "", category: "wood", description: "" });
   const [detailMaterial, setDetailMaterial] = useState(null); // 재질 상세 모달
+  const [generatingMaterials, setGeneratingMaterials] = useState({}); // 재질 시안 작업 큐 (cards 와 동일 패턴)
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
   const [previewImage, setPreviewImage] = useState(null); // 이미지 원본 해상도 뷰어
   const [catalogItemId, setCatalogItemId] = useState(null); // inzoiObjectList 카탈로그 상세 iframe
@@ -15206,6 +15214,15 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             setDetailMaterial(updated);
             setMaterials((prev) => prev.map((x) => x.id === updated.id ? updated : x));
           }}
+          onGenerateProgress={(m, done, total) => setGeneratingMaterials((prev) => ({
+            ...prev,
+            [m.id]: { title: m.title, thumb: m.thumbnail_url, done, total, completed: false },
+          }))}
+          onGenerateEnd={(m) => setGeneratingMaterials((prev) => {
+            const cur = prev[m.id];
+            if (!cur) return prev;
+            return { ...prev, [m.id]: { ...cur, completed: true, done: cur.total } };
+          })}
         />
       )}
 
@@ -17357,7 +17374,8 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
       {(() => {
         const runningJobs = jobs.filter((j) => j.loading);
         const runningCards = Object.entries(generatingCards);
-        const total = runningJobs.length + runningCards.length;
+        const runningMaterials = Object.entries(generatingMaterials);
+        const total = runningJobs.length + runningCards.length + runningMaterials.length;
         if (total === 0) return null;
         return (
           <div style={{
@@ -17460,6 +17478,68 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   onRemove={() => removeJob(job.id)}
                 />
               ))}
+              {/* v1.10.208 — 재질 시안 진행도 동일 패턴으로 표시. */}
+              {runningMaterials.map(([mid, info]) => {
+                const pct = info.total > 0 ? Math.round((info.done / info.total) * 100) : 0;
+                const done = !!info.completed;
+                return (
+                  <div
+                    key={mid}
+                    onClick={async () => {
+                      if (!projectSlug) return;
+                      try {
+                        const r = await fetch(`/api/projects/${projectSlug}/materials/${mid}`);
+                        if (r.ok) {
+                          const m = await r.json();
+                          setDetailMaterial(m);
+                          setActiveTab("material");
+                        }
+                        if (done) {
+                          setGeneratingMaterials((prev) => { const n = { ...prev }; delete n[mid]; return n; });
+                        }
+                      } catch { /* 무시 */ }
+                    }}
+                    style={{
+                      padding: "8px 10px", borderRadius: 10, marginBottom: 6,
+                      background: done ? "var(--success-soft)" : "var(--bg-soft)",
+                      border: "1px solid " + (done ? "var(--success-soft)" : "var(--line)"),
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {info.thumb && <img src={info.thumb} alt="" style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 6 }} />}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          🧱 {info.title || "(이름 없음)"}
+                        </div>
+                        <div style={{ fontSize: 10, color: done ? "var(--success)" : "var(--fg-muted)", fontWeight: done ? 700 : 500 }}>
+                          {done ? `✓ 완료 · 클릭해서 열기` : `${info.done}/${info.total} · ${pct}%`}
+                        </div>
+                      </div>
+                      {done && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setGeneratingMaterials((prev) => { const n = { ...prev }; delete n[mid]; return n; });
+                          }}
+                          title="알림 닫기"
+                          style={{
+                            width: 22, height: 22, borderRadius: 11,
+                            background: "var(--chip-bg)", border: "none",
+                            color: "var(--fg-muted)", fontSize: 11, cursor: "pointer",
+                            flexShrink: 0,
+                          }}
+                        >✕</button>
+                      )}
+                    </div>
+                    {!done && (
+                      <div style={{ marginTop: 6, height: 4, borderRadius: 2, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: "var(--accent)", transition: "width 0.3s" }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );

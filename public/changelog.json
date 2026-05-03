@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.208",
+    "date": "2026-05-01",
+    "changes": [
+      "재질 시안 생성도 우측 하단 작업큐 토스트에 표시. 기존에는 cards (어셋) 시안/시트 생성만 toast 에 노출되고, materials 의 generateMaterialVariants 진행 상황은 모달 안에서만 보였다. (1) App 에 generatingMaterials state 추가 — { [id]: { title, thumb, done, total, completed } }. (2) MaterialDetailModal 에 onGenerateProgress / onGenerateEnd prop 추가 → processQueue 시작 시 (0/count) 등록, generateMaterialVariants 의 onProgress 마다 업데이트, 큐 종료 시 completed=true. (3) 토스트 영역 (`runningJobs + runningCards + runningMaterials`) 합산 카운트 + 재질 항목 렌더 블록 추가. 항목 클릭 시 fetch 후 detailMaterial 세팅 + activeTab='material' 전환 — 모달 닫혀 있어도 진행률 추적 가능"
+    ]
+  },
+  {
     "version": "1.10.207",
     "date": "2026-05-03",
     "changes": [
