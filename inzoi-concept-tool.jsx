@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.198";
+const APP_VERSION = "1.10.199";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -10822,27 +10822,19 @@ function SpecSheetPage() {
             </table>
           </section>
 
-          {/* ============ 3. 수정 이미지 (PPTX 슬라이드 B) ============ */}
-          <section className="spec-section spec-images">
-            <h2>3. 내부 수정 이미지</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {sourceImage && (
-                <div>
-                  <img src={sourceImage} alt="대표/시안" />
-                  <div className="spec-tile-label">⭐ 대표 / 선정 시안</div>
-                </div>
-              )}
-              {refs.slice(0, 3).map((u, i) => (
-                <div key={i}>
-                  <img src={u} alt={`참조 ${i+1}`} />
-                  <div className="spec-tile-label">참조 #{i+1}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
-              내부 수정 이미지를 따라서 제작해주시길 바랍니다.
-            </div>
-          </section>
+          {/* ============ 3. 대표 / 선정 시안 ============ v1.10.199 — 참조 이미지 제거, 대표만 크게 단독 */}
+          {sourceImage && (
+            <section className="spec-section spec-images">
+              <h2>3. 대표 / 선정 시안</h2>
+              <div>
+                <img src={sourceImage} alt="대표/시안" style={{ maxHeight: 720, objectFit: "contain", display: "block", margin: "0 auto" }} />
+                <div className="spec-tile-label">⭐ 대표 / 선정 시안</div>
+              </div>
+              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                위 대표 이미지를 따라서 제작해주시길 바랍니다.
+              </div>
+            </section>
+          )}
 
           {/* ============ 4. ID 맵 가이드 + 작업 지시 (PPTX 슬라이드 C) ============ */}
           <section className="spec-section">
@@ -10859,39 +10851,43 @@ function SpecSheetPage() {
             </table>
           </section>
 
-          {/* ============ 5. 직교 뷰 + 스케일 참조 ============ */}
+          {/* ============ 5. 직교 뷰 + 스케일 참조 ============ v1.10.199 — 시트 뷰를 더 크게 (1~2열) */}
           {(orthoViews.length > 0 || scaleView) && (
             <section className="spec-section spec-images">
               <h2>5. 직교 뷰 / 스케일 참조</h2>
               {orthoViews.length > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(orthoViews.length, 4)}, 1fr)`, gap: 6 }}>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: orthoViews.length === 1 ? "1fr" : "repeat(2, 1fr)",
+                  gap: 12,
+                }}>
                   {orthoViews.map((v) => (
                     <div key={v.id}>
-                      <img src={v.url} alt={v.label} style={{ aspectRatio: "1/1", objectFit: "contain" }} />
+                      <img src={v.url} alt={v.label} style={{ aspectRatio: "1/1", objectFit: "contain", background: "#fafafa" }} />
                       <div className="spec-tile-label">{v.label}</div>
                     </div>
                   ))}
                 </div>
               )}
               {scaleView && (
-                <div style={{ marginTop: 8 }}>
-                  <img src={scaleView} alt="스케일 참조" />
+                <div style={{ marginTop: 12 }}>
+                  <img src={scaleView} alt="스케일 참조" style={{ maxHeight: 720, objectFit: "contain", display: "block", margin: "0 auto" }} />
                   <div className="spec-tile-label">📏 스케일 참조 (인체 실루엣 180cm + 10cm 그리드)</div>
                 </div>
               )}
             </section>
           )}
 
-          {/* ============ 6. 카탈로그 시각 유사 자산 ============ */}
+          {/* ============ 6. 카탈로그 시각 유사 자산 ============ v1.10.199 — 더 작게 (6 col 미니 카드) */}
           {top3.length > 0 && (
             <section className="spec-section">
               <h2>6. 카탈로그 시각 유사 자산 (DINOv2 top 3)</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
                 {top3.map((it) => (
-                  <div key={it.id} style={{ textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 6, padding: 8 }}>
+                  <div key={it.id} style={{ textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 4, padding: 4 }}>
                     <img src={`/api/object-icon/${encodeURIComponent(it.icon)}`} alt={it.name} style={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", background: "#fafafa" }} />
-                    <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4 }}>{it.name}</div>
-                    <div style={{ fontSize: 10, color: "#6b7280" }}><code>{it.id}</code> · sim {(it.score || 0).toFixed(2)}</div>
+                    <div style={{ fontSize: 9, fontWeight: 600, marginTop: 2, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</div>
+                    <div style={{ fontSize: 8, color: "#6b7280", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>sim {(it.score || 0).toFixed(2)}</div>
                   </div>
                 ))}
               </div>
