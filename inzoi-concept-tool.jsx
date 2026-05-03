@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.199";
+const APP_VERSION = "1.10.200";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -11131,6 +11131,9 @@ export default function InZOIConceptTool() {
   // 병행 유지하며, 단계적으로 UI 를 cards 기반으로 이전한다.
   const [cards, setCards] = useState([]);           // 프로젝트 내 모든 카드 (is_archived=0)
   const [lists, setLists] = useState([]);           // wishlist / drafting / sheet / done
+  // v1.10.200 — 머티리얼 (재질) 카드. 어셋 cards 와 평행 테이블.
+  const [materials, setMaterials] = useState([]);
+  const materialsCount = materials.length;
   const [detailCard, setDetailCard] = useState(null); // 상세 모달에 열린 카드
   const [previewImage, setPreviewImage] = useState(null); // 이미지 원본 해상도 뷰어
   const [catalogItemId, setCatalogItemId] = useState(null); // inzoiObjectList 카탈로그 상세 iframe
@@ -11646,6 +11649,21 @@ export default function InZOIConceptTool() {
     }
     return cardId;
   }, [projectSlug, actorName]);
+
+  // v1.10.200 — 머티리얼 (재질) 카드 로드.
+  useEffect(() => {
+    if (!projectSlug) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/projects/${projectSlug}/materials`);
+        if (!r.ok) return;
+        const list = await r.json();
+        if (!cancelled) setMaterials(Array.isArray(list) ? list : []);
+      } catch (e) { console.warn("materials 로드 실패:", e.message); }
+    })();
+    return () => { cancelled = true; };
+  }, [projectSlug]);
 
   // 앱 시작 시: 팀 전체가 공유하는 단일 프로젝트 (default 슬러그) 를 사용한다.
   // 없으면 생성하고, 이어서 스냅샷을 내려받아 jobs / completedList / wishlist 를 복원한다.
@@ -12328,9 +12346,10 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
             : 0;
           const progressCount = activeDraftingCards.length + sheetCount + jobs.filter(j => j.step >= 0 && j.step <= 6).length;
           const TABS = [
-            { id: "wishlist",  label: "위시",    count: wishlist.length,    dot: "var(--accent)"  },
-            { id: "progress",  label: "진행 중", count: progressCount,      dot: "var(--fg-muted)" },
-            { id: "completed", label: "완료",    count: completedList.length, dot: "var(--success)" },
+            { id: "wishlist",  label: "위시",         count: wishlist.length,    dot: "var(--accent)"  },
+            { id: "progress",  label: "진행 중",      count: progressCount,      dot: "var(--fg-muted)" },
+            { id: "completed", label: "완료",         count: completedList.length, dot: "var(--success)" },
+            { id: "material",  label: "재질(테스트용)", count: materialsCount,   dot: "var(--line-strong)" },
           ];
           const switchTab = (id) => {
             setActiveTab(id);
@@ -14179,6 +14198,35 @@ Reference images provided: ${snap.refImages.length > 0 ? "yes" : "no"}`;
                   </>
                 );
               })()}
+          </div>
+        </main>
+      )}
+
+      {/* v1.10.200 — 재질 (테스트용) 탭. 카드뷰 placeholder. step 2 에서 실제 그리드 추가. */}
+      {activeTab === "material" && (
+        <main style={{ padding: "20px 40px 60px", maxWidth: 1600, margin: "0 auto", animation: "fadeIn 0.4s ease" }}>
+          <div style={{
+            position: "sticky", top: 60, zIndex: 50,
+            background: "var(--bg-color)", paddingTop: 2, paddingBottom: 2,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <h2 className="text-gradient" style={{ fontSize: 22, fontWeight: 800 }}>재질 (테스트용)</h2>
+                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                  {materialsCount > 0 ? `${materialsCount}개` : "타일링 가능 텍스쳐를 위한 재질 카드"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div style={{
+            padding: "60px 20px", textAlign: "center",
+            color: "var(--fg-muted)", fontSize: 14,
+            border: "1px dashed var(--line)", borderRadius: 12,
+            background: "var(--bg-soft)",
+            marginTop: 12,
+          }}>
+            재질 탭 (개발 중) — step 1: 백엔드 + 헤더 칩 완료.<br/>
+            step 2 (카드 그리드) / step 3 (상세 모달) / step 4 (타일링 미리보기) 가 이어서 추가됩니다.
           </div>
         </main>
       )}

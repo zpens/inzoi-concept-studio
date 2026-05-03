@@ -1,6 +1,6 @@
 {
   "name": "inzoi-asset-studio",
-  "version": "1.10.199",
+  "version": "1.10.200",
   "type": "module",
   "scripts": {
     "dev": "vite",

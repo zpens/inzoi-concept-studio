@@ -141,6 +141,28 @@ CREATE INDEX IF NOT EXISTS idx_cards_project ON cards(project_id, updated_at DES
 CREATE INDEX IF NOT EXISTS idx_cards_list ON cards(list_id, position);
 CREATE INDEX IF NOT EXISTS idx_cards_archived ON cards(project_id, is_archived);
 
+-- v1.10.200 — 머티리얼 (재질) 카드 별도 테이블. 어셋 카드와 평행 구조.
+-- 시안 / 참조 이미지 / 타일링 메타 등은 모두 data JSON.
+CREATE TABLE IF NOT EXISTS materials (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT,                     -- 목재/금속/석재/직물/플라스틱/유리/콘크리트/기타
+  thumbnail_url TEXT,
+  priority TEXT,
+  assignee TEXT,
+  is_archived INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by TEXT,
+  updated_by TEXT,
+  data TEXT NOT NULL DEFAULT '{}',
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_materials_project ON materials(project_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_materials_archived ON materials(project_id, is_archived);
+
 CREATE TABLE IF NOT EXISTS checklists (
   id TEXT PRIMARY KEY,
   card_id TEXT NOT NULL,

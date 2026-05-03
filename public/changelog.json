@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.200",
+    "date": "2026-05-03",
+    "changes": [
+      "재질 (Material) 탭 step 1 — 백엔드 + 헤더 칩 + placeholder. (1) schema.sqlite.sql 에 materials 테이블 추가 (id / project_id / title / description / category / thumbnail_url / priority / assignee / is_archived / data JSON / created_at / updated_at / created_by / updated_by). idx_materials_project / idx_materials_archived 인덱스 포함. 어셋 cards 와 평행 구조. (2) server.js 에 materials API 5개: GET 목록 / GET 상세 / POST 생성 / PATCH 수정 (race-safe data merge) / DELETE. (3) 클라이언트 헤더 카운터 칩 4번째 추가: '재질(테스트용)' (line-strong 점). (4) materials state + materialsCount + projectSlug 변경 시 fetch useEffect. (5) activeTab === 'material' 분기 메인 — sticky 헤더 + 점선 placeholder ('step 2 카드 그리드 / step 3 상세 모달 / step 4 타일링 미리보기 가 이어서 추가됩니다'). step 2 에서 실제 카드 그리드 + 새 재질 모달 진행 예정"
+    ]
+  },
+  {
     "version": "1.10.199",
     "date": "2026-05-03",
     "changes": [

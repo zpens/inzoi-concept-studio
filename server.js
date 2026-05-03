@@ -1152,6 +1152,96 @@ app.delete("/api/projects/:slug/cards/:id", (c) => {
   return c.json({ ok: true });
 });
 
+// ─── Materials (재질) — v1.10.200 ────────────────────────────────────────────
+// 어셋 카드와 평행 구조. 시안/참조/타일링 메타 모두 data JSON 에.
+
+const matStmts = {
+  list:    db.prepare("SELECT * FROM materials WHERE project_id = ? AND is_archived = ? ORDER BY updated_at DESC"),
+  get:     db.prepare("SELECT * FROM materials WHERE id = ? AND project_id = ?"),
+  insert:  db.prepare(`INSERT INTO materials (id, project_id, title, description, category, thumbnail_url, priority, assignee, data, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  remove:  db.prepare("DELETE FROM materials WHERE id = ? AND project_id = ?"),
+};
+
+const parseMatRow = (r) => r ? { ...r, data: (() => { try { return JSON.parse(r.data || "{}"); } catch { return {}; } })() } : null;
+
+// GET 목록
+app.get("/api/projects/:slug/materials", (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const archivedOnly = new URL(c.req.url).searchParams.get("archived") === "1";
+  const rows = matStmts.list.all(p.id, archivedOnly ? 1 : 0);
+  return c.json(rows.map(parseMatRow));
+});
+
+// GET 상세
+app.get("/api/projects/:slug/materials/:id", (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const r = matStmts.get.get(c.req.param("id"), p.id);
+  if (!r) return c.json({ error: "Not found" }, 404);
+  return c.json(parseMatRow(r));
+});
+
+// POST 생성
+app.post("/api/projects/:slug/materials", async (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const body = await c.req.json();
+  const id = body.id || `material-${Date.now()}`;
+  const actor = body.actor || null;
+  matStmts.insert.run(
+    id, p.id,
+    body.title || "(이름 없음)",
+    body.description || null,
+    body.category || null,
+    body.thumbnail_url || null,
+    body.priority || null,
+    body.assignee || null,
+    JSON.stringify(body.data || {}),
+    actor, actor,
+  );
+  stmts.touchProject.run(p.id);
+  return c.json(parseMatRow(matStmts.get.get(id, p.id)));
+});
+
+// PATCH 수정 — race-safe (cards 와 동일하게 부분 업데이트)
+app.patch("/api/projects/:slug/materials/:id", async (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  const id = c.req.param("id");
+  const cur = matStmts.get.get(id, p.id);
+  if (!cur) return c.json({ error: "Not found" }, 404);
+  const body = await c.req.json();
+  const actor = body.actor || cur.updated_by || null;
+  // data merge — body.data 가 있으면 기존 위에 머지.
+  let nextData = (() => { try { return JSON.parse(cur.data || "{}"); } catch { return {}; } })();
+  if (body.data && typeof body.data === "object") {
+    nextData = { ...nextData, ...body.data };
+  }
+  const next = {
+    title:        body.title        !== undefined ? body.title        : cur.title,
+    description:  body.description  !== undefined ? body.description  : cur.description,
+    category:     body.category     !== undefined ? body.category     : cur.category,
+    thumbnail_url:body.thumbnail_url!== undefined ? body.thumbnail_url: cur.thumbnail_url,
+    priority:     body.priority     !== undefined ? body.priority     : cur.priority,
+    assignee:     body.assignee     !== undefined ? body.assignee     : cur.assignee,
+    is_archived:  body.is_archived  !== undefined ? (body.is_archived ? 1 : 0) : cur.is_archived,
+  };
+  db.prepare(`UPDATE materials SET title=?, description=?, category=?, thumbnail_url=?, priority=?, assignee=?, is_archived=?, data=?, updated_at=datetime('now'), updated_by=? WHERE id=? AND project_id=?`)
+    .run(next.title, next.description, next.category, next.thumbnail_url, next.priority, next.assignee, next.is_archived, JSON.stringify(nextData), actor, id, p.id);
+  stmts.touchProject.run(p.id);
+  return c.json(parseMatRow(matStmts.get.get(id, p.id)));
+});
+
+// DELETE
+app.delete("/api/projects/:slug/materials/:id", (c) => {
+  const p = stmts.getProjectBySlug.get(c.req.param("slug"));
+  if (!p) return c.json({ error: "Not found" }, 404);
+  matStmts.remove.run(c.req.param("id"), p.id);
+  stmts.touchProject.run(p.id);
+  return c.json({ ok: true });
+});
+
 // POST /api/projects/:slug/cards/:id/comments — 댓글 추가
 app.post("/api/projects/:slug/cards/:id/comments", async (c) => {
   const p = stmts.getProjectBySlug.get(c.req.param("slug"));
