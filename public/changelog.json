@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.207",
+    "date": "2026-05-03",
+    "changes": [
+      "재질 모달 시안 이미지 클릭 → ImageLightbox + PBR 채널 접기. (1) MaterialDesignTile 의 이미지 영역에 onOpen prop 추가, 클릭 시 라이트박스 열림 (cards 시안 클릭 동작과 동일). 호버는 그대로 2×2 타일링 미리보기 유지. (2) MaterialDetailModal 에 lightboxSrc state + ImageLightbox 렌더 — designs 배열을 gallery 로 전달해 좌/우 키 순환 가능. card={null} 로 전달하면 코멘트/참조 저장 기능 (canSaveRef) 이 자동 비활성화 — 줌/팬/내비게이션만 동작. (3) PBR 채널 영역을 details 로 감싸 기본 접힘 상태. summary '▸ PBR 채널 — Substance Designer / Photoshop 등 외부 도구로 만든 채널 업로드 (NM / OMR / Height / EM)' 만 표시. 당장 사용 안 하는 영역이라 시각 잡음 제거"
+    ]
+  },
+  {
     "version": "1.10.206",
     "date": "2026-05-03",
     "changes": [

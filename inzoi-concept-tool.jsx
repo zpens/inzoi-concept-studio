@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Version Info ───
-const APP_VERSION = "1.10.206";
+const APP_VERSION = "1.10.207";
 // v1.10.140 — CHANGELOG 외부 분리 (public/changelog.json). App boot 시 fetch.
 let CHANGELOG = []; // 동적 로드 — 보았던 모든 위치는 useState/useEffect 로 갱신
 
@@ -881,6 +881,8 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
   const queueRef = React.useRef([]);
   const workingRef = React.useRef(false);
   const [queueLen, setQueueLen] = React.useState(0);
+  // v1.10.207 — 시안 이미지 클릭 시 ImageLightbox.
+  const [lightboxSrc, setLightboxSrc] = React.useState(null);
 
   // 편집 가능 메타 + prompt.
   const [title, setTitle] = React.useState(material.title || "");
@@ -1270,18 +1272,22 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
                     isCover={selectedIdx === i}
                     onSetCover={() => selectAsCover(i)}
                     onRemove={() => removeDesign(i)}
+                    onOpen={(url) => setLightboxSrc(url)}
                   />
                 ))}
               </div>
             )}
           </div>
 
-          {/* v1.10.204 — PBR 채널 수동 업로드 슬롯 (NM / OMR / Height / Emissive). */}
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-strong)", marginBottom: 8 }}>
-              PBR 채널 <span style={{ fontSize: 11, fontWeight: 500, color: "var(--fg-muted)" }}>— Substance Designer / Photoshop 등 외부 도구로 만든 채널 업로드</span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+          {/* v1.10.204 — PBR 채널 수동 업로드 슬롯. v1.10.207 — details 로 접어둠 (당장 사용 X). */}
+          <details>
+            <summary style={{
+              cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--fg-strong)",
+              padding: "6px 0", userSelect: "none",
+            }}>
+              ▸ PBR 채널 <span style={{ fontSize: 11, fontWeight: 500, color: "var(--fg-muted)" }}>— Substance Designer / Photoshop 등 외부 도구로 만든 채널 업로드 (NM / OMR / Height / EM)</span>
+            </summary>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginTop: 8 }}>
               {[
                 { key: "normal",   label: "NM (Normal)",       hint: "법선맵, BC 기준 추출" },
                 { key: "omr",      label: "OMR",                hint: "Occlusion·Metallic·Roughness 합본" },
@@ -1312,9 +1318,24 @@ function MaterialDetailModal({ material, projectSlug, actor, geminiApiKey, selec
                 />
               ))}
             </div>
-          </div>
+          </details>
         </div>
       </div>
+
+      {/* v1.10.207 — 시안 이미지 클릭 시 ImageLightbox (cards 시안 클릭 동작과 동일).
+          card={null} 로 호출하면 코멘트/참조 저장 기능은 자동 비활성화 (canSaveRef false). */}
+      {lightboxSrc && (
+        <ImageLightbox
+          src={lightboxSrc}
+          gallery={designs.filter((d) => d?.imageUrl).map((d) => d.imageUrl)}
+          onChange={setLightboxSrc}
+          onClose={() => setLightboxSrc(null)}
+          card={null}
+          projectSlug={projectSlug}
+          actor={actor}
+          zIndex={1100}
+        />
+      )}
     </>
   );
 }
@@ -1373,7 +1394,8 @@ function PBRChannelSlot({ channel, url, onUpload, onRemove }) {
 }
 
 // 재질 시안 타일 — 호버 시 2×2 타일링 미리보기, 액션 row.
-function MaterialDesignTile({ design, isCover, onSetCover, onRemove }) {
+// v1.10.207 — onOpen 콜백: 이미지 영역 클릭 시 ImageLightbox 오픈 (cards 시안 클릭 동작과 동일).
+function MaterialDesignTile({ design, isCover, onSetCover, onRemove, onOpen }) {
   const [hover, setHover] = React.useState(false);
   if (!design?.imageUrl) {
     return (
@@ -1395,14 +1417,18 @@ function MaterialDesignTile({ design, isCover, onSetCover, onRemove }) {
         background: "var(--bg-card)",
       }}
     >
-      <div style={{
-        position: "relative",
-        aspectRatio: "1/1",
-        backgroundImage: `url(${design.imageUrl})`,
-        backgroundSize: hover ? "50% 50%" : "100% 100%",
-        backgroundRepeat: "repeat",
-        transition: "background-size 200ms",
-      }}>
+      <div
+        onClick={() => onOpen?.(design.imageUrl)}
+        title="클릭해서 라이트박스 열기 (좌/우 키로 이전·다음 시안)"
+        style={{
+          position: "relative",
+          aspectRatio: "1/1",
+          backgroundImage: `url(${design.imageUrl})`,
+          backgroundSize: hover ? "50% 50%" : "100% 100%",
+          backgroundRepeat: "repeat",
+          cursor: "zoom-in",
+          transition: "background-size 200ms",
+        }}>
         {hover && (
           <div style={{
             position: "absolute", bottom: 6, right: 6,
